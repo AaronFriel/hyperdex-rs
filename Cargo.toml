@@ -34,6 +34,9 @@ bytes = { version = "1.7", features = ["serde"] }
 futures = "0.3"
 omnipaxos = { version = "0.2.2", default-features = false }
 omnipaxos_storage = "0.2.2"
+openraft = { version = "0.10.0-alpha.17", features = ["serde", "type-alias"] }
+openraft-memstore = "0.10.0-alpha.17"
+openraft-rt = "0.10.0-alpha.17"
 ordered-float = { version = "4.5", features = ["serde"] }
 parking_lot = "0.12"
 prost = "0.13"

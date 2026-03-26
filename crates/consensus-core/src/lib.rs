@@ -301,3 +301,9 @@ mod omnipaxos_backend {
 
 #[cfg(feature = "omnipaxos")]
 pub use omnipaxos_backend::OmniPaxosReplicator;
+
+#[cfg(feature = "openraft")]
+mod openraft_backend;
+
+#[cfg(feature = "openraft")]
+pub use openraft_backend::OpenRaftReplicator;
