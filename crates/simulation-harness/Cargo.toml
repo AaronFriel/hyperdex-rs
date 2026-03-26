@@ -17,3 +17,6 @@ placement-core = { path = "../placement-core" }
 storage-core = { path = "../storage-core" }
 tokio.workspace = true
 turmoil.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
