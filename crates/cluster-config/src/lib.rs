@@ -12,8 +12,9 @@ pub struct ClusterNode {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ConsensusBackend {
     SingleNode,
-    Raft,
-    Paxos,
+    Mirror,
+    OmniPaxos,
+    OpenRaft,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -78,6 +79,7 @@ mod tests {
     fn default_config_exposes_legacy_and_grpc_frontends() {
         let config = ClusterConfig::default();
 
+        assert_eq!(config.consensus, ConsensusBackend::SingleNode);
         assert_eq!(
             config.public_protocols,
             vec![PublicProtocol::LegacyHyperdex, PublicProtocol::Grpc]

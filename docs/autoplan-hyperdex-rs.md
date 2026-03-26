@@ -120,6 +120,9 @@ stable traits from the start.
   placement model on `main`, with explicit partition reporting and tests.
 - Done: `consensus-core` now also has a feature-gated OpenRaft backend on
   `main`, validated in both default and `openraft`-enabled builds.
+- Done: `server` now selects the consensus backend from `ClusterConfig` at
+  runtime, and rejects feature-gated backends when the corresponding server
+  feature is not compiled in.
 - Running: worktree lanes for gRPC frontend, hyperspace placement fidelity,
   OpenRaft scaffolding, and OmniPaxos scaffolding.
 - Next: integrate the remaining completed worktree results back into `main`
@@ -127,8 +130,9 @@ stable traits from the start.
 
 ## Next Bounded Iteration
 
-Start wiring runtime-side backend selection so the multiple consensus
-implementations stop being isolated feature flags with no runtime path.
+Use the same runtime-selection approach for placement, storage, and internode
+transport so `ClusterConfig` starts controlling the whole process shape instead
+of only the consensus choice.
 
 ## Loop Ledger
 
@@ -145,3 +149,4 @@ implementations stop being isolated feature flags with no runtime path.
 | 9 | The OmniPaxos backend is sufficiently isolated behind a feature flag that it can be landed on `main` now without forcing backend selection decisions elsewhere in the stack. | Cherry-pick the `consensus-core` OmniPaxos branch onto `main`, validate the default build plus the `omnipaxos` feature path, and revalidate the full workspace. | `cargo test -p consensus-core` passes, `cargo test -p consensus-core --features omnipaxos` passes, and `cargo test --workspace` still passes after the cherry-pick. | Confirmed. | advance | Review and integrate the placement branch next, then return to feature-gated OpenRaft and runtime-side backend selection. |
 | 10 | The placement branch is the next highest-value completed worker result because real hyperspace-style placement is part of the user’s core requirements and the change is already validated in its worktree. | Cherry-pick the placement branch onto `main`, validate placement-specific tests first, and then revalidate the full workspace against the new placement API and behavior. | `cargo test -p placement-core` passes with the new hyperspace ring tests, and `cargo test --workspace` passes on `main` after the cherry-pick. | Confirmed. | advance | Integrate the feature-gated OpenRaft backend next and make the two consensus alternatives coexist on `main`. |
 | 11 | The OpenRaft backend can coexist with OmniPaxos in `consensus-core` if both are kept feature-gated and the workspace dependencies are merged cleanly. | Cherry-pick the OpenRaft branch onto `main`, resolve the feature/dependency conflicts so both backends remain available, validate the default build plus the `openraft` feature path, and revalidate the full workspace. | `cargo test -p consensus-core` passes, `cargo test -p consensus-core --features openraft` passes, and `cargo test --workspace` passes after the merged OpenRaft integration. | Confirmed. | advance | Wire runtime-side backend selection next so the consensus alternatives can be exercised from configuration instead of existing only as compile-time options. |
+| 12 | The next useful improvement is to make the already-landed consensus alternatives selectable from `ClusterConfig` in `server`, so backend choice becomes part of the runtime shape instead of a compile-time-only detail. | Expand `ConsensusBackend` to name the concrete backends, add server feature forwarding plus runtime backend selection, test both disabled and enabled feature cases in `server`, and revalidate the workspace. | `cargo test -p consensus-core` passes, `cargo test -p consensus-core --features omnipaxos` passes, `cargo test -p consensus-core --features openraft` passes, `cargo test -p server --features omnipaxos` passes, `cargo test -p server --features openraft` passes, and `cargo test --workspace` passes after the selector lands. | Confirmed. | advance | Apply the same configuration-driven selection pattern to placement, storage, and transport next. |

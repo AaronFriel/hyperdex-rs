@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use cluster_config::{ClusterConfig, ConsensusBackend};
 use control_plane::{Catalog, InMemoryCatalog};
 use data_model::{parse_hyperdex_space, Space};
 use data_plane::DataPlane;
@@ -9,14 +10,21 @@ use hyperdex_admin_protocol::{AdminRequest, AdminResponse, HyperdexAdminService}
 use hyperdex_client_protocol::{ClientRequest, ClientResponse, HyperdexClientService};
 use placement_core::{HyperSpacePlacement, PlacementStrategy};
 use storage_core::{StorageEngine, WriteResult};
-
-use cluster_config::ClusterConfig;
 use engine_memory::MemoryEngine;
 
 pub struct ClusterRuntime {
     catalog: Arc<dyn Catalog>,
     storage: Arc<dyn StorageEngine>,
     data_plane: DataPlane,
+    consensus: ConsensusRuntime,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ConsensusRuntime {
+    SingleNode,
+    Mirror,
+    OmniPaxos,
+    OpenRaft,
 }
 
 impl ClusterRuntime {
@@ -24,27 +32,81 @@ impl ClusterRuntime {
         catalog: Arc<dyn Catalog>,
         storage: Arc<dyn StorageEngine>,
         placement: Arc<dyn PlacementStrategy>,
+        consensus: ConsensusRuntime,
     ) -> Self {
         let data_plane = DataPlane::new(catalog.clone(), storage.clone(), placement);
         Self {
             catalog,
             storage,
             data_plane,
+            consensus,
         }
     }
 
-    pub fn single_node(config: ClusterConfig) -> Self {
+    pub fn single_node(config: ClusterConfig) -> Result<Self> {
         let catalog: Arc<dyn Catalog> =
             Arc::new(InMemoryCatalog::new(config.nodes.clone(), config.replicas));
         let storage: Arc<dyn StorageEngine> = Arc::new(MemoryEngine::new());
+        let consensus = select_consensus_backend(&config)?;
 
-        Self::new(catalog, storage, Arc::new(HyperSpacePlacement::default()))
+        Ok(Self::new(
+            catalog,
+            storage,
+            Arc::new(HyperSpacePlacement::default()),
+            consensus,
+        ))
     }
 
     fn create_space(&self, space: Space) -> Result<()> {
         self.storage.create_space(space.name.clone())?;
         self.catalog.create_space(space)?;
         Ok(())
+    }
+
+    pub fn consensus_backend_name(&self) -> &'static str {
+        self.consensus.name()
+    }
+}
+
+impl ConsensusRuntime {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::SingleNode => "single-node",
+            Self::Mirror => "mirror",
+            Self::OmniPaxos => "omnipaxos",
+            Self::OpenRaft => "openraft",
+        }
+    }
+}
+
+pub fn select_consensus_backend(config: &ClusterConfig) -> Result<ConsensusRuntime> {
+    match config.consensus {
+        ConsensusBackend::SingleNode => Ok(ConsensusRuntime::SingleNode),
+        ConsensusBackend::Mirror => Ok(ConsensusRuntime::Mirror),
+        ConsensusBackend::OmniPaxos => {
+            #[cfg(feature = "omnipaxos")]
+            {
+                Ok(ConsensusRuntime::OmniPaxos)
+            }
+            #[cfg(not(feature = "omnipaxos"))]
+            {
+                Err(anyhow!(
+                    "consensus backend `omnipaxos` requires server feature `omnipaxos`"
+                ))
+            }
+        }
+        ConsensusBackend::OpenRaft => {
+            #[cfg(feature = "openraft")]
+            {
+                Ok(ConsensusRuntime::OpenRaft)
+            }
+            #[cfg(not(feature = "openraft"))]
+            {
+                Err(anyhow!(
+                    "consensus backend `openraft` requires server feature `openraft`"
+                ))
+            }
+        }
     }
 }
 
@@ -121,7 +183,7 @@ impl HyperdexClientService for ClusterRuntime {
 }
 
 pub fn bootstrap_runtime() -> ClusterRuntime {
-    ClusterRuntime::single_node(ClusterConfig::default())
+    ClusterRuntime::single_node(ClusterConfig::default()).expect("default cluster config is valid")
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -178,9 +240,73 @@ fn required_option(args: &[String], name: &str) -> Result<String> {
 mod tests {
     use super::*;
     use bytes::Bytes;
+    use cluster_config::ConsensusBackend;
     use data_model::{Attribute, Check, Mutation, Predicate, Value};
     use hyperdex_admin_protocol::HyperdexAdminService;
     use hyperdex_client_protocol::HyperdexClientService;
+
+    #[test]
+    fn runtime_uses_single_node_consensus_by_default() {
+        let runtime = bootstrap_runtime();
+
+        assert_eq!(runtime.consensus_backend_name(), "single-node");
+    }
+
+    #[cfg(not(feature = "omnipaxos"))]
+    #[test]
+    fn runtime_rejects_omnipaxos_when_feature_is_disabled() {
+        let mut config = ClusterConfig::default();
+        config.consensus = ConsensusBackend::OmniPaxos;
+        let err = ClusterRuntime::single_node(config)
+            .err()
+            .expect("omnipaxos should be rejected without the feature")
+            .to_string();
+        assert!(err.contains("server feature `omnipaxos`"));
+    }
+
+    #[cfg(not(feature = "openraft"))]
+    #[test]
+    fn runtime_rejects_openraft_when_feature_is_disabled() {
+        let mut config = ClusterConfig::default();
+        config.consensus = ConsensusBackend::OpenRaft;
+        let err = ClusterRuntime::single_node(config)
+            .err()
+            .expect("openraft should be rejected without the feature")
+            .to_string();
+        assert!(err.contains("server feature `openraft`"));
+    }
+
+    #[test]
+    fn runtime_selects_mirror_consensus_from_config() {
+        let mut config = ClusterConfig::default();
+        config.consensus = ConsensusBackend::Mirror;
+
+        let runtime = ClusterRuntime::single_node(config).unwrap();
+
+        assert_eq!(runtime.consensus_backend_name(), "mirror");
+    }
+
+    #[cfg(feature = "omnipaxos")]
+    #[test]
+    fn runtime_accepts_omnipaxos_when_feature_is_enabled() {
+        let mut config = ClusterConfig::default();
+        config.consensus = ConsensusBackend::OmniPaxos;
+
+        let runtime = ClusterRuntime::single_node(config).unwrap();
+
+        assert_eq!(runtime.consensus_backend_name(), "omnipaxos");
+    }
+
+    #[cfg(feature = "openraft")]
+    #[test]
+    fn runtime_accepts_openraft_when_feature_is_enabled() {
+        let mut config = ClusterConfig::default();
+        config.consensus = ConsensusBackend::OpenRaft;
+
+        let runtime = ClusterRuntime::single_node(config).unwrap();
+
+        assert_eq!(runtime.consensus_backend_name(), "openraft");
+    }
 
     #[tokio::test]
     async fn runtime_accepts_hyperdex_dsl_schema() {

@@ -6,11 +6,16 @@ version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+omnipaxos = ["consensus-core/omnipaxos"]
+openraft = ["consensus-core/openraft"]
+
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
 cluster-config = { path = "../cluster-config" }
+consensus-core = { path = "../consensus-core" }
 control-plane = { path = "../control-plane" }
 data-model = { path = "../data-model" }
 data-plane = { path = "../data-plane" }
