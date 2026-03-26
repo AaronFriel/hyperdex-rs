@@ -9,5 +9,6 @@ repository.workspace = true
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
+cluster-config = { path = "../cluster-config" }
 data-model = { path = "../data-model" }
 serde.workspace = true

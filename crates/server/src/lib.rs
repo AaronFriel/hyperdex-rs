@@ -29,6 +29,7 @@ use tempfile::TempDir;
 use transport_core::InProcessTransport;
 
 pub struct ClusterRuntime {
+    cluster_config: ClusterConfig,
     catalog: Arc<dyn Catalog>,
     storage: Arc<dyn StorageEngine>,
     data_plane: DataPlane,
@@ -36,8 +37,15 @@ pub struct ClusterRuntime {
     placement: PlacementRuntime,
     storage_backend: StorageRuntime,
     internode_transport: TransportRuntime,
+    coordinator_state: Mutex<CoordinatorState>,
     legacy_searches: Mutex<BTreeMap<u64, VecDeque<Record>>>,
     _ephemeral_storage_dir: Option<TempDir>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CoordinatorState {
+    version: u64,
+    stable_through: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -68,6 +76,7 @@ pub enum TransportRuntime {
 
 impl ClusterRuntime {
     pub fn new(
+        cluster_config: ClusterConfig,
         catalog: Arc<dyn Catalog>,
         storage: Arc<dyn StorageEngine>,
         placement: Arc<dyn PlacementStrategy>,
@@ -79,6 +88,7 @@ impl ClusterRuntime {
     ) -> Self {
         let data_plane = DataPlane::new(catalog.clone(), storage.clone(), placement);
         Self {
+            cluster_config,
             catalog,
             storage,
             data_plane,
@@ -86,6 +96,10 @@ impl ClusterRuntime {
             placement: placement_runtime,
             storage_backend,
             internode_transport,
+            coordinator_state: Mutex::new(CoordinatorState {
+                version: 0,
+                stable_through: 0,
+            }),
             legacy_searches: Mutex::new(BTreeMap::new()),
             _ephemeral_storage_dir: ephemeral_storage_dir,
         }
@@ -108,6 +122,7 @@ impl ClusterRuntime {
         let internode_transport = select_internode_transport(&config);
 
         Ok(Self::new(
+            config,
             catalog,
             storage,
             placement,
@@ -122,6 +137,17 @@ impl ClusterRuntime {
     fn create_space(&self, space: Space) -> Result<()> {
         self.storage.create_space(space.name.clone())?;
         self.catalog.create_space(space)?;
+        self.record_config_change();
+        Ok(())
+    }
+
+    fn drop_space(&self, name: &str) -> Result<()> {
+        if self.catalog.get_space(name)?.is_none() {
+            return Err(anyhow!("space {name} not found"));
+        }
+        self.catalog.drop_space(name)?;
+        self.storage.drop_space(name)?;
+        self.record_config_change();
         Ok(())
     }
 
@@ -150,6 +176,45 @@ impl ClusterRuntime {
                 "legacy request handling is ambiguous with multiple spaces"
             )),
         }
+    }
+
+    fn config_view(&self) -> Result<hyperdex_admin_protocol::ConfigView> {
+        let coordinator_state = *self
+            .coordinator_state
+            .lock()
+            .expect("coordinator state poisoned");
+        let mut spaces = Vec::new();
+        for name in self.catalog.list_spaces()? {
+            let Some(space) = self.catalog.get_space(&name)? else {
+                return Err(anyhow!(
+                    "catalog listed space `{name}` but could not fetch its definition"
+                ));
+            };
+            spaces.push(space);
+        }
+
+        Ok(hyperdex_admin_protocol::ConfigView {
+            version: coordinator_state.version,
+            stable_through: coordinator_state.stable_through,
+            cluster: self.cluster_config.clone(),
+            spaces,
+        })
+    }
+
+    fn stable_version(&self) -> u64 {
+        self.coordinator_state
+            .lock()
+            .expect("coordinator state poisoned")
+            .stable_through
+    }
+
+    fn record_config_change(&self) {
+        let mut coordinator_state = self
+            .coordinator_state
+            .lock()
+            .expect("coordinator state poisoned");
+        coordinator_state.version += 1;
+        coordinator_state.stable_through = coordinator_state.version;
     }
 }
 
@@ -639,11 +704,14 @@ impl HyperdexAdminService for ClusterRuntime {
                 Ok(AdminResponse::Unit)
             }
             AdminRequest::DropSpace(space) => {
-                self.catalog.drop_space(&space)?;
-                self.storage.drop_space(&space)?;
+                self.drop_space(&space)?;
                 Ok(AdminResponse::Unit)
             }
             AdminRequest::ListSpaces => Ok(AdminResponse::Spaces(self.catalog.list_spaces()?)),
+            AdminRequest::DumpConfig => Ok(AdminResponse::Config(self.config_view()?)),
+            AdminRequest::WaitUntilStable => Ok(AdminResponse::Stable {
+                version: self.stable_version(),
+            }),
         }
     }
 }
@@ -830,7 +898,7 @@ mod tests {
     use bytes::Bytes;
     use cluster_config::{ConsensusBackend, PlacementBackend, StorageBackend, TransportBackend};
     use data_model::{Attribute, Check, Mutation, Predicate, Value};
-    use hyperdex_admin_protocol::HyperdexAdminService;
+    use hyperdex_admin_protocol::{AdminRequest, AdminResponse, ConfigView, HyperdexAdminService};
     use hyperdex_client_protocol::HyperdexClientService;
     use legacy_protocol::{
         AtomicRequest, AtomicResponse, CountRequest, CountResponse, GetRequest, GetResponse,
@@ -1006,6 +1074,85 @@ mod tests {
                 .await
                 .unwrap(),
             AdminResponse::Spaces(vec!["profiles".to_owned()])
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_dump_config_tracks_space_lifecycle_and_stability() {
+        let mut config = ClusterConfig::default();
+        config.consensus = ConsensusBackend::Mirror;
+        config.placement = PlacementBackend::Rendezvous;
+        config.storage = StorageBackend::Memory;
+        config.internode_transport = TransportBackend::Grpc;
+        let runtime = ClusterRuntime::single_node(config.clone()).unwrap();
+
+        let response = HyperdexAdminService::handle(&runtime, AdminRequest::DumpConfig)
+            .await
+            .unwrap();
+        assert_eq!(
+            response,
+            AdminResponse::Config(ConfigView {
+                version: 0,
+                stable_through: 0,
+                cluster: config.clone(),
+                spaces: Vec::new(),
+            })
+        );
+
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first,\n\
+                    int profile_views\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        let response = HyperdexAdminService::handle(&runtime, AdminRequest::DumpConfig)
+            .await
+            .unwrap();
+        let AdminResponse::Config(config_view) = response else {
+            panic!("expected config response after create");
+        };
+        assert_eq!(config_view.version, 1);
+        assert_eq!(config_view.stable_through, 1);
+        assert_eq!(config_view.cluster, config);
+        assert_eq!(config_view.spaces.len(), 1);
+        assert_eq!(config_view.spaces[0].name, "profiles");
+        assert_eq!(
+            HyperdexAdminService::handle(&runtime, AdminRequest::WaitUntilStable)
+                .await
+                .unwrap(),
+            AdminResponse::Stable { version: 1 }
+        );
+
+        HyperdexAdminService::handle(&runtime, AdminRequest::DropSpace("profiles".to_owned()))
+            .await
+            .unwrap();
+
+        let response = HyperdexAdminService::handle(&runtime, AdminRequest::DumpConfig)
+            .await
+            .unwrap();
+        assert_eq!(
+            response,
+            AdminResponse::Config(ConfigView {
+                version: 2,
+                stable_through: 2,
+                cluster: config,
+                spaces: Vec::new(),
+            })
+        );
+        assert_eq!(
+            HyperdexAdminService::handle(&runtime, AdminRequest::WaitUntilStable)
+                .await
+                .unwrap(),
+            AdminResponse::Stable { version: 2 }
         );
     }
 
