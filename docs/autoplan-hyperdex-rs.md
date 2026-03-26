@@ -141,17 +141,19 @@ stable traits from the start.
 - Done: the deterministic test harness now includes a `turmoil` session test
   plus property-based model checking for the memory engine, instead of only a
   basic in-process round-trip.
+- Done: the admin runtime now exposes a versioned config view plus stable wait
+  semantics over space lifecycle changes, so coordinator-facing admin mutations
+  are observable instead of being anonymous local edits.
 - Running: worktree lanes for gRPC frontend, hyperspace placement fidelity,
   OpenRaft scaffolding, and OmniPaxos scaffolding.
-- Next: build the first coordinator/admin compatibility path that a live
-  `hyhac` run needs, instead of widening the client request surface further
-  first.
+- Next: move from internal admin semantics to the first real coordinator-side
+  wire boundary for the legacy admin protocol.
 
 ## Next Bounded Iteration
 
-Build the first coordinator/admin compatibility path needed for a live `hyhac`
-run, starting with a minimal config view plus `space_add` and `space_rm`
-semantics that can later sit behind the HyperDex admin public contract.
+Implement the first coordinator-side legacy admin boundary, starting with
+`space_add` and `space_rm` dispatch plus HyperDex return-code mapping on top of
+the new versioned admin runtime state.
 
 ## Loop Ledger
 
@@ -176,3 +178,4 @@ semantics that can later sit behind the HyperDex admin public contract.
 | 17 | The simplified atomic path will only satisfy `hyhac` if it can express conditional puts and at least the scalar numeric atomic operations that the suite uses heavily. | Extend `legacy-protocol` with atomic checks and funcall-style mutation names, route them through `server` as conditional puts and scalar numeric mutations, fix the memory engine so failed conditional writes do not create phantom records, add focused protocol/frontend/server/storage tests, and revalidate the targeted crates plus the full workspace. | `cargo test -p legacy-protocol -p legacy-frontend -p server -p engine-memory` passes and `cargo test --workspace` passes after the atomic tightening step lands. | Confirmed. | advance | Implement the legacy search request flow next, starting with `REQ_SEARCH_START` and streamed result responses over the existing runtime search results. |
 | 18 | The next missing client-facing behavior for the active compatibility path is HyperDex-style search start and cursor-driven result delivery, because `hyhac` exercises search heavily and the runtime already has enough search semantics to back it. | Extend `legacy-protocol` with search start, search continue, search item, and search done bodies; route `REQ_SEARCH_START` and `REQ_SEARCH_NEXT` through `ClusterRuntime` with stored cursors; add focused protocol, frontend, and server tests; and revalidate the workspace. | `cargo test -p legacy-protocol -p legacy-frontend -p server` passes in the search worktree, and `cargo test --workspace` passes there and again on `main` after the cherry-pick as commit `837e412`. | Confirmed. | advance | Strengthen deterministic confidence next so the growing compatibility layer has model-backed regression protection instead of only example tests. |
 | 19 | The public compatibility layer is growing quickly enough that a stronger deterministic test harness will pay off now by checking behavior against a simple model before the live `hyhac` run starts exposing harder semantic gaps. | Expand `simulation-harness` with a deterministic `turmoil` data-plane session test and a property-based model comparison for the memory engine, then revalidate the full workspace and integrate the result on `main`. | `cargo test -p simulation-harness` passes in the simulation worktree, and `cargo test --workspace` passes there and again on `main` after the cherry-pick as commit `013df66`. | Confirmed. | advance | Move to the coordinator/admin compatibility path next, starting from config view and space lifecycle operations required to boot a live `hyhac` run. |
+| 20 | Before adding the real coordinator listener, the runtime needs explicit admin-visible config state and stable semantics so later wire-compatibility work has something concrete to expose. | Extend `hyperdex-admin-protocol` with config-view and stable-wait requests, add versioned coordinator state to `ClusterRuntime`, make space create and drop advance that state, add a focused lifecycle test, and revalidate the full workspace. | `cargo test -p hyperdex-admin-protocol -p server` passes with the new lifecycle test, and `cargo test --workspace` passes after the versioned config-view and stable-wait changes land locally on `main`. | Confirmed. | advance | Implement the first coordinator-side legacy admin boundary next, starting with `space_add` and `space_rm` dispatch plus HyperDex return-code mapping. |
