@@ -118,6 +118,8 @@ stable traits from the start.
   validated in both default and `omnipaxos`-enabled builds.
 - Done: `placement-core` now has a deterministic hyperspace-style token-ring
   placement model on `main`, with explicit partition reporting and tests.
+- Done: `consensus-core` now also has a feature-gated OpenRaft backend on
+  `main`, validated in both default and `openraft`-enabled builds.
 - Running: worktree lanes for gRPC frontend, hyperspace placement fidelity,
   OpenRaft scaffolding, and OmniPaxos scaffolding.
 - Next: integrate the remaining completed worktree results back into `main`
@@ -125,9 +127,8 @@ stable traits from the start.
 
 ## Next Bounded Iteration
 
-Review and integrate the OpenRaft backend next, then start wiring runtime-side
-backend selection so the multiple consensus implementations stop being isolated
-feature flags with no runtime path.
+Start wiring runtime-side backend selection so the multiple consensus
+implementations stop being isolated feature flags with no runtime path.
 
 ## Loop Ledger
 
@@ -142,4 +143,5 @@ feature flags with no runtime path.
 | 7 | Even before full request decoding exists, the main branch should expose a real legacy TCP listener so external compatibility work stops being abstract. | Add the `legacy-frontend` crate, implement a TCP accept path that reads a legacy request header and returns `CONFIGMISMATCH`, wire `daemon` mode to start that listener, and revalidate the workspace. | `cargo test -p legacy-protocol -p legacy-frontend -p server` passes, and `cargo test --workspace` still passes with the new listener crate and daemon wiring in place. | Confirmed. | advance | Integrate the completed gRPC worktree branch, then return to richer legacy request handling. |
 | 8 | The gRPC public frontend is independent enough from the legacy listener that it can be integrated immediately as a second public surface without destabilizing the compatibility path. | Replace the placeholder `transport-grpc` crate with a tonic/prost public frontend over `ClusterRuntime`, add a generated protobuf schema plus an end-to-end server test, and revalidate the workspace. | `cargo test -p transport-grpc` passes with the new end-to-end test, and `cargo test --workspace` still passes after the gRPC public surface lands on `main`. | Confirmed. | advance | Land one of the feature-gated consensus backends next, starting with OmniPaxos because its change set is small and isolated. |
 | 9 | The OmniPaxos backend is sufficiently isolated behind a feature flag that it can be landed on `main` now without forcing backend selection decisions elsewhere in the stack. | Cherry-pick the `consensus-core` OmniPaxos branch onto `main`, validate the default build plus the `omnipaxos` feature path, and revalidate the full workspace. | `cargo test -p consensus-core` passes, `cargo test -p consensus-core --features omnipaxos` passes, and `cargo test --workspace` still passes after the cherry-pick. | Confirmed. | advance | Review and integrate the placement branch next, then return to feature-gated OpenRaft and runtime-side backend selection. |
-| 10 | The placement branch is the next highest-value completed worker result because real hyperspace-style placement is part of the user’s core requirements and the change is already validated in its worktree. | Cherry-pick the placement branch onto `main`, validate placement-specific tests first, and then revalidate the full workspace against the new placement API and behavior. | `cargo test -p placement-core` passes with the new hyperspace ring tests, and `cargo test --workspace` is being revalidated on `main` after the cherry-pick. | Pending final workspace result. | advance | If the workspace stays green, commit the ledger update and move directly to OpenRaft integration. |
+| 10 | The placement branch is the next highest-value completed worker result because real hyperspace-style placement is part of the user’s core requirements and the change is already validated in its worktree. | Cherry-pick the placement branch onto `main`, validate placement-specific tests first, and then revalidate the full workspace against the new placement API and behavior. | `cargo test -p placement-core` passes with the new hyperspace ring tests, and `cargo test --workspace` passes on `main` after the cherry-pick. | Confirmed. | advance | Integrate the feature-gated OpenRaft backend next and make the two consensus alternatives coexist on `main`. |
+| 11 | The OpenRaft backend can coexist with OmniPaxos in `consensus-core` if both are kept feature-gated and the workspace dependencies are merged cleanly. | Cherry-pick the OpenRaft branch onto `main`, resolve the feature/dependency conflicts so both backends remain available, validate the default build plus the `openraft` feature path, and revalidate the full workspace. | `cargo test -p consensus-core` passes, `cargo test -p consensus-core --features openraft` passes, and `cargo test --workspace` passes after the merged OpenRaft integration. | Confirmed. | advance | Wire runtime-side backend selection next so the consensus alternatives can be exercised from configuration instead of existing only as compile-time options. |
