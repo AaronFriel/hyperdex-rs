@@ -35,13 +35,20 @@ pub enum TransportBackend {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PublicProtocol {
+    LegacyHyperdex,
+    Grpc,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClusterConfig {
     pub nodes: Vec<ClusterNode>,
     pub replicas: usize,
     pub consensus: ConsensusBackend,
     pub placement: PlacementBackend,
     pub storage: StorageBackend,
-    pub transport: TransportBackend,
+    pub internode_transport: TransportBackend,
+    pub public_protocols: Vec<PublicProtocol>,
 }
 
 impl Default for ClusterConfig {
@@ -57,7 +64,24 @@ impl Default for ClusterConfig {
             consensus: ConsensusBackend::SingleNode,
             placement: PlacementBackend::Hyperspace,
             storage: StorageBackend::Memory,
-            transport: TransportBackend::InProcess,
+            internode_transport: TransportBackend::InProcess,
+            public_protocols: vec![PublicProtocol::LegacyHyperdex, PublicProtocol::Grpc],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_exposes_legacy_and_grpc_frontends() {
+        let config = ClusterConfig::default();
+
+        assert_eq!(
+            config.public_protocols,
+            vec![PublicProtocol::LegacyHyperdex, PublicProtocol::Grpc]
+        );
+        assert_eq!(config.internode_transport, TransportBackend::InProcess);
     }
 }

@@ -14,7 +14,7 @@ members = [
     "crates/simulation-harness",
     "crates/storage-core",
     "crates/transport-core",
-    "crates/transport-grpc",
+    "crates/transport-grpc", "crates/legacy-protocol",
 ]
 resolver = "2"
 
