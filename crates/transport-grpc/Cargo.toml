@@ -10,6 +10,18 @@ repository.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
+ordered-float.workspace = true
 prost.workspace = true
+tokio.workspace = true
+tokio-stream = { workspace = true, features = ["net"] }
 tonic.workspace = true
+tracing.workspace = true
+data-model = { path = "../data-model" }
+hyperdex-admin-protocol = { path = "../hyperdex-admin-protocol" }
+hyperdex-client-protocol = { path = "../hyperdex-client-protocol" }
+server = { path = "../server" }
 transport-core = { path = "../transport-core" }
+
+[build-dependencies]
+protoc-bin-vendored = "3"
+tonic-build = "0.12"
