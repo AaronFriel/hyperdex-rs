@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use control_plane::{Catalog, InMemoryCatalog};
 use data_model::{parse_hyperdex_space, Space};
@@ -86,29 +86,33 @@ impl HyperdexClientService for ClusterRuntime {
             ClientRequest::Get { space, key } => {
                 Ok(ClientResponse::Record(self.data_plane.get(&space, &key)?))
             }
-            ClientRequest::Delete { space, key } => Ok(match self.data_plane.delete(&space, &key)? {
-                WriteResult::Written | WriteResult::Missing => ClientResponse::Unit,
-                WriteResult::ConditionFailed => ClientResponse::ConditionFailed,
-            }),
+            ClientRequest::Delete { space, key } => {
+                Ok(match self.data_plane.delete(&space, &key)? {
+                    WriteResult::Written | WriteResult::Missing => ClientResponse::Unit,
+                    WriteResult::ConditionFailed => ClientResponse::ConditionFailed,
+                })
+            }
             ClientRequest::ConditionalPut {
                 space,
                 key,
                 checks,
                 mutations,
-            } => Ok(match self
-                .data_plane
-                .conditional_put(&space, key, &checks, &mutations)?
-            {
-                WriteResult::Written => ClientResponse::Unit,
-                WriteResult::ConditionFailed => ClientResponse::ConditionFailed,
-                WriteResult::Missing => ClientResponse::Unit,
-            }),
-            ClientRequest::Search { space, checks } => {
-                Ok(ClientResponse::SearchResult(self.data_plane.search(&space, &checks)?))
-            }
-            ClientRequest::Count { space, checks } => {
-                Ok(ClientResponse::Count(self.data_plane.count(&space, &checks)?))
-            }
+            } => Ok(
+                match self
+                    .data_plane
+                    .conditional_put(&space, key, &checks, &mutations)?
+                {
+                    WriteResult::Written => ClientResponse::Unit,
+                    WriteResult::ConditionFailed => ClientResponse::ConditionFailed,
+                    WriteResult::Missing => ClientResponse::Unit,
+                },
+            ),
+            ClientRequest::Search { space, checks } => Ok(ClientResponse::SearchResult(
+                self.data_plane.search(&space, &checks)?,
+            )),
+            ClientRequest::Count { space, checks } => Ok(ClientResponse::Count(
+                self.data_plane.count(&space, &checks)?,
+            )),
             ClientRequest::DeleteGroup { space, checks } => Ok(ClientResponse::Deleted(
                 self.data_plane.delete_matching(&space, &checks)?,
             )),
@@ -118,6 +122,56 @@ impl HyperdexClientService for ClusterRuntime {
 
 pub fn bootstrap_runtime() -> ClusterRuntime {
     ClusterRuntime::single_node(ClusterConfig::default())
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ProcessMode {
+    Coordinator {
+        data_dir: String,
+        listen_host: String,
+        listen_port: u16,
+    },
+    Daemon {
+        threads: usize,
+        data_dir: String,
+        listen_host: String,
+        listen_port: u16,
+        coordinator_host: String,
+        coordinator_port: u16,
+    },
+}
+
+pub fn parse_process_mode(args: &[String]) -> Result<ProcessMode> {
+    let Some(mode) = args.first() else {
+        return Err(anyhow!("expected `coordinator` or `daemon` subcommand"));
+    };
+
+    match mode.as_str() {
+        "coordinator" => Ok(ProcessMode::Coordinator {
+            data_dir: required_option(args, "--data")?,
+            listen_host: required_option(args, "--listen")?,
+            listen_port: required_option(args, "--listen-port")?.parse()?,
+        }),
+        "daemon" => Ok(ProcessMode::Daemon {
+            threads: required_option(args, "--threads")?.parse()?,
+            data_dir: required_option(args, "--data")?,
+            listen_host: required_option(args, "--listen")?,
+            listen_port: required_option(args, "--listen-port")?.parse()?,
+            coordinator_host: required_option(args, "--coordinator")?,
+            coordinator_port: required_option(args, "--coordinator-port")?.parse()?,
+        }),
+        other => Err(anyhow!("unknown subcommand `{other}`")),
+    }
+}
+
+fn required_option(args: &[String], name: &str) -> Result<String> {
+    for arg in args {
+        if let Some(value) = arg.strip_prefix(&format!("{name}=")) {
+            return Ok(value.to_owned());
+        }
+    }
+
+    Err(anyhow!("missing required option `{name}=...`"))
 }
 
 #[cfg(test)]
@@ -238,5 +292,51 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(deleted, ClientResponse::Deleted(1));
+    }
+
+    #[test]
+    fn parse_coordinator_cli() {
+        let args = vec![
+            "coordinator".to_owned(),
+            "--foreground".to_owned(),
+            "--data=/tmp/coordinator".to_owned(),
+            "--listen=127.0.0.1".to_owned(),
+            "--listen-port=1982".to_owned(),
+        ];
+
+        assert_eq!(
+            parse_process_mode(&args).unwrap(),
+            ProcessMode::Coordinator {
+                data_dir: "/tmp/coordinator".to_owned(),
+                listen_host: "127.0.0.1".to_owned(),
+                listen_port: 1982,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_daemon_cli() {
+        let args = vec![
+            "daemon".to_owned(),
+            "--foreground".to_owned(),
+            "--threads=1".to_owned(),
+            "--data=/tmp/daemon".to_owned(),
+            "--listen=127.0.0.1".to_owned(),
+            "--listen-port=2012".to_owned(),
+            "--coordinator=127.0.0.1".to_owned(),
+            "--coordinator-port=1982".to_owned(),
+        ];
+
+        assert_eq!(
+            parse_process_mode(&args).unwrap(),
+            ProcessMode::Daemon {
+                threads: 1,
+                data_dir: "/tmp/daemon".to_owned(),
+                listen_host: "127.0.0.1".to_owned(),
+                listen_port: 2012,
+                coordinator_host: "127.0.0.1".to_owned(),
+                coordinator_port: 1982,
+            }
+        );
     }
 }

@@ -106,16 +106,20 @@ stable traits from the start.
   protocol requirement are all recorded and validated in the main branch.
 - Done: dedicated `legacy-protocol` crate now owns the legacy HyperDex public
   message numbers, return codes, and request/response header layouts.
+- Done: the `server` crate now exposes HyperDex-shaped `coordinator` and
+  `daemon` process parsing so the binary can grow toward a real externally
+  launchable cluster.
 - Running: worktree lanes for gRPC frontend, hyperspace placement fidelity,
   OpenRaft scaffolding, and OmniPaxos scaffolding.
-- Next: turn the legacy protocol definitions into a real external listener that
-  `hyhac` can target.
+- Next: turn the legacy protocol definitions plus the new process modes into a
+  real external listener that `hyhac` can target.
 
 ## Next Bounded Iteration
 
 Build the first real legacy frontend skeleton on top of the new
-`legacy-protocol` crate so the main branch stops at definitions only and starts
-growing a callable external boundary.
+`legacy-protocol` crate and wire it into the `daemon` process mode so the main
+branch stops at definitions only and starts growing a callable external
+boundary.
 
 ## Loop Ledger
 
@@ -126,3 +130,4 @@ growing a callable external boundary.
 | 3 | The main branch needs a concrete admin/client runtime before network compatibility can be attempted. | Add HyperDex DSL parsing, implement `ClusterRuntime` over the trait-based control/data plane, and test admin create/list plus client put/get/count/delete-group behavior. | Commit `f2db73b` exists, `cargo test -p server` passes, and `cargo test --workspace` still passes with the runtime adapter in place. | Confirmed. | advance | Build the external startup and network compatibility path that `hyhac` can actually drive. |
 | 4 | The right boundary is dual public protocols, not replacement client libraries. | Record the user decision that the cluster must expose both a bit-for-bit HyperDex-compatible public protocol and a modern gRPC protocol, and reflect that split in configuration and campaign docs. | `ClusterConfig` now distinguishes public protocols from internode transport, and the docs name the legacy-plus-gRPC frontend requirement explicitly. | Confirmed. | advance | Start implementing the legacy HyperDex-compatible frontend as the first real external boundary. |
 | 5 | The legacy frontend needs a dedicated code home before sockets or server loops are added. | Add the `legacy-protocol` crate and replace its stub with the HyperDex public message numbers, return codes, and request/response header definitions plus round-trip tests. | `cargo test -p cluster-config -p legacy-protocol` passes, `cargo test --workspace` passes, and the main branch now contains a dedicated legacy protocol crate. | Confirmed. | advance | Build the first callable legacy frontend skeleton on top of those protocol definitions. |
+| 6 | A HyperDex-shaped process interface should exist before the external listener is implemented so cluster launch semantics are stable while the network surface grows. | Add `coordinator` and `daemon` process parsing to the `server` crate, test both command forms, and revalidate the workspace. | `cargo test -p server` passes with the new CLI tests, and `cargo test --workspace` still passes after the `server` binary starts parsing process modes. | Confirmed. | advance | Implement the first legacy frontend listener and hang it off the `daemon` mode instead of leaving the protocol crate as definitions only. |
