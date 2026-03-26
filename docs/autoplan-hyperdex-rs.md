@@ -96,12 +96,13 @@ storage pluggable behind stable traits from the start.
 
 ## Next Bounded Iteration
 
-Commit the workspace baseline and create dedicated worktrees for alternative
-consensus and transport implementations so parallel implementation can proceed
-without conflicting edits.
+Implement the first real admin and client service surface on top of the current
+control plane and data plane, starting with space-definition parsing and the
+operations that `hyhac` calls most often.
 
 ## Loop Ledger
 
 | Iteration | Hypothesis | Action | Evidence | Verdict | Disposition | Next Move |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | A workspace-first bootstrap will unblock parallel implementation without forcing early subsystem choices. | Create the new repository, write the AutoPlan, pin the `hyhac` compatibility target, and initialize the crate graph. | Workspace root and campaign files exist, the crate graph is in place, and `cargo test --workspace` passes. | Confirmed. | advance | Commit the baseline and use it to seed alternative implementation worktrees. |
+| 2 | A committed baseline plus dedicated worktrees will keep alternative consensus, transport, and placement work from colliding with the main compatibility path. | Commit the workspace, create the `consensus-openraft`, `consensus-omnipaxos`, `transport-grpc-impl`, and `placement-alt` worktrees, then add schema and paper notes that clarify the MVP boundary. | Commit `cdc633b` exists, `git worktree list --porcelain` shows four new worktrees, and the workspace still passes `cargo test --workspace`. | Confirmed. | advance | Land the first real admin and client service implementations in the main line. |

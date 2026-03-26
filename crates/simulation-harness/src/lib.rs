@@ -5,7 +5,7 @@ mod tests {
     use bytes::Bytes;
     use cluster_config::ClusterConfig;
     use control_plane::{Catalog, InMemoryCatalog};
-    use data_model::{Attribute, Mutation, Space, Subspace, Value};
+    use data_model::{Attribute, Mutation, Space, SpaceOptions, Subspace, Value};
     use data_plane::DataPlane;
     use engine_memory::MemoryEngine;
     use placement_core::HyperSpacePlacement;
@@ -26,6 +26,7 @@ mod tests {
                 subspaces: vec![Subspace {
                     dimensions: vec!["id".to_owned()],
                 }],
+                options: SpaceOptions::default(),
             })
             .unwrap();
 
