@@ -135,16 +135,23 @@ stable traits from the start.
   and funcall-style mutation decoding for conditional puts plus scalar numeric
   atomic operations, and the memory engine no longer creates phantom records on
   failed conditional writes.
+- Done: the legacy frontend now handles `REQ_SEARCH_START` and `REQ_SEARCH_NEXT`
+  over the configured runtime, with cursor-backed result streaming and focused
+  compatibility tests.
+- Done: the deterministic test harness now includes a `turmoil` session test
+  plus property-based model checking for the memory engine, instead of only a
+  basic in-process round-trip.
 - Running: worktree lanes for gRPC frontend, hyperspace placement fidelity,
   OpenRaft scaffolding, and OmniPaxos scaffolding.
-- Next: integrate the remaining completed worktree results back into `main`
-  without letting the compatibility path fragment.
+- Next: build the first coordinator/admin compatibility path that a live
+  `hyhac` run needs, instead of widening the client request surface further
+  first.
 
 ## Next Bounded Iteration
 
-Implement the legacy search request flow that `hyhac` uses, starting with
-`REQ_SEARCH_START` plus result streaming that can sit on top of the current
-runtime search results without inventing a different public contract.
+Build the first coordinator/admin compatibility path needed for a live `hyhac`
+run, starting with a minimal config view plus `space_add` and `space_rm`
+semantics that can later sit behind the HyperDex admin public contract.
 
 ## Loop Ledger
 
@@ -167,3 +174,5 @@ runtime search results without inventing a different public contract.
 | 15 | A key-based read path is the next useful compatibility increment because it exercises request decoding, runtime lookup, and typed response encoding without yet committing to the write-path layout. | Extend `legacy-protocol` with `REQ_GET` request and response bodies, route `REQ_GET` through `ClusterRuntime`, share legacy request handling in `server`, and revalidate the targeted crates plus the full workspace. | `cargo test -p legacy-protocol -p legacy-frontend -p server` passes and `cargo test --workspace` passes after the new `REQ_GET` handling lands. | Confirmed. | advance | Implement the first legacy write path next, but follow HyperDex's real `REQ_ATOMIC` message instead of inventing a separate put request. |
 | 16 | The first legacy write path should follow HyperDex's real public protocol, which means `REQ_ATOMIC` and `RESP_ATOMIC` with mutation flags, not a made-up put message. | Extend `legacy-protocol` with simplified `REQ_ATOMIC` request and response bodies, route legacy atomic writes and deletes through `ClusterRuntime`, honor the basic fail-if-found and fail-if-not-found flags, add focused protocol/frontend/server tests, and revalidate the targeted crates plus the full workspace. | `cargo test -p legacy-protocol -p legacy-frontend -p server` passes and `cargo test --workspace` passes after the simplified `REQ_ATOMIC` path lands. | Confirmed. | advance | Tighten `REQ_ATOMIC` toward HyperDex's `key_change` layout with checks and funcall-style mutations, starting from conditional put and scalar atomic operations. |
 | 17 | The simplified atomic path will only satisfy `hyhac` if it can express conditional puts and at least the scalar numeric atomic operations that the suite uses heavily. | Extend `legacy-protocol` with atomic checks and funcall-style mutation names, route them through `server` as conditional puts and scalar numeric mutations, fix the memory engine so failed conditional writes do not create phantom records, add focused protocol/frontend/server/storage tests, and revalidate the targeted crates plus the full workspace. | `cargo test -p legacy-protocol -p legacy-frontend -p server -p engine-memory` passes and `cargo test --workspace` passes after the atomic tightening step lands. | Confirmed. | advance | Implement the legacy search request flow next, starting with `REQ_SEARCH_START` and streamed result responses over the existing runtime search results. |
+| 18 | The next missing client-facing behavior for the active compatibility path is HyperDex-style search start and cursor-driven result delivery, because `hyhac` exercises search heavily and the runtime already has enough search semantics to back it. | Extend `legacy-protocol` with search start, search continue, search item, and search done bodies; route `REQ_SEARCH_START` and `REQ_SEARCH_NEXT` through `ClusterRuntime` with stored cursors; add focused protocol, frontend, and server tests; and revalidate the workspace. | `cargo test -p legacy-protocol -p legacy-frontend -p server` passes in the search worktree, and `cargo test --workspace` passes there and again on `main` after the cherry-pick as commit `837e412`. | Confirmed. | advance | Strengthen deterministic confidence next so the growing compatibility layer has model-backed regression protection instead of only example tests. |
+| 19 | The public compatibility layer is growing quickly enough that a stronger deterministic test harness will pay off now by checking behavior against a simple model before the live `hyhac` run starts exposing harder semantic gaps. | Expand `simulation-harness` with a deterministic `turmoil` data-plane session test and a property-based model comparison for the memory engine, then revalidate the full workspace and integrate the result on `main`. | `cargo test -p simulation-harness` passes in the simulation worktree, and `cargo test --workspace` passes there and again on `main` after the cherry-pick as commit `013df66`. | Confirmed. | advance | Move to the coordinator/admin compatibility path next, starting from config view and space lifecycle operations required to boot a live `hyhac` run. |
