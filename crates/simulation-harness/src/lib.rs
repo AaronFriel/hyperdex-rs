@@ -30,7 +30,7 @@ mod tests {
             })
             .unwrap();
 
-        let data_plane = DataPlane::new(catalog, storage, Arc::new(HyperSpacePlacement));
+        let data_plane = DataPlane::new(catalog, storage, Arc::new(HyperSpacePlacement::default()));
         data_plane
             .put(
                 "profiles",

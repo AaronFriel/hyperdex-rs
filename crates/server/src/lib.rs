@@ -38,7 +38,7 @@ impl ClusterRuntime {
             Arc::new(InMemoryCatalog::new(config.nodes.clone(), config.replicas));
         let storage: Arc<dyn StorageEngine> = Arc::new(MemoryEngine::new());
 
-        Self::new(catalog, storage, Arc::new(HyperSpacePlacement))
+        Self::new(catalog, storage, Arc::new(HyperSpacePlacement::default()))
     }
 
     fn create_space(&self, space: Space) -> Result<()> {
