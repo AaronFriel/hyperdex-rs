@@ -28,6 +28,7 @@ legacy-protocol = { path = "../legacy-protocol" }
 placement-core = { path = "../placement-core" }
 storage-core = { path = "../storage-core" }
 tempfile.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 transport-core = { path = "../transport-core" }
 tracing.workspace = true

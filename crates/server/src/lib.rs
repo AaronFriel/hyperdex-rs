@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
@@ -27,9 +28,13 @@ use legacy_protocol::{
     LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND, LEGACY_ATOMIC_FLAG_WRITE,
 };
 use placement_core::{HyperSpacePlacement, PlacementStrategy, RendezvousPlacement};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 use storage_core::{StorageEngine, WriteResult};
 use tempfile::TempDir;
 use transport_core::InProcessTransport;
+
+pub const COORDINATOR_CONTROL_HEADER_SIZE: usize = 2 + 4;
 
 pub struct ClusterRuntime {
     cluster_config: ClusterConfig,
@@ -75,6 +80,10 @@ pub enum StorageRuntime {
 pub enum TransportRuntime {
     InProcess,
     Grpc,
+}
+
+pub struct CoordinatorControlService {
+    listener: TcpListener,
 }
 
 impl ClusterRuntime {
@@ -218,6 +227,41 @@ impl ClusterRuntime {
             .expect("coordinator state poisoned");
         coordinator_state.version += 1;
         coordinator_state.stable_through = coordinator_state.version;
+    }
+}
+
+impl CoordinatorControlService {
+    pub async fn bind(address: SocketAddr) -> Result<Self> {
+        Ok(Self {
+            listener: TcpListener::bind(address).await?,
+        })
+    }
+
+    pub fn local_addr(&self) -> Result<SocketAddr> {
+        Ok(self.listener.local_addr()?)
+    }
+
+    pub async fn serve_once_with<H, F>(&self, handler: H) -> Result<()>
+    where
+        H: Fn(String, CoordinatorAdminRequest) -> F,
+        F: std::future::Future<Output = Result<[u8; 2]>>,
+    {
+        let (mut stream, _) = self.listener.accept().await?;
+        let (method, request) = read_coordinator_control_request(&mut stream).await?;
+        let response = handler(method, request).await?;
+        stream.write_all(&response).await?;
+        stream.flush().await?;
+        Ok(())
+    }
+
+    pub async fn serve_forever_with<H, F>(&self, handler: H) -> Result<()>
+    where
+        H: Fn(String, CoordinatorAdminRequest) -> F,
+        F: std::future::Future<Output = Result<[u8; 2]>>,
+    {
+        loop {
+            self.serve_once_with(&handler).await?;
+        }
     }
 }
 
@@ -736,6 +780,55 @@ pub async fn handle_coordinator_admin_method(
     };
 
     Ok(status.encode())
+}
+
+async fn read_coordinator_control_request(
+    stream: &mut tokio::net::TcpStream,
+) -> Result<(String, CoordinatorAdminRequest)> {
+    let mut header = [0u8; COORDINATOR_CONTROL_HEADER_SIZE];
+    stream.read_exact(&mut header).await?;
+
+    let method_len = u16::from_be_bytes([header[0], header[1]]) as usize;
+    let body_len = u32::from_be_bytes([header[2], header[3], header[4], header[5]]) as usize;
+    let mut method = vec![0u8; method_len];
+    let mut body = vec![0u8; body_len];
+    stream.read_exact(&mut method).await?;
+    stream.read_exact(&mut body).await?;
+
+    let method = String::from_utf8(method)?;
+    let request = serde_json::from_slice(&body)?;
+    Ok((method, request))
+}
+
+pub fn encode_coordinator_control_request(
+    method: &str,
+    request: &CoordinatorAdminRequest,
+) -> Result<Vec<u8>> {
+    let method_bytes = method.as_bytes();
+    let body = serde_json::to_vec(request)?;
+    let mut bytes =
+        Vec::with_capacity(COORDINATOR_CONTROL_HEADER_SIZE + method_bytes.len() + body.len());
+    bytes.extend_from_slice(&(method_bytes.len() as u16).to_be_bytes());
+    bytes.extend_from_slice(&(body.len() as u32).to_be_bytes());
+    bytes.extend_from_slice(method_bytes);
+    bytes.extend_from_slice(&body);
+    Ok(bytes)
+}
+
+pub async fn request_coordinator_control_once(
+    address: SocketAddr,
+    method: &str,
+    request: &CoordinatorAdminRequest,
+) -> Result<[u8; 2]> {
+    let mut stream = tokio::net::TcpStream::connect(address).await?;
+    stream
+        .write_all(&encode_coordinator_control_request(method, request)?)
+        .await?;
+    stream.flush().await?;
+
+    let mut response = [0u8; 2];
+    stream.read_exact(&mut response).await?;
+    Ok(response)
 }
 
 pub async fn handle_legacy_admin_request(
@@ -1363,6 +1456,96 @@ mod tests {
         .unwrap();
         assert_eq!(
             CoordinatorReturnCode::decode(&malformed).unwrap(),
+            CoordinatorReturnCode::Malformed
+        );
+    }
+
+    #[tokio::test]
+    async fn coordinator_control_service_routes_space_add_over_tcp() {
+        let runtime = Arc::new(bootstrap_runtime());
+        let service = CoordinatorControlService::bind("127.0.0.1:0".parse().unwrap())
+            .await
+            .unwrap();
+        let address = service.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            service
+                .serve_once_with(move |method, request| {
+                    let runtime = runtime.clone();
+                    async move {
+                        handle_coordinator_admin_method(runtime.as_ref(), &method, request).await
+                    }
+                })
+                .await
+                .unwrap()
+        });
+
+        let response = request_coordinator_control_once(
+            address,
+            "space_add",
+            &CoordinatorAdminRequest::SpaceAdd(
+                parse_hyperdex_space(
+                    "space profiles\n\
+                     key username\n\
+                     attributes\n\
+                        string first,\n\
+                        int profile_views\n\
+                     tolerate 0 failures\n",
+                )
+                .unwrap(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        server.await.unwrap();
+        assert_eq!(
+            CoordinatorReturnCode::decode(&response).unwrap(),
+            CoordinatorReturnCode::Success
+        );
+    }
+
+    #[tokio::test]
+    async fn coordinator_control_service_returns_malformed_for_method_request_mismatch() {
+        let runtime = Arc::new(bootstrap_runtime());
+        let service = CoordinatorControlService::bind("127.0.0.1:0".parse().unwrap())
+            .await
+            .unwrap();
+        let address = service.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            service
+                .serve_once_with(move |method, request| {
+                    let runtime = runtime.clone();
+                    async move {
+                        handle_coordinator_admin_method(runtime.as_ref(), &method, request).await
+                    }
+                })
+                .await
+                .unwrap()
+        });
+
+        let response = request_coordinator_control_once(
+            address,
+            "space_rm",
+            &CoordinatorAdminRequest::SpaceAdd(
+                parse_hyperdex_space(
+                    "space profiles\n\
+                     key username\n\
+                     attributes\n\
+                        string first,\n\
+                        int profile_views\n\
+                     tolerate 0 failures\n",
+                )
+                .unwrap(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        server.await.unwrap();
+        assert_eq!(
+            CoordinatorReturnCode::decode(&response).unwrap(),
             CoordinatorReturnCode::Malformed
         );
     }

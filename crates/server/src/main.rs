@@ -4,8 +4,8 @@ use std::sync::Arc;
 use anyhow::Result;
 use legacy_frontend::LegacyFrontend;
 use server::{
-    bootstrap_runtime, daemon_cluster_config, handle_legacy_request, parse_process_mode,
-    ProcessMode,
+    daemon_cluster_config, handle_coordinator_admin_method, handle_legacy_request,
+    parse_process_mode, ClusterRuntime, CoordinatorControlService, ProcessMode,
 };
 use tracing::info;
 
@@ -23,11 +23,34 @@ async fn main() -> Result<()> {
             listen_host,
             listen_port,
         } => {
-            let _runtime = bootstrap_runtime();
+            let runtime = Arc::new(ClusterRuntime::single_node_with_data_dir(
+                cluster_config::ClusterConfig::default(),
+                Some(Path::new(&data_dir)),
+            )?);
             info!(
                 data_dir,
                 listen_host, listen_port, "hyperdex-rs coordinator bootstrapped"
             );
+
+            let control_service = CoordinatorControlService::bind(
+                format!("{listen_host}:{listen_port}")
+                    .parse()
+                    .expect("validated socket address"),
+            )
+            .await?;
+
+            info!(
+                address = %control_service.local_addr()?,
+                "coordinator control service listening"
+            );
+
+            tokio::select! {
+                result = control_service.serve_forever_with(move |method, request| {
+                    let runtime = runtime.clone();
+                    async move { handle_coordinator_admin_method(runtime.as_ref(), &method, request).await }
+                }) => result?,
+                _ = tokio::signal::ctrl_c() => {}
+            }
         }
         ProcessMode::Daemon {
             threads,
