@@ -1,0 +1,15 @@
+[package]
+name = "data-plane"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+bytes.workspace = true
+control-plane = { path = "../control-plane" }
+data-model = { path = "../data-model" }
+placement-core = { path = "../placement-core" }
+storage-core = { path = "../storage-core" }

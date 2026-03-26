@@ -1,0 +1,15 @@
+[package]
+name = "transport-grpc"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+prost.workspace = true
+tonic.workspace = true
+transport-core = { path = "../transport-core" }

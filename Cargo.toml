@@ -1,0 +1,49 @@
+[workspace]
+members = [
+    "crates/cluster-config",
+    "crates/consensus-core",
+    "crates/control-plane",
+    "crates/data-model",
+    "crates/data-plane",
+    "crates/engine-memory",
+    "crates/engine-rocks",
+    "crates/hyperdex-client-protocol",
+    "crates/hyperdex-admin-protocol",
+    "crates/placement-core",
+    "crates/server",
+    "crates/simulation-harness",
+    "crates/storage-core",
+    "crates/transport-core",
+    "crates/transport-grpc",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+version = "0.1.0"
+authors = ["Aaron Friel"]
+repository = "https://example.invalid/hyperdex-rs"
+
+[workspace.dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+bytes = { version = "1.7", features = ["serde"] }
+futures = "0.3"
+ordered-float = { version = "4.5", features = ["serde"] }
+parking_lot = "0.12"
+prost = "0.13"
+prost-types = "0.13"
+proptest = "1.5"
+rand = "0.8"
+rocksdb = "0.22"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tokio = { version = "1.40", features = ["full"] }
+tokio-stream = "0.1"
+tonic = { version = "0.12", features = ["transport"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+turmoil = "0.6"
+uuid = { version = "1.10", features = ["serde", "v4"] }

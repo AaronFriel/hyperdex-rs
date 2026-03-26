@@ -1,0 +1,14 @@
+[package]
+name = "control-plane"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+cluster-config = { path = "../cluster-config" }
+data-model = { path = "../data-model" }
+parking_lot.workspace = true
+placement-core = { path = "../placement-core" }

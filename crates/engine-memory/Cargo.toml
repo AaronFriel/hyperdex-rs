@@ -1,0 +1,14 @@
+[package]
+name = "engine-memory"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+bytes.workspace = true
+data-model = { path = "../data-model" }
+parking_lot.workspace = true
+storage-core = { path = "../storage-core" }

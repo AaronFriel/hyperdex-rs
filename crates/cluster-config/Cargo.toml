@@ -1,0 +1,11 @@
+[package]
+name = "cluster-config"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+data-model = { path = "../data-model" }
+serde.workspace = true

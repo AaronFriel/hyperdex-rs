@@ -1,0 +1,13 @@
+[package]
+name = "data-model"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+bytes.workspace = true
+ordered-float.workspace = true
+serde.workspace = true
+thiserror.workspace = true
