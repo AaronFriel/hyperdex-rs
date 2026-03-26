@@ -131,6 +131,10 @@ stable traits from the start.
 - Done: the legacy frontend now handles real `REQ_GET` and a simplified
   `REQ_ATOMIC` path over the configured runtime, covering key-based reads plus
   basic write and delete flows.
+- Done: the simplified legacy `REQ_ATOMIC` path now carries attribute checks
+  and funcall-style mutation decoding for conditional puts plus scalar numeric
+  atomic operations, and the memory engine no longer creates phantom records on
+  failed conditional writes.
 - Running: worktree lanes for gRPC frontend, hyperspace placement fidelity,
   OpenRaft scaffolding, and OmniPaxos scaffolding.
 - Next: integrate the remaining completed worktree results back into `main`
@@ -138,9 +142,9 @@ stable traits from the start.
 
 ## Next Bounded Iteration
 
-Tighten `REQ_ATOMIC` toward HyperDex's real `key_change` shape by adding
-attribute checks and funcall-style mutation decoding for the subset `hyhac`
-needs first, starting with conditional put plus scalar atomic operations.
+Implement the legacy search request flow that `hyhac` uses, starting with
+`REQ_SEARCH_START` plus result streaming that can sit on top of the current
+runtime search results without inventing a different public contract.
 
 ## Loop Ledger
 
@@ -162,3 +166,4 @@ needs first, starting with conditional put plus scalar atomic operations.
 | 14 | Backend selection is not fully real until daemon startup uses it and the legacy listener serves at least one actual request through the configured runtime. | Build the daemon runtime from the parsed backend flags, keep RocksDB pointed at the daemon data directory, add framed legacy request/response helpers, implement `REQ_COUNT` over the configured runtime, and revalidate the targeted crates plus the full workspace. | `cargo test -p legacy-protocol -p legacy-frontend -p server` passes and `cargo test --workspace` passes after the daemon startup and `REQ_COUNT` handling changes. | Confirmed. | advance | Extend the legacy-compatible public surface with another real operation such as `REQ_GET` or a write path next. |
 | 15 | A key-based read path is the next useful compatibility increment because it exercises request decoding, runtime lookup, and typed response encoding without yet committing to the write-path layout. | Extend `legacy-protocol` with `REQ_GET` request and response bodies, route `REQ_GET` through `ClusterRuntime`, share legacy request handling in `server`, and revalidate the targeted crates plus the full workspace. | `cargo test -p legacy-protocol -p legacy-frontend -p server` passes and `cargo test --workspace` passes after the new `REQ_GET` handling lands. | Confirmed. | advance | Implement the first legacy write path next, but follow HyperDex's real `REQ_ATOMIC` message instead of inventing a separate put request. |
 | 16 | The first legacy write path should follow HyperDex's real public protocol, which means `REQ_ATOMIC` and `RESP_ATOMIC` with mutation flags, not a made-up put message. | Extend `legacy-protocol` with simplified `REQ_ATOMIC` request and response bodies, route legacy atomic writes and deletes through `ClusterRuntime`, honor the basic fail-if-found and fail-if-not-found flags, add focused protocol/frontend/server tests, and revalidate the targeted crates plus the full workspace. | `cargo test -p legacy-protocol -p legacy-frontend -p server` passes and `cargo test --workspace` passes after the simplified `REQ_ATOMIC` path lands. | Confirmed. | advance | Tighten `REQ_ATOMIC` toward HyperDex's `key_change` layout with checks and funcall-style mutations, starting from conditional put and scalar atomic operations. |
+| 17 | The simplified atomic path will only satisfy `hyhac` if it can express conditional puts and at least the scalar numeric atomic operations that the suite uses heavily. | Extend `legacy-protocol` with atomic checks and funcall-style mutation names, route them through `server` as conditional puts and scalar numeric mutations, fix the memory engine so failed conditional writes do not create phantom records, add focused protocol/frontend/server/storage tests, and revalidate the targeted crates plus the full workspace. | `cargo test -p legacy-protocol -p legacy-frontend -p server -p engine-memory` passes and `cargo test --workspace` passes after the atomic tightening step lands. | Confirmed. | advance | Implement the legacy search request flow next, starting with `REQ_SEARCH_START` and streamed result responses over the existing runtime search results. |

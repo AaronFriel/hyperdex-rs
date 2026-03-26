@@ -6,7 +6,9 @@ use cluster_config::{
     ClusterConfig, ConsensusBackend, PlacementBackend, StorageBackend, TransportBackend,
 };
 use control_plane::{Catalog, InMemoryCatalog};
-use data_model::{parse_hyperdex_space, Attribute, Mutation, Space, Value};
+use data_model::{
+    parse_hyperdex_space, Attribute, Check, Mutation, NumericOp, Predicate, Space, Value,
+};
 use data_plane::DataPlane;
 use engine_memory::MemoryEngine;
 use engine_rocks::RocksEngine;
@@ -14,9 +16,10 @@ use hyperdex_admin_protocol::{AdminRequest, AdminResponse, HyperdexAdminService}
 use hyperdex_client_protocol::{ClientRequest, ClientResponse, HyperdexClientService};
 use legacy_protocol::{
     config_mismatch_response, AtomicRequest, AtomicResponse, CountRequest, CountResponse,
-    GetAttribute, GetRequest, GetResponse, GetValue, LegacyMessageType, LegacyReturnCode,
-    RequestHeader, ResponseHeader, LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND,
-    LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND, LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES,
+    GetAttribute, GetRequest, GetResponse, GetValue, LegacyCheck, LegacyFuncall,
+    LegacyFuncallName, LegacyMessageType, LegacyPredicate, LegacyReturnCode, RequestHeader,
+    ResponseHeader, LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND, LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND,
+    LEGACY_ATOMIC_FLAG_WRITE,
 };
 use placement_core::{HyperSpacePlacement, PlacementStrategy, RendezvousPlacement};
 use storage_core::{StorageEngine, WriteResult};
@@ -270,23 +273,41 @@ pub async fn handle_legacy_request(
             let space = runtime.only_space_name()?;
             let key = request.key.clone();
             let exists = legacy_record_exists(runtime, &space, &key).await?;
+            let checks = legacy_checks_from_request(request.checks);
 
             let status = if request.flags & LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND != 0 && exists {
                 LegacyReturnCode::CompareFailed
             } else if request.flags & LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND != 0 && !exists {
                 LegacyReturnCode::NotFound
-            } else if request.flags & LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES != 0 {
-                let response = HyperdexClientService::handle(
-                    runtime,
-                    ClientRequest::Put {
-                        space,
-                        key: request.key.into(),
-                        mutations: legacy_mutations_from_attributes(request.attributes),
-                    },
-                )
-                .await?;
+            } else if request.flags & LEGACY_ATOMIC_FLAG_WRITE != 0 {
+                let mutations = legacy_mutations_from_funcalls(request.funcalls)?;
+                let response = if checks.is_empty() {
+                    HyperdexClientService::handle(
+                        runtime,
+                        ClientRequest::Put {
+                            space,
+                            key: request.key.into(),
+                            mutations,
+                        },
+                    )
+                    .await?
+                } else {
+                    HyperdexClientService::handle(
+                        runtime,
+                        ClientRequest::ConditionalPut {
+                            space,
+                            key: request.key.into(),
+                            checks,
+                            mutations,
+                        },
+                    )
+                    .await?
+                };
                 legacy_atomic_status(response)?
             } else {
+                if !checks.is_empty() || !request.funcalls.is_empty() {
+                    anyhow::bail!("legacy delete path does not yet support checks or funcalls");
+                }
                 let response = HyperdexClientService::handle(
                     runtime,
                     ClientRequest::Delete {
@@ -402,14 +423,46 @@ fn legacy_atomic_status(response: ClientResponse) -> Result<LegacyReturnCode> {
     }
 }
 
-fn legacy_mutations_from_attributes(attributes: Vec<GetAttribute>) -> Vec<Mutation> {
-    attributes
+fn legacy_checks_from_request(checks: Vec<LegacyCheck>) -> Vec<Check> {
+    checks
         .into_iter()
-        .map(|attribute| {
-            Mutation::Set(Attribute {
-                name: attribute.name,
-                value: model_value_from_legacy(attribute.value),
-            })
+        .map(|check| Check {
+            attribute: check.attribute,
+            predicate: model_predicate_from_legacy(check.predicate),
+            value: model_value_from_legacy(check.value),
+        })
+        .collect()
+}
+
+fn legacy_mutations_from_funcalls(funcalls: Vec<LegacyFuncall>) -> Result<Vec<Mutation>> {
+    funcalls
+        .into_iter()
+        .map(|funcall| match funcall.name {
+            LegacyFuncallName::Set => Ok(Mutation::Set(Attribute {
+                name: funcall.attribute,
+                value: model_value_from_legacy(funcall.arg1),
+            })),
+            LegacyFuncallName::NumAdd
+            | LegacyFuncallName::NumSub
+            | LegacyFuncallName::NumMul
+            | LegacyFuncallName::NumDiv
+            | LegacyFuncallName::NumMod
+            | LegacyFuncallName::NumAnd
+            | LegacyFuncallName::NumOr
+            | LegacyFuncallName::NumXor => {
+                let GetValue::Int(operand) = funcall.arg1 else {
+                    anyhow::bail!("numeric legacy funcalls require integer operands");
+                };
+                if funcall.arg2.is_some() {
+                    anyhow::bail!("scalar numeric legacy funcalls do not use arg2");
+                }
+                Ok(Mutation::Numeric {
+                    attribute: funcall.attribute,
+                    op: model_numeric_op_from_legacy(funcall.name),
+                    operand,
+                })
+            }
+            other => anyhow::bail!("legacy funcall {other:?} is not implemented yet"),
         })
         .collect()
 }
@@ -435,6 +488,30 @@ fn model_value_from_legacy(value: GetValue) -> Value {
         GetValue::Int(v) => Value::Int(v),
         GetValue::Bytes(v) => Value::Bytes(v.into()),
         GetValue::String(v) => Value::String(v),
+    }
+}
+
+fn model_predicate_from_legacy(predicate: LegacyPredicate) -> Predicate {
+    match predicate {
+        LegacyPredicate::Equal => Predicate::Equal,
+        LegacyPredicate::LessThan => Predicate::LessThan,
+        LegacyPredicate::LessThanOrEqual => Predicate::LessThanOrEqual,
+        LegacyPredicate::GreaterThanOrEqual => Predicate::GreaterThanOrEqual,
+        LegacyPredicate::GreaterThan => Predicate::GreaterThan,
+    }
+}
+
+fn model_numeric_op_from_legacy(name: LegacyFuncallName) -> NumericOp {
+    match name {
+        LegacyFuncallName::NumAdd => NumericOp::Add,
+        LegacyFuncallName::NumSub => NumericOp::Sub,
+        LegacyFuncallName::NumMul => NumericOp::Mul,
+        LegacyFuncallName::NumDiv => NumericOp::Div,
+        LegacyFuncallName::NumMod => NumericOp::Mod,
+        LegacyFuncallName::NumAnd => NumericOp::And,
+        LegacyFuncallName::NumOr => NumericOp::Or,
+        LegacyFuncallName::NumXor => NumericOp::Xor,
+        other => unreachable!("not a scalar numeric funcall: {other:?}"),
     }
 }
 
@@ -646,8 +723,9 @@ mod tests {
     use hyperdex_client_protocol::HyperdexClientService;
     use legacy_protocol::{
         AtomicRequest, AtomicResponse, CountRequest, CountResponse, GetRequest, GetResponse,
-        GetAttribute, GetValue, LegacyMessageType, LegacyReturnCode, RequestHeader,
-        LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND, LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES,
+        GetValue, LegacyCheck, LegacyFuncall, LegacyFuncallName, LegacyMessageType,
+        LegacyPredicate, LegacyReturnCode, RequestHeader, LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND,
+        LEGACY_ATOMIC_FLAG_WRITE,
     };
 
     #[test]
@@ -998,16 +1076,21 @@ mod tests {
                 nonce: 19,
             },
             &AtomicRequest {
-                flags: LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES,
+                flags: LEGACY_ATOMIC_FLAG_WRITE,
                 key: b"ada".to_vec(),
-                attributes: vec![
-                    GetAttribute {
-                        name: "first".to_owned(),
-                        value: GetValue::String("Ada".to_owned()),
+                checks: Vec::new(),
+                funcalls: vec![
+                    LegacyFuncall {
+                        attribute: "first".to_owned(),
+                        name: LegacyFuncallName::Set,
+                        arg1: GetValue::String("Ada".to_owned()),
+                        arg2: None,
                     },
-                    GetAttribute {
-                        name: "profile_views".to_owned(),
-                        value: GetValue::Int(5),
+                    LegacyFuncall {
+                        attribute: "profile_views".to_owned(),
+                        name: LegacyFuncallName::Set,
+                        arg1: GetValue::Int(5),
+                        arg2: None,
                     },
                 ],
             }
@@ -1084,11 +1167,14 @@ mod tests {
                 nonce: 19,
             },
             &AtomicRequest {
-                flags: LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES | LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND,
+                flags: LEGACY_ATOMIC_FLAG_WRITE | LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND,
                 key: b"ada".to_vec(),
-                attributes: vec![GetAttribute {
-                    name: "first".to_owned(),
-                    value: GetValue::String("Grace".to_owned()),
+                checks: Vec::new(),
+                funcalls: vec![LegacyFuncall {
+                    attribute: "first".to_owned(),
+                    name: LegacyFuncallName::Set,
+                    arg1: GetValue::String("Grace".to_owned()),
+                    arg2: None,
                 }],
             }
             .encode_body(),
@@ -1100,6 +1186,176 @@ mod tests {
             AtomicResponse::decode_body(&body).unwrap().status,
             LegacyReturnCode::CompareFailed
         );
+    }
+
+    #[tokio::test]
+    async fn legacy_atomic_checks_map_to_conditional_put() {
+        let runtime = bootstrap_runtime();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first,\n\
+                    int profile_views\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+                mutations: vec![
+                    Mutation::Set(Attribute {
+                        name: "first".to_owned(),
+                        value: Value::String("Ada".to_owned()),
+                    }),
+                    Mutation::Set(Attribute {
+                        name: "profile_views".to_owned(),
+                        value: Value::Int(2),
+                    }),
+                ],
+            },
+        )
+        .await
+        .unwrap();
+
+        let (_, body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqAtomic,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 19,
+            },
+            &AtomicRequest {
+                flags: LEGACY_ATOMIC_FLAG_WRITE,
+                key: b"ada".to_vec(),
+                checks: vec![LegacyCheck {
+                    attribute: "profile_views".to_owned(),
+                    predicate: LegacyPredicate::GreaterThanOrEqual,
+                    value: GetValue::Int(5),
+                }],
+                funcalls: vec![LegacyFuncall {
+                    attribute: "first".to_owned(),
+                    name: LegacyFuncallName::Set,
+                    arg1: GetValue::String("Grace".to_owned()),
+                    arg2: None,
+                }],
+            }
+            .encode_body(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            AtomicResponse::decode_body(&body).unwrap().status,
+            LegacyReturnCode::CompareFailed
+        );
+
+        let response = HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+            },
+        )
+        .await
+        .unwrap();
+
+        let ClientResponse::Record(Some(record)) = response else {
+            panic!("expected stored record");
+        };
+
+        assert_eq!(
+            record.attributes.get("first"),
+            Some(&Value::String("Ada".to_owned()))
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_atomic_numeric_funcall_updates_record() {
+        let runtime = bootstrap_runtime();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    int profile_views\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(2),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+
+        let (_, body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqAtomic,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 19,
+            },
+            &AtomicRequest {
+                flags: LEGACY_ATOMIC_FLAG_WRITE,
+                key: b"ada".to_vec(),
+                checks: Vec::new(),
+                funcalls: vec![LegacyFuncall {
+                    attribute: "profile_views".to_owned(),
+                    name: LegacyFuncallName::NumAdd,
+                    arg1: GetValue::Int(3),
+                    arg2: None,
+                }],
+            }
+            .encode_body(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            AtomicResponse::decode_body(&body).unwrap().status,
+            LegacyReturnCode::Success
+        );
+
+        let response = HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+            },
+        )
+        .await
+        .unwrap();
+
+        let ClientResponse::Record(Some(record)) = response else {
+            panic!("expected stored record");
+        };
+
+        assert_eq!(record.attributes.get("profile_views"), Some(&Value::Int(5)));
     }
 
     #[tokio::test]

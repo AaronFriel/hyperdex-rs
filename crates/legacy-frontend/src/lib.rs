@@ -108,9 +108,9 @@ pub async fn request_once(
 mod tests {
     use super::*;
     use legacy_protocol::{
-        AtomicRequest, AtomicResponse, CountRequest, CountResponse, GetAttribute, GetValue,
-        LegacyMessageType, LegacyReturnCode, RequestHeader,
-        LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES,
+        AtomicRequest, AtomicResponse, CountRequest, CountResponse, GetValue, LegacyFuncall,
+        LegacyFuncallName, LegacyMessageType, LegacyReturnCode, RequestHeader,
+        LEGACY_ATOMIC_FLAG_WRITE,
     };
 
     #[tokio::test]
@@ -206,12 +206,15 @@ mod tests {
                     assert_eq!(header.message_type, LegacyMessageType::ReqAtomic);
                     let request = AtomicRequest::decode_body(&body).unwrap();
                     assert_eq!(request.key, b"ada".to_vec());
-                    assert_eq!(request.flags, LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES);
+                    assert_eq!(request.flags, LEGACY_ATOMIC_FLAG_WRITE);
+                    assert!(request.checks.is_empty());
                     assert_eq!(
-                        request.attributes,
-                        vec![GetAttribute {
-                            name: "first".to_owned(),
-                            value: GetValue::String("Ada".to_owned()),
+                        request.funcalls,
+                        vec![LegacyFuncall {
+                            attribute: "first".to_owned(),
+                            name: LegacyFuncallName::Set,
+                            arg1: GetValue::String("Ada".to_owned()),
+                            arg2: None,
                         }]
                     );
 
@@ -242,11 +245,14 @@ mod tests {
                 nonce: 19,
             },
             &AtomicRequest {
-                flags: LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES,
+                flags: LEGACY_ATOMIC_FLAG_WRITE,
                 key: b"ada".to_vec(),
-                attributes: vec![GetAttribute {
-                    name: "first".to_owned(),
-                    value: GetValue::String("Ada".to_owned()),
+                checks: Vec::new(),
+                funcalls: vec![LegacyFuncall {
+                    attribute: "first".to_owned(),
+                    name: LegacyFuncallName::Set,
+                    arg1: GetValue::String("Ada".to_owned()),
+                    arg2: None,
                 }],
             }
             .encode_body(),

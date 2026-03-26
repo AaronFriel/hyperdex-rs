@@ -6,11 +6,12 @@ pub const LEGACY_RESPONSE_HEADER_SIZE: usize = BUSYBEE_HEADER_SIZE + 1 + 8 + 8;
 pub const GET_REQUEST_PREFIX_SIZE: usize = 2;
 pub const COUNT_REQUEST_PREFIX_SIZE: usize = 2;
 pub const COUNT_RESPONSE_BODY_SIZE: usize = 8;
-pub const ATOMIC_REQUEST_PREFIX_SIZE: usize = 2 + 1 + 2;
+pub const ATOMIC_REQUEST_PREFIX_SIZE: usize = 2 + 1 + 2 + 2;
 pub const ATOMIC_RESPONSE_BODY_SIZE: usize = 2;
+pub const LEGACY_ATOMIC_FLAG_WRITE: u8 = 0x80;
 pub const LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND: u8 = 0x01;
 pub const LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND: u8 = 0x02;
-pub const LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES: u8 = 0x80;
+pub const LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES: u8 = LEGACY_ATOMIC_FLAG_WRITE;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -101,6 +102,55 @@ pub enum GetValue {
 pub type LegacyAttribute = GetAttribute;
 pub type LegacyValue = GetValue;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u16)]
+pub enum LegacyPredicate {
+    Equal = 9729,
+    LessThan = 9738,
+    LessThanOrEqual = 9730,
+    GreaterThanOrEqual = 9731,
+    GreaterThan = 9739,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LegacyCheck {
+    pub attribute: String,
+    pub predicate: LegacyPredicate,
+    pub value: LegacyValue,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum LegacyFuncallName {
+    Set = 1,
+    StringAppend = 2,
+    StringPrepend = 3,
+    NumAdd = 4,
+    NumSub = 5,
+    NumMul = 6,
+    NumDiv = 7,
+    NumMod = 8,
+    NumAnd = 9,
+    NumOr = 10,
+    NumXor = 11,
+    ListLPush = 14,
+    ListRPush = 15,
+    SetAdd = 16,
+    SetRemove = 17,
+    SetIntersect = 18,
+    SetUnion = 19,
+    MapAdd = 20,
+    MapRemove = 21,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LegacyFuncall {
+    pub attribute: String,
+    pub name: LegacyFuncallName,
+    pub arg1: LegacyValue,
+    pub arg2: Option<LegacyValue>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GetResponse {
     pub status: LegacyReturnCode,
@@ -111,7 +161,8 @@ pub struct GetResponse {
 pub struct AtomicRequest {
     pub flags: u8,
     pub key: Vec<u8>,
-    pub attributes: Vec<GetAttribute>,
+    pub checks: Vec<LegacyCheck>,
+    pub funcalls: Vec<LegacyFuncall>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -127,6 +178,10 @@ pub enum LegacyProtocolError {
     UnknownReturnCode(u16),
     #[error("unknown value kind {0}")]
     UnknownValueKind(u8),
+    #[error("unknown predicate {0}")]
+    UnknownPredicate(u16),
+    #[error("unknown funcall name {0}")]
+    UnknownFuncallName(u8),
     #[error("buffer too short for header")]
     ShortBuffer,
     #[error("invalid utf-8 in request body")]
@@ -307,8 +362,10 @@ impl AtomicRequest {
         body.extend_from_slice(&(self.key.len() as u16).to_be_bytes());
         body.extend_from_slice(&self.key);
         body.push(self.flags);
-        body.extend_from_slice(&(self.attributes.len() as u16).to_be_bytes());
-        encode_attributes_into(&mut body, &self.attributes);
+        body.extend_from_slice(&(self.checks.len() as u16).to_be_bytes());
+        encode_checks_into(&mut body, &self.checks);
+        body.extend_from_slice(&(self.funcalls.len() as u16).to_be_bytes());
+        encode_funcalls_into(&mut body, &self.funcalls);
         body
     }
 
@@ -318,18 +375,29 @@ impl AtomicRequest {
         }
 
         let key_len = u16::from_be_bytes(bytes[..2].try_into().expect("fixed-width slice")) as usize;
-        if bytes.len() < 2 + key_len + 3 {
+        if bytes.len() < 2 + key_len + 5 {
             return Err(LegacyProtocolError::ShortBuffer);
         }
 
         let key = bytes[2..2 + key_len].to_vec();
         let flags = bytes[2 + key_len];
-        let attr_count = u16::from_be_bytes(
+        let check_count = u16::from_be_bytes(
             bytes[3 + key_len..5 + key_len]
                 .try_into()
                 .expect("fixed-width slice"),
         ) as usize;
-        let (attributes, offset) = decode_attributes(bytes, 5 + key_len, attr_count)?;
+        let (checks, offset) = decode_checks(bytes, 5 + key_len, check_count)?;
+
+        if bytes.len() < offset + 2 {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        let funcall_count = u16::from_be_bytes(
+            bytes[offset..offset + 2]
+                .try_into()
+                .expect("fixed-width slice"),
+        ) as usize;
+        let (funcalls, offset) = decode_funcalls(bytes, offset + 2, funcall_count)?;
 
         if offset != bytes.len() {
             return Err(LegacyProtocolError::ShortBuffer);
@@ -338,7 +406,8 @@ impl AtomicRequest {
         Ok(Self {
             flags,
             key,
-            attributes,
+            checks,
+            funcalls,
         })
     }
 }
@@ -363,11 +432,34 @@ impl AtomicResponse {
 
 fn encode_attributes_into(body: &mut Vec<u8>, attributes: &[GetAttribute]) {
     for attr in attributes {
-        let name = attr.name.as_bytes();
-        body.extend_from_slice(&(name.len() as u16).to_be_bytes());
-        body.extend_from_slice(name);
-        encode_value_into(body, &attr.value);
+        encode_named_value_into(body, &attr.name, &attr.value);
     }
+}
+
+fn encode_checks_into(body: &mut Vec<u8>, checks: &[LegacyCheck]) {
+    for check in checks {
+        encode_named_value_into(body, &check.attribute, &check.value);
+        body.extend_from_slice(&(check.predicate as u16).to_be_bytes());
+    }
+}
+
+fn encode_funcalls_into(body: &mut Vec<u8>, funcalls: &[LegacyFuncall]) {
+    for funcall in funcalls {
+        body.push(funcall.name as u8);
+        encode_named_value_into(body, &funcall.attribute, &funcall.arg1);
+        body.push(u8::from(funcall.arg2.is_some()));
+
+        if let Some(arg2) = &funcall.arg2 {
+            encode_value_into(body, arg2);
+        }
+    }
+}
+
+fn encode_named_value_into(body: &mut Vec<u8>, name: &str, value: &GetValue) {
+    let name_bytes = name.as_bytes();
+    body.extend_from_slice(&(name_bytes.len() as u16).to_be_bytes());
+    body.extend_from_slice(name_bytes);
+    encode_value_into(body, value);
 }
 
 fn encode_value_into(body: &mut Vec<u8>, value: &GetValue) {
@@ -408,32 +500,115 @@ fn decode_attributes(
     let mut attributes = Vec::with_capacity(attr_count);
 
     for _ in 0..attr_count {
-        if bytes.len() < offset + 2 {
-            return Err(LegacyProtocolError::ShortBuffer);
-        }
-
-        let name_len = u16::from_be_bytes(
-            bytes[offset..offset + 2]
-                .try_into()
-                .expect("fixed-width slice"),
-        ) as usize;
-        offset += 2;
-
-        if bytes.len() < offset + name_len + 5 {
-            return Err(LegacyProtocolError::ShortBuffer);
-        }
-
-        let name = std::str::from_utf8(&bytes[offset..offset + name_len])
-            .map_err(|_| LegacyProtocolError::InvalidUtf8)?
-            .to_owned();
-        offset += name_len;
-
-        let (value, next_offset) = decode_value(bytes, offset)?;
+        let ((name, value), next_offset) = decode_named_value(bytes, offset)?;
         offset = next_offset;
         attributes.push(GetAttribute { name, value });
     }
 
     Ok((attributes, offset))
+}
+
+fn decode_checks(
+    bytes: &[u8],
+    mut offset: usize,
+    check_count: usize,
+) -> Result<(Vec<LegacyCheck>, usize), LegacyProtocolError> {
+    let mut checks = Vec::with_capacity(check_count);
+
+    for _ in 0..check_count {
+        let ((attribute, value), next_offset) = decode_named_value(bytes, offset)?;
+        offset = next_offset;
+
+        if bytes.len() < offset + 2 {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        let predicate = decode_predicate(u16::from_be_bytes(
+            bytes[offset..offset + 2]
+                .try_into()
+                .expect("fixed-width slice"),
+        ))?;
+        offset += 2;
+
+        checks.push(LegacyCheck {
+            attribute,
+            predicate,
+            value,
+        });
+    }
+
+    Ok((checks, offset))
+}
+
+fn decode_funcalls(
+    bytes: &[u8],
+    mut offset: usize,
+    funcall_count: usize,
+) -> Result<(Vec<LegacyFuncall>, usize), LegacyProtocolError> {
+    let mut funcalls = Vec::with_capacity(funcall_count);
+
+    for _ in 0..funcall_count {
+        if bytes.len() < offset + 1 {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        let name = decode_funcall_name(bytes[offset])?;
+        offset += 1;
+
+        let ((attribute, arg1), next_offset) = decode_named_value(bytes, offset)?;
+        offset = next_offset;
+
+        if bytes.len() < offset + 1 {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        let has_arg2 = bytes[offset] != 0;
+        offset += 1;
+        let (arg2, next_offset) = if has_arg2 {
+            let (value, next_offset) = decode_value(bytes, offset)?;
+            (Some(value), next_offset)
+        } else {
+            (None, offset)
+        };
+        offset = next_offset;
+
+        funcalls.push(LegacyFuncall {
+            attribute,
+            name,
+            arg1,
+            arg2,
+        });
+    }
+
+    Ok((funcalls, offset))
+}
+
+fn decode_named_value(
+    bytes: &[u8],
+    mut offset: usize,
+) -> Result<((String, GetValue), usize), LegacyProtocolError> {
+    if bytes.len() < offset + 2 {
+        return Err(LegacyProtocolError::ShortBuffer);
+    }
+
+    let name_len = u16::from_be_bytes(
+        bytes[offset..offset + 2]
+            .try_into()
+            .expect("fixed-width slice"),
+    ) as usize;
+    offset += 2;
+
+    if bytes.len() < offset + name_len + 5 {
+        return Err(LegacyProtocolError::ShortBuffer);
+    }
+
+    let name = std::str::from_utf8(&bytes[offset..offset + name_len])
+        .map_err(|_| LegacyProtocolError::InvalidUtf8)?
+        .to_owned();
+    offset += name_len;
+
+    let (value, next_offset) = decode_value(bytes, offset)?;
+    Ok(((name, value), next_offset))
 }
 
 fn decode_value(bytes: &[u8], offset: usize) -> Result<(GetValue, usize), LegacyProtocolError> {
@@ -540,6 +715,46 @@ fn decode_return_code(value: u16) -> Result<LegacyReturnCode, LegacyProtocolErro
     };
 
     Ok(code)
+}
+
+fn decode_predicate(value: u16) -> Result<LegacyPredicate, LegacyProtocolError> {
+    let predicate = match value {
+        9729 => LegacyPredicate::Equal,
+        9738 => LegacyPredicate::LessThan,
+        9730 => LegacyPredicate::LessThanOrEqual,
+        9731 => LegacyPredicate::GreaterThanOrEqual,
+        9739 => LegacyPredicate::GreaterThan,
+        _ => return Err(LegacyProtocolError::UnknownPredicate(value)),
+    };
+
+    Ok(predicate)
+}
+
+fn decode_funcall_name(value: u8) -> Result<LegacyFuncallName, LegacyProtocolError> {
+    let name = match value {
+        1 => LegacyFuncallName::Set,
+        2 => LegacyFuncallName::StringAppend,
+        3 => LegacyFuncallName::StringPrepend,
+        4 => LegacyFuncallName::NumAdd,
+        5 => LegacyFuncallName::NumSub,
+        6 => LegacyFuncallName::NumMul,
+        7 => LegacyFuncallName::NumDiv,
+        8 => LegacyFuncallName::NumMod,
+        9 => LegacyFuncallName::NumAnd,
+        10 => LegacyFuncallName::NumOr,
+        11 => LegacyFuncallName::NumXor,
+        14 => LegacyFuncallName::ListLPush,
+        15 => LegacyFuncallName::ListRPush,
+        16 => LegacyFuncallName::SetAdd,
+        17 => LegacyFuncallName::SetRemove,
+        18 => LegacyFuncallName::SetIntersect,
+        19 => LegacyFuncallName::SetUnion,
+        20 => LegacyFuncallName::MapAdd,
+        21 => LegacyFuncallName::MapRemove,
+        _ => return Err(LegacyProtocolError::UnknownFuncallName(value)),
+    };
+
+    Ok(name)
 }
 
 #[cfg(test)]
@@ -659,16 +874,37 @@ mod tests {
     #[test]
     fn atomic_request_round_trips() {
         let request = AtomicRequest {
-            flags: LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES,
+            flags: LEGACY_ATOMIC_FLAG_WRITE | LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND,
             key: b"ada".to_vec(),
-            attributes: vec![
-                GetAttribute {
-                    name: "first".to_owned(),
-                    value: GetValue::String("Ada".to_owned()),
+            checks: vec![LegacyCheck {
+                attribute: "profile_views".to_owned(),
+                predicate: LegacyPredicate::GreaterThanOrEqual,
+                value: LegacyValue::Int(2),
+            }],
+            funcalls: vec![
+                LegacyFuncall {
+                    attribute: "first".to_owned(),
+                    name: LegacyFuncallName::Set,
+                    arg1: LegacyValue::String("Ada".to_owned()),
+                    arg2: None,
                 },
-                GetAttribute {
-                    name: "profile_views".to_owned(),
-                    value: GetValue::Int(5),
+                LegacyFuncall {
+                    attribute: "profile_views".to_owned(),
+                    name: LegacyFuncallName::NumAdd,
+                    arg1: LegacyValue::Int(3),
+                    arg2: None,
+                },
+                LegacyFuncall {
+                    attribute: "nickname".to_owned(),
+                    name: LegacyFuncallName::MapAdd,
+                    arg1: LegacyValue::String("short".to_owned()),
+                    arg2: Some(LegacyValue::String("Ada".to_owned())),
+                },
+                LegacyFuncall {
+                    attribute: "prefix".to_owned(),
+                    name: LegacyFuncallName::StringPrepend,
+                    arg1: LegacyValue::String("Dr. ".to_owned()),
+                    arg2: None,
                 },
             ],
         };

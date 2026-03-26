@@ -58,13 +58,19 @@ impl StorageEngine for MemoryEngine {
         let records = guard
             .get_mut(space)
             .ok_or_else(|| StorageError::UnknownSpace(space.to_owned()))?;
-        let record = records
-            .entry(key.to_vec())
-            .or_insert_with(|| Record::new(key.clone()));
+        let key_vec = key.to_vec();
 
-        if !record_matches(record, checks) {
-            return Ok(WriteResult::ConditionFailed);
+        match records.get(&key_vec) {
+            Some(record) if !record_matches(record, checks) => {
+                return Ok(WriteResult::ConditionFailed);
+            }
+            None if !checks.is_empty() => return Ok(WriteResult::ConditionFailed),
+            _ => {}
         }
+
+        let record = records
+            .entry(key_vec)
+            .or_insert_with(|| Record::new(key.clone()));
 
         apply_mutations(record, mutations)?;
         Ok(WriteResult::Written)
@@ -248,5 +254,30 @@ mod tests {
 
         assert_eq!(result, WriteResult::ConditionFailed);
         assert!(engine.get("profiles", b"ada").unwrap().unwrap().attributes.get("name").is_none());
+    }
+
+    #[test]
+    fn failed_conditional_put_does_not_create_missing_record() {
+        let engine = MemoryEngine::new();
+        engine.create_space("profiles".to_owned()).unwrap();
+
+        let result = engine
+            .conditional_put(
+                "profiles",
+                Bytes::from_static(b"ada"),
+                &[Check {
+                    attribute: "count".to_owned(),
+                    predicate: Predicate::Equal,
+                    value: Value::Int(3),
+                }],
+                &[Mutation::Set(Attribute {
+                    name: "name".to_owned(),
+                    value: Value::String("Ada".to_owned()),
+                })],
+            )
+            .unwrap();
+
+        assert_eq!(result, WriteResult::ConditionFailed);
+        assert!(engine.get("profiles", b"ada").unwrap().is_none());
     }
 }
