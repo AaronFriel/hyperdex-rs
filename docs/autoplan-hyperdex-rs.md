@@ -34,6 +34,10 @@ and can run the `hyhac` test suite against a live cluster.
 - `cargo test --workspace` passes in the new repository.
 - Deterministic simulation suites exist for placement, replication, and failure
   handling.
+- A real multi-daemon `hyperdex-rs` deployment forms a cluster through a live
+  coordinator instead of each daemon constructing an isolated local runtime.
+- Real internode replication and request forwarding occur between separate
+  daemon processes.
 - A live `hyperdex-rs` cluster can satisfy the `hyhac` harness without patches to
   `hyhac`'s semantics.
 - Paper notes exist and name MVP exclusions explicitly.
@@ -84,10 +88,11 @@ One bounded design-or-implementation step with validation and a recorded verdict
 
 ## Current Hypothesis
 
-The fastest path is to treat `hyhac` compatibility as the external contract, build
-the workspace around that contract, expose both legacy and gRPC public frontends,
-and keep consensus, internode transport, placement, and storage pluggable behind
-stable traits from the start.
+The fastest acceptable path is to build the real distributed substrate in
+parallel with the public compatibility path. Legacy admin and client behavior
+still matter, but they cannot stay ahead of coordinator-driven cluster
+formation, live daemon membership, and real internode replication between
+separate processes.
 
 ## Milestones
 
@@ -95,10 +100,11 @@ stable traits from the start.
 2. Prove the exact `hyhac` operation surface and error semantics we need to serve.
 3. Land shared domain crates for schema, placement, storage, and protocol types.
 4. Land a single-node but trait-correct control plane and data plane.
-5. Add replicated control/data paths with at least one concrete consensus backend.
-6. Add alternative consensus and transport implementations in dedicated worktrees.
-7. Add deterministic simulation harnesses.
-8. Run the `hyhac` suite against the live cluster and close semantic gaps.
+5. Land real distributed control-plane cluster formation through the coordinator.
+6. Land real distributed data-plane replication and forwarding between daemons.
+7. Add alternative consensus and transport implementations in dedicated worktrees.
+8. Add deterministic simulation harnesses plus multiprocess validation.
+9. Run the `hyhac` suite against the live cluster and close semantic gaps.
 
 ## Progress
 
@@ -153,17 +159,22 @@ stable traits from the start.
 - Done: the live coordinator control service now serves `wait_until_stable`
   with a stable-version body and `config_get` with a structured config snapshot,
   while preserving the exact 2-byte reply path for `space_add` and `space_rm`.
+- Known gap: coordinator and daemon processes still do not form a real
+  multi-daemon cluster; daemon startup still constructs an isolated local
+  runtime instead of joining distributed control/data planes.
+- Known gap: internode transport and consensus backends remain in-process
+  scaffolding rather than live cross-process replication.
 - Idle: parked worktrees remain available for later backend-specific work, but
   they are not currently producing changes.
-- Next: move from the custom live control service toward the public legacy
-  admin contract, starting with the event-loop and deferred-call semantics that
-  `hyhac`'s admin bindings expect.
+- Next: prioritize real distributed control-plane and data-plane work, starting
+  with daemon registration and live cluster layout updates driven by the
+  coordinator.
 
 ## Next Bounded Iteration
 
-Implement the first legacy-admin client compatibility path on top of the live
-control service, starting with deferred-call and event-loop semantics that can
-back `hyperdex_admin_loop`, `add_space`, `rm_space`, and `wait_until_stable`.
+Implement the first real distributed control-plane step, starting with daemon
+registration and live cluster layout updates driven by the coordinator instead
+of isolated per-daemon runtimes.
 
 ## Loop Ledger
 
