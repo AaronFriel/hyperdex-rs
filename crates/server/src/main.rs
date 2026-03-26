@@ -4,7 +4,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use legacy_frontend::LegacyFrontend;
 use server::{
-    daemon_cluster_config, handle_coordinator_admin_method, handle_legacy_request,
+    daemon_cluster_config, handle_coordinator_control_method, handle_legacy_request,
     parse_process_mode, ClusterRuntime, CoordinatorControlService, ProcessMode,
 };
 use tracing::info;
@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
             tokio::select! {
                 result = control_service.serve_forever_with(move |method, request| {
                     let runtime = runtime.clone();
-                    async move { handle_coordinator_admin_method(runtime.as_ref(), &method, request).await }
+                    async move { handle_coordinator_control_method(runtime.as_ref(), &method, request).await }
                 }) => result?,
                 _ = tokio::signal::ctrl_c() => {}
             }

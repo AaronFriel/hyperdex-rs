@@ -35,6 +35,7 @@ use tempfile::TempDir;
 use transport_core::InProcessTransport;
 
 pub const COORDINATOR_CONTROL_HEADER_SIZE: usize = 2 + 4;
+pub const COORDINATOR_CONTROL_BODY_LENGTH_SIZE: usize = 4;
 
 pub struct ClusterRuntime {
     cluster_config: ClusterConfig,
@@ -84,6 +85,12 @@ pub enum TransportRuntime {
 
 pub struct CoordinatorControlService {
     listener: TcpListener,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CoordinatorControlResponse {
+    pub status: [u8; 2],
+    pub body: Vec<u8>,
 }
 
 impl ClusterRuntime {
@@ -244,12 +251,12 @@ impl CoordinatorControlService {
     pub async fn serve_once_with<H, F>(&self, handler: H) -> Result<()>
     where
         H: Fn(String, CoordinatorAdminRequest) -> F,
-        F: std::future::Future<Output = Result<[u8; 2]>>,
+        F: std::future::Future<Output = Result<CoordinatorControlResponse>>,
     {
         let (mut stream, _) = self.listener.accept().await?;
         let (method, request) = read_coordinator_control_request(&mut stream).await?;
         let response = handler(method, request).await?;
-        stream.write_all(&response).await?;
+        write_coordinator_control_response(&mut stream, &response).await?;
         stream.flush().await?;
         Ok(())
     }
@@ -257,7 +264,7 @@ impl CoordinatorControlService {
     pub async fn serve_forever_with<H, F>(&self, handler: H) -> Result<()>
     where
         H: Fn(String, CoordinatorAdminRequest) -> F,
-        F: std::future::Future<Output = Result<[u8; 2]>>,
+        F: std::future::Future<Output = Result<CoordinatorControlResponse>>,
     {
         loop {
             self.serve_once_with(&handler).await?;
@@ -759,6 +766,9 @@ pub async fn handle_coordinator_admin_request(
                 Err(err) => Ok(map_admin_error_to_coordinator(&err)),
             }
         }
+        CoordinatorAdminRequest::WaitUntilStable | CoordinatorAdminRequest::ConfigGet => {
+            Ok(CoordinatorReturnCode::Malformed)
+        }
     }
 }
 
@@ -767,19 +777,42 @@ pub async fn handle_coordinator_admin_method(
     method: &str,
     request: CoordinatorAdminRequest,
 ) -> Result<[u8; 2]> {
-    let status = match (method, request) {
-        ("space_add", CoordinatorAdminRequest::SpaceAdd(space)) => {
+    Ok(handle_coordinator_control_method(runtime, method, request)
+        .await?
+        .status)
+}
+
+pub async fn handle_coordinator_control_method(
+    runtime: &ClusterRuntime,
+    method: &str,
+    request: CoordinatorAdminRequest,
+) -> Result<CoordinatorControlResponse> {
+    let (status, body) = match (method, request) {
+        ("space_add", CoordinatorAdminRequest::SpaceAdd(space)) => (
             handle_coordinator_admin_request(runtime, CoordinatorAdminRequest::SpaceAdd(space))
-                .await?
-        }
-        ("space_rm", CoordinatorAdminRequest::SpaceRm(name)) => {
+                .await?,
+            Vec::new(),
+        ),
+        ("space_rm", CoordinatorAdminRequest::SpaceRm(name)) => (
             handle_coordinator_admin_request(runtime, CoordinatorAdminRequest::SpaceRm(name))
-                .await?
-        }
-        _ => CoordinatorReturnCode::Malformed,
+                .await?,
+            Vec::new(),
+        ),
+        ("wait_until_stable", CoordinatorAdminRequest::WaitUntilStable) => (
+            CoordinatorReturnCode::Success,
+            serde_json::to_vec(&runtime.stable_version())?,
+        ),
+        ("config_get", CoordinatorAdminRequest::ConfigGet) => (
+            CoordinatorReturnCode::Success,
+            serde_json::to_vec(&runtime.config_view()?)?,
+        ),
+        _ => (CoordinatorReturnCode::Malformed, Vec::new()),
     };
 
-    Ok(status.encode())
+    Ok(CoordinatorControlResponse {
+        status: status.encode(),
+        body,
+    })
 }
 
 async fn read_coordinator_control_request(
@@ -829,6 +862,52 @@ pub async fn request_coordinator_control_once(
     let mut response = [0u8; 2];
     stream.read_exact(&mut response).await?;
     Ok(response)
+}
+
+pub async fn request_coordinator_control_with_body_once(
+    address: SocketAddr,
+    method: &str,
+    request: &CoordinatorAdminRequest,
+) -> Result<CoordinatorControlResponse> {
+    let mut stream = tokio::net::TcpStream::connect(address).await?;
+    stream
+        .write_all(&encode_coordinator_control_request(method, request)?)
+        .await?;
+    stream.flush().await?;
+
+    let mut status = [0u8; 2];
+    stream.read_exact(&mut status).await?;
+
+    let mut body_len = [0u8; COORDINATOR_CONTROL_BODY_LENGTH_SIZE];
+    match stream.read_exact(&mut body_len).await {
+        Ok(_) => {
+            let body_len = u32::from_be_bytes(body_len) as usize;
+            let mut body = vec![0u8; body_len];
+            stream.read_exact(&mut body).await?;
+            Ok(CoordinatorControlResponse { status, body })
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
+            Ok(CoordinatorControlResponse {
+                status,
+                body: Vec::new(),
+            })
+        }
+        Err(err) => Err(err.into()),
+    }
+}
+
+async fn write_coordinator_control_response(
+    stream: &mut tokio::net::TcpStream,
+    response: &CoordinatorControlResponse,
+) -> Result<()> {
+    stream.write_all(&response.status).await?;
+    if !response.body.is_empty() {
+        stream
+            .write_all(&(response.body.len() as u32).to_be_bytes())
+            .await?;
+        stream.write_all(&response.body).await?;
+    }
+    Ok(())
 }
 
 pub async fn handle_legacy_admin_request(
@@ -1473,7 +1552,7 @@ mod tests {
                 .serve_once_with(move |method, request| {
                     let runtime = runtime.clone();
                     async move {
-                        handle_coordinator_admin_method(runtime.as_ref(), &method, request).await
+                        handle_coordinator_control_method(runtime.as_ref(), &method, request).await
                     }
                 })
                 .await
@@ -1518,7 +1597,7 @@ mod tests {
                 .serve_once_with(move |method, request| {
                     let runtime = runtime.clone();
                     async move {
-                        handle_coordinator_admin_method(runtime.as_ref(), &method, request).await
+                        handle_coordinator_control_method(runtime.as_ref(), &method, request).await
                     }
                 })
                 .await
@@ -1548,6 +1627,111 @@ mod tests {
             CoordinatorReturnCode::decode(&response).unwrap(),
             CoordinatorReturnCode::Malformed
         );
+    }
+
+    #[tokio::test]
+    async fn coordinator_control_service_wait_until_stable_returns_version_body() {
+        let runtime = Arc::new(bootstrap_runtime());
+        HyperdexAdminService::handle(
+            runtime.as_ref(),
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first,\n\
+                    int profile_views\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+        let service = CoordinatorControlService::bind("127.0.0.1:0".parse().unwrap())
+            .await
+            .unwrap();
+        let address = service.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            service
+                .serve_once_with(move |method, request| {
+                    let runtime = runtime.clone();
+                    async move {
+                        handle_coordinator_control_method(runtime.as_ref(), &method, request).await
+                    }
+                })
+                .await
+                .unwrap()
+        });
+
+        let response = request_coordinator_control_with_body_once(
+            address,
+            "wait_until_stable",
+            &CoordinatorAdminRequest::WaitUntilStable,
+        )
+        .await
+        .unwrap();
+
+        server.await.unwrap();
+        assert_eq!(
+            CoordinatorReturnCode::decode(&response.status).unwrap(),
+            CoordinatorReturnCode::Success
+        );
+        let version: u64 = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(version, 1);
+    }
+
+    #[tokio::test]
+    async fn coordinator_control_service_config_get_returns_config_snapshot() {
+        let runtime = Arc::new(bootstrap_runtime());
+        HyperdexAdminService::handle(
+            runtime.as_ref(),
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first,\n\
+                    int profile_views\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+        let service = CoordinatorControlService::bind("127.0.0.1:0".parse().unwrap())
+            .await
+            .unwrap();
+        let address = service.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            service
+                .serve_once_with(move |method, request| {
+                    let runtime = runtime.clone();
+                    async move {
+                        handle_coordinator_control_method(runtime.as_ref(), &method, request).await
+                    }
+                })
+                .await
+                .unwrap()
+        });
+
+        let response = request_coordinator_control_with_body_once(
+            address,
+            "config_get",
+            &CoordinatorAdminRequest::ConfigGet,
+        )
+        .await
+        .unwrap();
+
+        server.await.unwrap();
+        assert_eq!(
+            CoordinatorReturnCode::decode(&response.status).unwrap(),
+            CoordinatorReturnCode::Success
+        );
+        let config_view: ConfigView = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(config_view.version, 1);
+        assert_eq!(config_view.stable_through, 1);
+        assert_eq!(config_view.spaces.len(), 1);
+        assert_eq!(config_view.spaces[0].name, "profiles");
     }
 
     #[tokio::test]

@@ -44,6 +44,8 @@ pub enum LegacyAdminRequest {
 pub enum CoordinatorAdminRequest {
     SpaceAdd(Space),
     SpaceRm(SpaceName),
+    WaitUntilStable,
+    ConfigGet,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,6 +76,8 @@ impl CoordinatorAdminRequest {
         match self {
             Self::SpaceAdd(_) => "space_add",
             Self::SpaceRm(_) => "space_rm",
+            Self::WaitUntilStable => "wait_until_stable",
+            Self::ConfigGet => "config_get",
         }
     }
 }
@@ -188,5 +192,10 @@ mod tests {
             CoordinatorAdminRequest::SpaceRm("profiles".to_owned()).method_name(),
             "space_rm"
         );
+        assert_eq!(
+            CoordinatorAdminRequest::WaitUntilStable.method_name(),
+            "wait_until_stable"
+        );
+        assert_eq!(CoordinatorAdminRequest::ConfigGet.method_name(), "config_get");
     }
 }
