@@ -2,12 +2,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
-use hyperdex_client_protocol::{ClientRequest, ClientResponse, HyperdexClientService};
 use legacy_frontend::LegacyFrontend;
-use legacy_protocol::{
-    config_mismatch_response, CountRequest, CountResponse, LegacyMessageType, ResponseHeader,
+use server::{
+    bootstrap_runtime, daemon_cluster_config, handle_legacy_request, parse_process_mode,
+    ProcessMode,
 };
-use server::{bootstrap_runtime, daemon_cluster_config, parse_process_mode, ProcessMode};
 use tracing::info;
 
 #[tokio::main]
@@ -75,35 +74,7 @@ async fn main() -> Result<()> {
             tokio::select! {
                 result = legacy_frontend.serve_forever_with(move |header, body| {
                     let runtime = runtime.clone();
-                    async move {
-                        match header.message_type {
-                            LegacyMessageType::ReqCount => {
-                                let request = CountRequest::decode_body(&body)?;
-                                let response = HyperdexClientService::handle(
-                                    runtime.as_ref(),
-                                    ClientRequest::Count {
-                                        space: request.space,
-                                        checks: Vec::new(),
-                                    },
-                                )
-                                .await?;
-
-                                let ClientResponse::Count(count) = response else {
-                                    anyhow::bail!("unexpected runtime response to count request");
-                                };
-
-                                Ok((
-                                    ResponseHeader {
-                                        message_type: LegacyMessageType::RespCount,
-                                        target_virtual_server: header.target_virtual_server,
-                                        nonce: header.nonce,
-                                    },
-                                    CountResponse { count }.encode_body().to_vec(),
-                                ))
-                            }
-                            _ => Ok((config_mismatch_response(header), Vec::new())),
-                        }
-                    }
+                    async move { handle_legacy_request(runtime.as_ref(), header, &body).await }
                 }) => result?,
                 _ = tokio::signal::ctrl_c() => {}
             }

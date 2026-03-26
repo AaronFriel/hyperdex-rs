@@ -3,6 +3,7 @@ use thiserror::Error;
 pub const BUSYBEE_HEADER_SIZE: usize = 4;
 pub const LEGACY_REQUEST_HEADER_SIZE: usize = BUSYBEE_HEADER_SIZE + 1 + 1 + 8 + 8 + 8;
 pub const LEGACY_RESPONSE_HEADER_SIZE: usize = BUSYBEE_HEADER_SIZE + 1 + 8 + 8;
+pub const GET_REQUEST_PREFIX_SIZE: usize = 2;
 pub const COUNT_REQUEST_PREFIX_SIZE: usize = 2;
 pub const COUNT_RESPONSE_BODY_SIZE: usize = 8;
 
@@ -72,10 +73,40 @@ pub struct CountResponse {
     pub count: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GetRequest {
+    pub key: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GetAttribute {
+    pub name: String,
+    pub value: GetValue,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GetValue {
+    Null,
+    Bool(bool),
+    Int(i64),
+    Bytes(Vec<u8>),
+    String(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GetResponse {
+    pub status: LegacyReturnCode,
+    pub attributes: Vec<GetAttribute>,
+}
+
 #[derive(Debug, Error)]
 pub enum LegacyProtocolError {
     #[error("unknown message type {0}")]
     UnknownMessageType(u8),
+    #[error("unknown return code {0}")]
+    UnknownReturnCode(u16),
+    #[error("unknown value kind {0}")]
+    UnknownValueKind(u8),
     #[error("buffer too short for header")]
     ShortBuffer,
     #[error("invalid utf-8 in request body")]
@@ -155,14 +186,6 @@ impl ResponseHeader {
     }
 }
 
-pub fn config_mismatch_response(request: RequestHeader) -> ResponseHeader {
-    ResponseHeader {
-        message_type: LegacyMessageType::ConfigMismatch,
-        target_virtual_server: request.target_virtual_server,
-        nonce: request.nonce,
-    }
-}
-
 impl CountRequest {
     pub fn encode_body(&self) -> Vec<u8> {
         let space = self.space.as_bytes();
@@ -202,6 +225,158 @@ impl CountResponse {
         Ok(Self {
             count: u64::from_be_bytes(bytes[..8].try_into().expect("fixed-width slice")),
         })
+    }
+}
+
+impl GetRequest {
+    pub fn encode_body(&self) -> Vec<u8> {
+        let mut body = Vec::with_capacity(GET_REQUEST_PREFIX_SIZE + self.key.len());
+        body.extend_from_slice(&(self.key.len() as u16).to_be_bytes());
+        body.extend_from_slice(&self.key);
+        body
+    }
+
+    pub fn decode_body(bytes: &[u8]) -> Result<Self, LegacyProtocolError> {
+        if bytes.len() < GET_REQUEST_PREFIX_SIZE {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        let len = u16::from_be_bytes(bytes[..2].try_into().expect("fixed-width slice")) as usize;
+        if bytes.len() < GET_REQUEST_PREFIX_SIZE + len {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        Ok(Self {
+            key: bytes[2..2 + len].to_vec(),
+        })
+    }
+}
+
+impl GetResponse {
+    pub fn encode_body(&self) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&(self.status as u16).to_be_bytes());
+        body.extend_from_slice(&(self.attributes.len() as u16).to_be_bytes());
+
+        for attr in &self.attributes {
+            let name = attr.name.as_bytes();
+            body.extend_from_slice(&(name.len() as u16).to_be_bytes());
+            body.extend_from_slice(name);
+
+            match &attr.value {
+                GetValue::Null => {
+                    body.push(0);
+                    body.extend_from_slice(&0u32.to_be_bytes());
+                }
+                GetValue::Bool(v) => {
+                    body.push(1);
+                    body.extend_from_slice(&1u32.to_be_bytes());
+                    body.push(u8::from(*v));
+                }
+                GetValue::Int(v) => {
+                    body.push(2);
+                    body.extend_from_slice(&8u32.to_be_bytes());
+                    body.extend_from_slice(&v.to_be_bytes());
+                }
+                GetValue::Bytes(v) => {
+                    body.push(3);
+                    body.extend_from_slice(&(v.len() as u32).to_be_bytes());
+                    body.extend_from_slice(v);
+                }
+                GetValue::String(v) => {
+                    let bytes = v.as_bytes();
+                    body.push(4);
+                    body.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+                    body.extend_from_slice(bytes);
+                }
+            }
+        }
+
+        body
+    }
+
+    pub fn decode_body(bytes: &[u8]) -> Result<Self, LegacyProtocolError> {
+        if bytes.len() < 4 {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        let status = decode_return_code(u16::from_be_bytes(
+            bytes[..2].try_into().expect("fixed-width slice"),
+        ))?;
+        let attr_count =
+            u16::from_be_bytes(bytes[2..4].try_into().expect("fixed-width slice")) as usize;
+
+        let mut offset = 4;
+        let mut attributes = Vec::with_capacity(attr_count);
+
+        for _ in 0..attr_count {
+            if bytes.len() < offset + 2 {
+                return Err(LegacyProtocolError::ShortBuffer);
+            }
+            let name_len = u16::from_be_bytes(
+                bytes[offset..offset + 2]
+                    .try_into()
+                    .expect("fixed-width slice"),
+            ) as usize;
+            offset += 2;
+
+            if bytes.len() < offset + name_len + 5 {
+                return Err(LegacyProtocolError::ShortBuffer);
+            }
+
+            let name = std::str::from_utf8(&bytes[offset..offset + name_len])
+                .map_err(|_| LegacyProtocolError::InvalidUtf8)?
+                .to_owned();
+            offset += name_len;
+
+            let kind = bytes[offset];
+            offset += 1;
+            let value_len = u32::from_be_bytes(
+                bytes[offset..offset + 4]
+                    .try_into()
+                    .expect("fixed-width slice"),
+            ) as usize;
+            offset += 4;
+
+            if bytes.len() < offset + value_len {
+                return Err(LegacyProtocolError::ShortBuffer);
+            }
+
+            let value_bytes = &bytes[offset..offset + value_len];
+            offset += value_len;
+
+            let value = match kind {
+                0 => GetValue::Null,
+                1 => GetValue::Bool(value_bytes.first().copied().unwrap_or(0) != 0),
+                2 => {
+                    if value_bytes.len() != 8 {
+                        return Err(LegacyProtocolError::ShortBuffer);
+                    }
+                    GetValue::Int(i64::from_be_bytes(
+                        value_bytes.try_into().expect("fixed-width slice"),
+                    ))
+                }
+                3 => GetValue::Bytes(value_bytes.to_vec()),
+                4 => GetValue::String(
+                    std::str::from_utf8(value_bytes)
+                        .map_err(|_| LegacyProtocolError::InvalidUtf8)?
+                        .to_owned(),
+                ),
+                other => return Err(LegacyProtocolError::UnknownValueKind(other)),
+            };
+
+            attributes.push(GetAttribute { name, value });
+        }
+
+        Ok(Self { status, attributes })
+    }
+}
+
+pub fn config_mismatch_response(request: RequestHeader) -> ResponseHeader {
+    ResponseHeader {
+        message_type: LegacyMessageType::ConfigMismatch,
+        target_virtual_server: request.target_virtual_server,
+        nonce: request.nonce,
     }
 }
 
@@ -247,6 +422,23 @@ fn decode_message_type(value: u8) -> Result<LegacyMessageType, LegacyProtocolErr
     };
 
     Ok(message_type)
+}
+
+fn decode_return_code(value: u16) -> Result<LegacyReturnCode, LegacyProtocolError> {
+    let code = match value {
+        8320 => LegacyReturnCode::Success,
+        8321 => LegacyReturnCode::NotFound,
+        8322 => LegacyReturnCode::BadDimensionSpec,
+        8323 => LegacyReturnCode::NotUs,
+        8324 => LegacyReturnCode::ServerError,
+        8325 => LegacyReturnCode::CompareFailed,
+        8327 => LegacyReturnCode::ReadOnly,
+        8328 => LegacyReturnCode::Overflow,
+        8329 => LegacyReturnCode::Unauthorized,
+        _ => return Err(LegacyProtocolError::UnknownReturnCode(value)),
+    };
+
+    Ok(code)
 }
 
 #[cfg(test)]
@@ -333,6 +525,34 @@ mod tests {
         let response = CountResponse { count: 42 };
 
         assert_eq!(CountResponse::decode_body(&response.encode_body()).unwrap(), response);
+    }
+
+    #[test]
+    fn get_request_round_trips() {
+        let request = GetRequest {
+            key: b"ada".to_vec(),
+        };
+
+        assert_eq!(GetRequest::decode_body(&request.encode_body()).unwrap(), request);
+    }
+
+    #[test]
+    fn get_response_round_trips() {
+        let response = GetResponse {
+            status: LegacyReturnCode::Success,
+            attributes: vec![
+                GetAttribute {
+                    name: "first".to_owned(),
+                    value: GetValue::String("Ada".to_owned()),
+                },
+                GetAttribute {
+                    name: "views".to_owned(),
+                    value: GetValue::Int(5),
+                },
+            ],
+        };
+
+        assert_eq!(GetResponse::decode_body(&response.encode_body()).unwrap(), response);
     }
 
     #[test]

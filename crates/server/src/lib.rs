@@ -6,12 +6,16 @@ use cluster_config::{
     ClusterConfig, ConsensusBackend, PlacementBackend, StorageBackend, TransportBackend,
 };
 use control_plane::{Catalog, InMemoryCatalog};
-use data_model::{parse_hyperdex_space, Space};
+use data_model::{parse_hyperdex_space, Space, Value};
 use data_plane::DataPlane;
 use engine_memory::MemoryEngine;
 use engine_rocks::RocksEngine;
 use hyperdex_admin_protocol::{AdminRequest, AdminResponse, HyperdexAdminService};
 use hyperdex_client_protocol::{ClientRequest, ClientResponse, HyperdexClientService};
+use legacy_protocol::{
+    config_mismatch_response, CountRequest, CountResponse, GetAttribute, GetRequest, GetResponse,
+    GetValue, LegacyMessageType, LegacyReturnCode, RequestHeader, ResponseHeader,
+};
 use placement_core::{HyperSpacePlacement, PlacementStrategy, RendezvousPlacement};
 use storage_core::{StorageEngine, WriteResult};
 use tempfile::TempDir;
@@ -127,6 +131,17 @@ impl ClusterRuntime {
     pub fn internode_transport_name(&self) -> &'static str {
         self.internode_transport.name()
     }
+
+    fn only_space_name(&self) -> Result<String> {
+        let spaces = self.catalog.list_spaces()?;
+        match spaces.as_slice() {
+            [space] => Ok(space.clone()),
+            [] => Err(anyhow!("legacy request handling requires one created space")),
+            _ => Err(anyhow!(
+                "legacy request handling is ambiguous with multiple spaces"
+            )),
+        }
+    }
 }
 
 impl ConsensusRuntime {
@@ -239,6 +254,96 @@ fn select_internode_transport(config: &ClusterConfig) -> TransportRuntime {
             TransportRuntime::InProcess
         }
         TransportBackend::Grpc => TransportRuntime::Grpc,
+    }
+}
+
+pub async fn handle_legacy_request(
+    runtime: &ClusterRuntime,
+    header: RequestHeader,
+    body: &[u8],
+) -> Result<(ResponseHeader, Vec<u8>)> {
+    match header.message_type {
+        LegacyMessageType::ReqCount => {
+            let request = CountRequest::decode_body(body)?;
+            let response = HyperdexClientService::handle(
+                runtime,
+                ClientRequest::Count {
+                    space: request.space,
+                    checks: Vec::new(),
+                },
+            )
+            .await?;
+
+            let ClientResponse::Count(count) = response else {
+                anyhow::bail!("unexpected runtime response to count request");
+            };
+
+            Ok((
+                ResponseHeader {
+                    message_type: LegacyMessageType::RespCount,
+                    target_virtual_server: header.target_virtual_server,
+                    nonce: header.nonce,
+                },
+                CountResponse { count }.encode_body().to_vec(),
+            ))
+        }
+        LegacyMessageType::ReqGet => {
+            let request = GetRequest::decode_body(body)?;
+            let response = HyperdexClientService::handle(
+                runtime,
+                ClientRequest::Get {
+                    space: runtime.only_space_name()?,
+                    key: request.key.into(),
+                },
+            )
+            .await?;
+
+            let ClientResponse::Record(record) = response else {
+                anyhow::bail!("unexpected runtime response to get request");
+            };
+
+            let get = match record {
+                Some(record) => GetResponse {
+                    status: LegacyReturnCode::Success,
+                    attributes: record
+                        .attributes
+                        .into_iter()
+                        .map(|(name, value)| GetAttribute {
+                            name,
+                            value: legacy_value_from_model(value),
+                        })
+                        .collect(),
+                },
+                None => GetResponse {
+                    status: LegacyReturnCode::NotFound,
+                    attributes: Vec::new(),
+                },
+            };
+
+            Ok((
+                ResponseHeader {
+                    message_type: LegacyMessageType::RespGet,
+                    target_virtual_server: header.target_virtual_server,
+                    nonce: header.nonce,
+                },
+                get.encode_body(),
+            ))
+        }
+        _ => Ok((config_mismatch_response(header), Vec::new())),
+    }
+}
+
+fn legacy_value_from_model(value: Value) -> GetValue {
+    match value {
+        Value::Null => GetValue::Null,
+        Value::Bool(v) => GetValue::Bool(v),
+        Value::Int(v) => GetValue::Int(v),
+        Value::Bytes(v) => GetValue::Bytes(v.to_vec()),
+        Value::String(v) => GetValue::String(v),
+        Value::Float(v) => GetValue::String(v.to_string()),
+        Value::List(v) => GetValue::String(format!("{v:?}")),
+        Value::Set(v) => GetValue::String(format!("{v:?}")),
+        Value::Map(v) => GetValue::String(format!("{v:?}")),
     }
 }
 
@@ -448,6 +553,10 @@ mod tests {
     use data_model::{Attribute, Check, Mutation, Predicate, Value};
     use hyperdex_admin_protocol::HyperdexAdminService;
     use hyperdex_client_protocol::HyperdexClientService;
+    use legacy_protocol::{
+        CountRequest, CountResponse, GetRequest, GetResponse, GetValue, LegacyMessageType,
+        LegacyReturnCode, RequestHeader,
+    };
 
     #[test]
     fn runtime_uses_single_node_consensus_by_default() {
@@ -700,6 +809,111 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(deleted, ClientResponse::Deleted(1));
+    }
+
+    #[tokio::test]
+    async fn legacy_get_returns_record_attributes() {
+        let runtime = bootstrap_runtime();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first,\n\
+                    int profile_views\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+                mutations: vec![
+                    Mutation::Set(Attribute {
+                        name: "username".to_owned(),
+                        value: Value::Bytes(Bytes::from_static(b"ada")),
+                    }),
+                    Mutation::Set(Attribute {
+                        name: "first".to_owned(),
+                        value: Value::String("Ada".to_owned()),
+                    }),
+                    Mutation::Set(Attribute {
+                        name: "profile_views".to_owned(),
+                        value: Value::Int(5),
+                    }),
+                ],
+            },
+        )
+        .await
+        .unwrap();
+
+        let (header, body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqGet,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 19,
+            },
+            &GetRequest {
+                key: b"ada".to_vec(),
+            }
+            .encode_body(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(header.message_type, LegacyMessageType::RespGet);
+        let response = GetResponse::decode_body(&body).unwrap();
+        assert_eq!(response.status, LegacyReturnCode::Success);
+        assert!(response.attributes.iter().any(|attr| {
+            attr.name == "first" && attr.value == GetValue::String("Ada".to_owned())
+        }));
+    }
+
+    #[tokio::test]
+    async fn legacy_count_returns_runtime_count() {
+        let runtime = bootstrap_runtime();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        let (header, body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqCount,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 19,
+            },
+            &CountRequest {
+                space: "profiles".to_owned(),
+            }
+            .encode_body(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(header.message_type, LegacyMessageType::RespCount);
+        assert_eq!(CountResponse::decode_body(&body).unwrap().count, 0);
     }
 
     #[test]
