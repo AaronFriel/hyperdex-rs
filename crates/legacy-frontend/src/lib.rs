@@ -107,7 +107,11 @@ pub async fn request_once(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legacy_protocol::{CountRequest, CountResponse, LegacyMessageType, RequestHeader};
+    use legacy_protocol::{
+        AtomicRequest, AtomicResponse, CountRequest, CountResponse, GetAttribute, GetValue,
+        LegacyMessageType, LegacyReturnCode, RequestHeader,
+        LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES,
+    };
 
     #[tokio::test]
     async fn serve_once_returns_config_mismatch() {
@@ -187,5 +191,75 @@ mod tests {
 
         assert_eq!(response.message_type, LegacyMessageType::RespCount);
         assert_eq!(CountResponse::decode_body(&body).unwrap().count, 7);
+    }
+
+    #[tokio::test]
+    async fn serve_once_with_handles_atomic() {
+        let frontend = LegacyFrontend::bind("127.0.0.1:0".parse().unwrap())
+            .await
+            .unwrap();
+        let address = frontend.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            frontend
+                .serve_once_with(|header, body| async move {
+                    assert_eq!(header.message_type, LegacyMessageType::ReqAtomic);
+                    let request = AtomicRequest::decode_body(&body).unwrap();
+                    assert_eq!(request.key, b"ada".to_vec());
+                    assert_eq!(request.flags, LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES);
+                    assert_eq!(
+                        request.attributes,
+                        vec![GetAttribute {
+                            name: "first".to_owned(),
+                            value: GetValue::String("Ada".to_owned()),
+                        }]
+                    );
+
+                    Ok((
+                        ResponseHeader {
+                            message_type: LegacyMessageType::RespAtomic,
+                            target_virtual_server: header.target_virtual_server,
+                            nonce: header.nonce,
+                        },
+                        AtomicResponse {
+                            status: LegacyReturnCode::Success,
+                        }
+                        .encode_body()
+                        .to_vec(),
+                    ))
+                })
+                .await
+                .unwrap()
+        });
+
+        let (response, body) = request_once(
+            address,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqAtomic,
+                flags: 0,
+                version: 7,
+                target_virtual_server: 11,
+                nonce: 19,
+            },
+            &AtomicRequest {
+                flags: LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES,
+                key: b"ada".to_vec(),
+                attributes: vec![GetAttribute {
+                    name: "first".to_owned(),
+                    value: GetValue::String("Ada".to_owned()),
+                }],
+            }
+            .encode_body(),
+        )
+        .await
+        .unwrap();
+
+        server.await.unwrap();
+
+        assert_eq!(response.message_type, LegacyMessageType::RespAtomic);
+        assert_eq!(
+            AtomicResponse::decode_body(&body).unwrap().status,
+            LegacyReturnCode::Success
+        );
     }
 }

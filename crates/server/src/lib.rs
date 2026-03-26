@@ -6,15 +6,17 @@ use cluster_config::{
     ClusterConfig, ConsensusBackend, PlacementBackend, StorageBackend, TransportBackend,
 };
 use control_plane::{Catalog, InMemoryCatalog};
-use data_model::{parse_hyperdex_space, Space, Value};
+use data_model::{parse_hyperdex_space, Attribute, Mutation, Space, Value};
 use data_plane::DataPlane;
 use engine_memory::MemoryEngine;
 use engine_rocks::RocksEngine;
 use hyperdex_admin_protocol::{AdminRequest, AdminResponse, HyperdexAdminService};
 use hyperdex_client_protocol::{ClientRequest, ClientResponse, HyperdexClientService};
 use legacy_protocol::{
-    config_mismatch_response, CountRequest, CountResponse, GetAttribute, GetRequest, GetResponse,
-    GetValue, LegacyMessageType, LegacyReturnCode, RequestHeader, ResponseHeader,
+    config_mismatch_response, AtomicRequest, AtomicResponse, CountRequest, CountResponse,
+    GetAttribute, GetRequest, GetResponse, GetValue, LegacyMessageType, LegacyReturnCode,
+    RequestHeader, ResponseHeader, LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND,
+    LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND, LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES,
 };
 use placement_core::{HyperSpacePlacement, PlacementStrategy, RendezvousPlacement};
 use storage_core::{StorageEngine, WriteResult};
@@ -263,6 +265,48 @@ pub async fn handle_legacy_request(
     body: &[u8],
 ) -> Result<(ResponseHeader, Vec<u8>)> {
     match header.message_type {
+        LegacyMessageType::ReqAtomic => {
+            let request = AtomicRequest::decode_body(body)?;
+            let space = runtime.only_space_name()?;
+            let key = request.key.clone();
+            let exists = legacy_record_exists(runtime, &space, &key).await?;
+
+            let status = if request.flags & LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND != 0 && exists {
+                LegacyReturnCode::CompareFailed
+            } else if request.flags & LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND != 0 && !exists {
+                LegacyReturnCode::NotFound
+            } else if request.flags & LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES != 0 {
+                let response = HyperdexClientService::handle(
+                    runtime,
+                    ClientRequest::Put {
+                        space,
+                        key: request.key.into(),
+                        mutations: legacy_mutations_from_attributes(request.attributes),
+                    },
+                )
+                .await?;
+                legacy_atomic_status(response)?
+            } else {
+                let response = HyperdexClientService::handle(
+                    runtime,
+                    ClientRequest::Delete {
+                        space,
+                        key: request.key.into(),
+                    },
+                )
+                .await?;
+                legacy_atomic_status(response)?
+            };
+
+            Ok((
+                ResponseHeader {
+                    message_type: LegacyMessageType::RespAtomic,
+                    target_virtual_server: header.target_virtual_server,
+                    nonce: header.nonce,
+                },
+                AtomicResponse { status }.encode_body().to_vec(),
+            ))
+        }
         LegacyMessageType::ReqCount => {
             let request = CountRequest::decode_body(body)?;
             let response = HyperdexClientService::handle(
@@ -333,6 +377,43 @@ pub async fn handle_legacy_request(
     }
 }
 
+async fn legacy_record_exists(runtime: &ClusterRuntime, space: &str, key: &[u8]) -> Result<bool> {
+    let response = HyperdexClientService::handle(
+        runtime,
+        ClientRequest::Get {
+            space: space.to_owned(),
+            key: key.to_vec().into(),
+        },
+    )
+    .await?;
+
+    let ClientResponse::Record(record) = response else {
+        anyhow::bail!("unexpected runtime response to existence check");
+    };
+
+    Ok(record.is_some())
+}
+
+fn legacy_atomic_status(response: ClientResponse) -> Result<LegacyReturnCode> {
+    match response {
+        ClientResponse::Unit => Ok(LegacyReturnCode::Success),
+        ClientResponse::ConditionFailed => Ok(LegacyReturnCode::CompareFailed),
+        other => anyhow::bail!("unexpected runtime response to atomic request: {other:?}"),
+    }
+}
+
+fn legacy_mutations_from_attributes(attributes: Vec<GetAttribute>) -> Vec<Mutation> {
+    attributes
+        .into_iter()
+        .map(|attribute| {
+            Mutation::Set(Attribute {
+                name: attribute.name,
+                value: model_value_from_legacy(attribute.value),
+            })
+        })
+        .collect()
+}
+
 fn legacy_value_from_model(value: Value) -> GetValue {
     match value {
         Value::Null => GetValue::Null,
@@ -344,6 +425,16 @@ fn legacy_value_from_model(value: Value) -> GetValue {
         Value::List(v) => GetValue::String(format!("{v:?}")),
         Value::Set(v) => GetValue::String(format!("{v:?}")),
         Value::Map(v) => GetValue::String(format!("{v:?}")),
+    }
+}
+
+fn model_value_from_legacy(value: GetValue) -> Value {
+    match value {
+        GetValue::Null => Value::Null,
+        GetValue::Bool(v) => Value::Bool(v),
+        GetValue::Int(v) => Value::Int(v),
+        GetValue::Bytes(v) => Value::Bytes(v.into()),
+        GetValue::String(v) => Value::String(v),
     }
 }
 
@@ -554,8 +645,9 @@ mod tests {
     use hyperdex_admin_protocol::HyperdexAdminService;
     use hyperdex_client_protocol::HyperdexClientService;
     use legacy_protocol::{
-        CountRequest, CountResponse, GetRequest, GetResponse, GetValue, LegacyMessageType,
-        LegacyReturnCode, RequestHeader,
+        AtomicRequest, AtomicResponse, CountRequest, CountResponse, GetRequest, GetResponse,
+        GetAttribute, GetValue, LegacyMessageType, LegacyReturnCode, RequestHeader,
+        LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND, LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES,
     };
 
     #[test]
@@ -876,6 +968,138 @@ mod tests {
         assert!(response.attributes.iter().any(|attr| {
             attr.name == "first" && attr.value == GetValue::String("Ada".to_owned())
         }));
+    }
+
+    #[tokio::test]
+    async fn legacy_atomic_put_stores_record_attributes() {
+        let runtime = bootstrap_runtime();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first,\n\
+                    int profile_views\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        let (header, body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqAtomic,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 19,
+            },
+            &AtomicRequest {
+                flags: LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES,
+                key: b"ada".to_vec(),
+                attributes: vec![
+                    GetAttribute {
+                        name: "first".to_owned(),
+                        value: GetValue::String("Ada".to_owned()),
+                    },
+                    GetAttribute {
+                        name: "profile_views".to_owned(),
+                        value: GetValue::Int(5),
+                    },
+                ],
+            }
+            .encode_body(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(header.message_type, LegacyMessageType::RespAtomic);
+        assert_eq!(
+            AtomicResponse::decode_body(&body).unwrap().status,
+            LegacyReturnCode::Success
+        );
+
+        let response = HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+            },
+        )
+        .await
+        .unwrap();
+
+        let ClientResponse::Record(Some(record)) = response else {
+            panic!("expected stored record");
+        };
+
+        assert_eq!(
+            record.attributes.get("first"),
+            Some(&Value::String("Ada".to_owned()))
+        );
+        assert_eq!(record.attributes.get("profile_views"), Some(&Value::Int(5)));
+    }
+
+    #[tokio::test]
+    async fn legacy_atomic_respects_fail_if_found() {
+        let runtime = bootstrap_runtime();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "first".to_owned(),
+                    value: Value::String("Ada".to_owned()),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+
+        let (_, body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqAtomic,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 19,
+            },
+            &AtomicRequest {
+                flags: LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES | LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND,
+                key: b"ada".to_vec(),
+                attributes: vec![GetAttribute {
+                    name: "first".to_owned(),
+                    value: GetValue::String("Grace".to_owned()),
+                }],
+            }
+            .encode_body(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            AtomicResponse::decode_body(&body).unwrap().status,
+            LegacyReturnCode::CompareFailed
+        );
     }
 
     #[tokio::test]

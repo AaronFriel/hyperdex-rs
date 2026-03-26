@@ -128,6 +128,9 @@ stable traits from the start.
 - Done: `daemon` startup now instantiates the configured runtime shape and the
   legacy frontend handles a real `REQ_COUNT` request over framed legacy
   messages, instead of only returning `CONFIGMISMATCH`.
+- Done: the legacy frontend now handles real `REQ_GET` and a simplified
+  `REQ_ATOMIC` path over the configured runtime, covering key-based reads plus
+  basic write and delete flows.
 - Running: worktree lanes for gRPC frontend, hyperspace placement fidelity,
   OpenRaft scaffolding, and OmniPaxos scaffolding.
 - Next: integrate the remaining completed worktree results back into `main`
@@ -135,10 +138,9 @@ stable traits from the start.
 
 ## Next Bounded Iteration
 
-Broaden the legacy-compatible public surface again by implementing a real
-`REQ_PUT` path over the configured runtime, while keeping the request and
-response body layout close enough to HyperDex's mutation flow that the exact
-wire-compatibility work can continue incrementally.
+Tighten `REQ_ATOMIC` toward HyperDex's real `key_change` shape by adding
+attribute checks and funcall-style mutation decoding for the subset `hyhac`
+needs first, starting with conditional put plus scalar atomic operations.
 
 ## Loop Ledger
 
@@ -158,4 +160,4 @@ wire-compatibility work can continue incrementally.
 | 12 | The next useful improvement is to make the already-landed consensus alternatives selectable from `ClusterConfig` in `server`, so backend choice becomes part of the runtime shape instead of a compile-time-only detail. | Expand `ConsensusBackend` to name the concrete backends, add server feature forwarding plus runtime backend selection, test both disabled and enabled feature cases in `server`, and revalidate the workspace. | `cargo test -p consensus-core` passes, `cargo test -p consensus-core --features omnipaxos` passes, `cargo test -p consensus-core --features openraft` passes, `cargo test -p server --features omnipaxos` passes, `cargo test -p server --features openraft` passes, and `cargo test --workspace` passes after the selector lands. | Confirmed. | advance | Apply the same configuration-driven selection pattern to placement, storage, and transport next. |
 | 13 | The runtime shape is still too hard-coded if placement, storage, and internode transport remain fixed even after consensus became configurable. | Add placement, storage, and internode-transport selection to `server`, back RocksDB selection with an ephemeral runtime directory for tests, add shape-selection tests, and revalidate the workspace plus the feature-enabled server builds. | `cargo test -p server` passes, `cargo test --workspace` passes, `cargo test -p server --features omnipaxos` passes, and `cargo test -p server --features openraft` passes after the new selectors land. | Confirmed. | advance | Start using the configured runtime shape in daemon startup and richer legacy request handling next. |
 | 14 | Backend selection is not fully real until daemon startup uses it and the legacy listener serves at least one actual request through the configured runtime. | Build the daemon runtime from the parsed backend flags, keep RocksDB pointed at the daemon data directory, add framed legacy request/response helpers, implement `REQ_COUNT` over the configured runtime, and revalidate the targeted crates plus the full workspace. | `cargo test -p legacy-protocol -p legacy-frontend -p server` passes and `cargo test --workspace` passes after the daemon startup and `REQ_COUNT` handling changes. | Confirmed. | advance | Extend the legacy-compatible public surface with another real operation such as `REQ_GET` or a write path next. |
-| 15 | A key-based read path is the next useful compatibility increment because it exercises request decoding, runtime lookup, and typed response encoding without yet committing to full write semantics. | Extend `legacy-protocol` with `REQ_GET` request and response bodies, route `REQ_GET` through `ClusterRuntime`, share legacy request handling in `server`, and revalidate the targeted crates plus the full workspace. | `cargo test -p legacy-protocol -p legacy-frontend -p server` passes and `cargo test --workspace` passes after the new `REQ_GET` handling lands. | Confirmed. | advance | Implement `REQ_PUT` next so the legacy frontend starts covering both read and write paths against the configured runtime. |
+| 15 | A key-based read path plus a minimal write path are the next useful compatibility increments because they exercise request decoding, runtime lookup, typed response encoding, and the first real mutation semantics through the legacy frontend. | Extend `legacy-protocol` with `REQ_GET` bodies plus a simplified `REQ_ATOMIC` body, route both through `ClusterRuntime`, share legacy request handling in `server`, and revalidate the targeted crates plus the full workspace. | `cargo test -p legacy-protocol -p legacy-frontend -p server` passes and `cargo test --workspace` passes after the new `REQ_GET` and simplified `REQ_ATOMIC` handling lands. | Confirmed. | advance | Tighten `REQ_ATOMIC` toward HyperDex's `key_change` layout with checks and funcall-style mutations, starting from conditional put and scalar atomic operations. |

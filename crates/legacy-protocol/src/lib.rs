@@ -6,6 +6,11 @@ pub const LEGACY_RESPONSE_HEADER_SIZE: usize = BUSYBEE_HEADER_SIZE + 1 + 8 + 8;
 pub const GET_REQUEST_PREFIX_SIZE: usize = 2;
 pub const COUNT_REQUEST_PREFIX_SIZE: usize = 2;
 pub const COUNT_RESPONSE_BODY_SIZE: usize = 8;
+pub const ATOMIC_REQUEST_PREFIX_SIZE: usize = 2 + 1 + 2;
+pub const ATOMIC_RESPONSE_BODY_SIZE: usize = 2;
+pub const LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND: u8 = 0x01;
+pub const LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND: u8 = 0x02;
+pub const LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES: u8 = 0x80;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -93,10 +98,25 @@ pub enum GetValue {
     String(String),
 }
 
+pub type LegacyAttribute = GetAttribute;
+pub type LegacyValue = GetValue;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GetResponse {
     pub status: LegacyReturnCode,
     pub attributes: Vec<GetAttribute>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AtomicRequest {
+    pub flags: u8,
+    pub key: Vec<u8>,
+    pub attributes: Vec<GetAttribute>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AtomicResponse {
+    pub status: LegacyReturnCode,
 }
 
 #[derive(Debug, Error)]
@@ -257,41 +277,7 @@ impl GetResponse {
         let mut body = Vec::new();
         body.extend_from_slice(&(self.status as u16).to_be_bytes());
         body.extend_from_slice(&(self.attributes.len() as u16).to_be_bytes());
-
-        for attr in &self.attributes {
-            let name = attr.name.as_bytes();
-            body.extend_from_slice(&(name.len() as u16).to_be_bytes());
-            body.extend_from_slice(name);
-
-            match &attr.value {
-                GetValue::Null => {
-                    body.push(0);
-                    body.extend_from_slice(&0u32.to_be_bytes());
-                }
-                GetValue::Bool(v) => {
-                    body.push(1);
-                    body.extend_from_slice(&1u32.to_be_bytes());
-                    body.push(u8::from(*v));
-                }
-                GetValue::Int(v) => {
-                    body.push(2);
-                    body.extend_from_slice(&8u32.to_be_bytes());
-                    body.extend_from_slice(&v.to_be_bytes());
-                }
-                GetValue::Bytes(v) => {
-                    body.push(3);
-                    body.extend_from_slice(&(v.len() as u32).to_be_bytes());
-                    body.extend_from_slice(v);
-                }
-                GetValue::String(v) => {
-                    let bytes = v.as_bytes();
-                    body.push(4);
-                    body.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
-                    body.extend_from_slice(bytes);
-                }
-            }
-        }
-
+        encode_attributes_into(&mut body, &self.attributes);
         body
     }
 
@@ -305,71 +291,186 @@ impl GetResponse {
         ))?;
         let attr_count =
             u16::from_be_bytes(bytes[2..4].try_into().expect("fixed-width slice")) as usize;
+        let (attributes, offset) = decode_attributes(bytes, 4, attr_count)?;
 
-        let mut offset = 4;
-        let mut attributes = Vec::with_capacity(attr_count);
-
-        for _ in 0..attr_count {
-            if bytes.len() < offset + 2 {
-                return Err(LegacyProtocolError::ShortBuffer);
-            }
-            let name_len = u16::from_be_bytes(
-                bytes[offset..offset + 2]
-                    .try_into()
-                    .expect("fixed-width slice"),
-            ) as usize;
-            offset += 2;
-
-            if bytes.len() < offset + name_len + 5 {
-                return Err(LegacyProtocolError::ShortBuffer);
-            }
-
-            let name = std::str::from_utf8(&bytes[offset..offset + name_len])
-                .map_err(|_| LegacyProtocolError::InvalidUtf8)?
-                .to_owned();
-            offset += name_len;
-
-            let kind = bytes[offset];
-            offset += 1;
-            let value_len = u32::from_be_bytes(
-                bytes[offset..offset + 4]
-                    .try_into()
-                    .expect("fixed-width slice"),
-            ) as usize;
-            offset += 4;
-
-            if bytes.len() < offset + value_len {
-                return Err(LegacyProtocolError::ShortBuffer);
-            }
-
-            let value_bytes = &bytes[offset..offset + value_len];
-            offset += value_len;
-
-            let value = match kind {
-                0 => GetValue::Null,
-                1 => GetValue::Bool(value_bytes.first().copied().unwrap_or(0) != 0),
-                2 => {
-                    if value_bytes.len() != 8 {
-                        return Err(LegacyProtocolError::ShortBuffer);
-                    }
-                    GetValue::Int(i64::from_be_bytes(
-                        value_bytes.try_into().expect("fixed-width slice"),
-                    ))
-                }
-                3 => GetValue::Bytes(value_bytes.to_vec()),
-                4 => GetValue::String(
-                    std::str::from_utf8(value_bytes)
-                        .map_err(|_| LegacyProtocolError::InvalidUtf8)?
-                        .to_owned(),
-                ),
-                other => return Err(LegacyProtocolError::UnknownValueKind(other)),
-            };
-
-            attributes.push(GetAttribute { name, value });
+        if offset != bytes.len() {
+            return Err(LegacyProtocolError::ShortBuffer);
         }
 
         Ok(Self { status, attributes })
     }
+}
+
+impl AtomicRequest {
+    pub fn encode_body(&self) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&(self.key.len() as u16).to_be_bytes());
+        body.extend_from_slice(&self.key);
+        body.push(self.flags);
+        body.extend_from_slice(&(self.attributes.len() as u16).to_be_bytes());
+        encode_attributes_into(&mut body, &self.attributes);
+        body
+    }
+
+    pub fn decode_body(bytes: &[u8]) -> Result<Self, LegacyProtocolError> {
+        if bytes.len() < ATOMIC_REQUEST_PREFIX_SIZE {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        let key_len = u16::from_be_bytes(bytes[..2].try_into().expect("fixed-width slice")) as usize;
+        if bytes.len() < 2 + key_len + 3 {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        let key = bytes[2..2 + key_len].to_vec();
+        let flags = bytes[2 + key_len];
+        let attr_count = u16::from_be_bytes(
+            bytes[3 + key_len..5 + key_len]
+                .try_into()
+                .expect("fixed-width slice"),
+        ) as usize;
+        let (attributes, offset) = decode_attributes(bytes, 5 + key_len, attr_count)?;
+
+        if offset != bytes.len() {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        Ok(Self {
+            flags,
+            key,
+            attributes,
+        })
+    }
+}
+
+impl AtomicResponse {
+    pub fn encode_body(self) -> [u8; ATOMIC_RESPONSE_BODY_SIZE] {
+        (self.status as u16).to_be_bytes()
+    }
+
+    pub fn decode_body(bytes: &[u8]) -> Result<Self, LegacyProtocolError> {
+        if bytes.len() < ATOMIC_RESPONSE_BODY_SIZE {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        Ok(Self {
+            status: decode_return_code(u16::from_be_bytes(
+                bytes[..2].try_into().expect("fixed-width slice"),
+            ))?,
+        })
+    }
+}
+
+fn encode_attributes_into(body: &mut Vec<u8>, attributes: &[GetAttribute]) {
+    for attr in attributes {
+        let name = attr.name.as_bytes();
+        body.extend_from_slice(&(name.len() as u16).to_be_bytes());
+        body.extend_from_slice(name);
+        encode_value_into(body, &attr.value);
+    }
+}
+
+fn encode_value_into(body: &mut Vec<u8>, value: &GetValue) {
+    match value {
+        GetValue::Null => {
+            body.push(0);
+            body.extend_from_slice(&0u32.to_be_bytes());
+        }
+        GetValue::Bool(v) => {
+            body.push(1);
+            body.extend_from_slice(&1u32.to_be_bytes());
+            body.push(u8::from(*v));
+        }
+        GetValue::Int(v) => {
+            body.push(2);
+            body.extend_from_slice(&8u32.to_be_bytes());
+            body.extend_from_slice(&v.to_be_bytes());
+        }
+        GetValue::Bytes(v) => {
+            body.push(3);
+            body.extend_from_slice(&(v.len() as u32).to_be_bytes());
+            body.extend_from_slice(v);
+        }
+        GetValue::String(v) => {
+            let bytes = v.as_bytes();
+            body.push(4);
+            body.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+            body.extend_from_slice(bytes);
+        }
+    }
+}
+
+fn decode_attributes(
+    bytes: &[u8],
+    mut offset: usize,
+    attr_count: usize,
+) -> Result<(Vec<GetAttribute>, usize), LegacyProtocolError> {
+    let mut attributes = Vec::with_capacity(attr_count);
+
+    for _ in 0..attr_count {
+        if bytes.len() < offset + 2 {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        let name_len = u16::from_be_bytes(
+            bytes[offset..offset + 2]
+                .try_into()
+                .expect("fixed-width slice"),
+        ) as usize;
+        offset += 2;
+
+        if bytes.len() < offset + name_len + 5 {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        let name = std::str::from_utf8(&bytes[offset..offset + name_len])
+            .map_err(|_| LegacyProtocolError::InvalidUtf8)?
+            .to_owned();
+        offset += name_len;
+
+        let (value, next_offset) = decode_value(bytes, offset)?;
+        offset = next_offset;
+        attributes.push(GetAttribute { name, value });
+    }
+
+    Ok((attributes, offset))
+}
+
+fn decode_value(bytes: &[u8], offset: usize) -> Result<(GetValue, usize), LegacyProtocolError> {
+    let kind = bytes[offset];
+    let value_len = u32::from_be_bytes(
+        bytes[offset + 1..offset + 5]
+            .try_into()
+            .expect("fixed-width slice"),
+    ) as usize;
+    let value_start = offset + 5;
+
+    if bytes.len() < value_start + value_len {
+        return Err(LegacyProtocolError::ShortBuffer);
+    }
+
+    let value_bytes = &bytes[value_start..value_start + value_len];
+    let value = match kind {
+        0 => GetValue::Null,
+        1 => GetValue::Bool(value_bytes.first().copied().unwrap_or(0) != 0),
+        2 => {
+            if value_bytes.len() != 8 {
+                return Err(LegacyProtocolError::ShortBuffer);
+            }
+            GetValue::Int(i64::from_be_bytes(
+                value_bytes.try_into().expect("fixed-width slice"),
+            ))
+        }
+        3 => GetValue::Bytes(value_bytes.to_vec()),
+        4 => GetValue::String(
+            std::str::from_utf8(value_bytes)
+                .map_err(|_| LegacyProtocolError::InvalidUtf8)?
+                .to_owned(),
+        ),
+        other => return Err(LegacyProtocolError::UnknownValueKind(other)),
+    };
+
+    Ok((value, value_start + value_len))
 }
 
 pub fn config_mismatch_response(request: RequestHeader) -> ResponseHeader {
@@ -553,6 +654,35 @@ mod tests {
         };
 
         assert_eq!(GetResponse::decode_body(&response.encode_body()).unwrap(), response);
+    }
+
+    #[test]
+    fn atomic_request_round_trips() {
+        let request = AtomicRequest {
+            flags: LEGACY_ATOMIC_FLAG_HAS_ATTRIBUTES,
+            key: b"ada".to_vec(),
+            attributes: vec![
+                GetAttribute {
+                    name: "first".to_owned(),
+                    value: GetValue::String("Ada".to_owned()),
+                },
+                GetAttribute {
+                    name: "profile_views".to_owned(),
+                    value: GetValue::Int(5),
+                },
+            ],
+        };
+
+        assert_eq!(AtomicRequest::decode_body(&request.encode_body()).unwrap(), request);
+    }
+
+    #[test]
+    fn atomic_response_round_trips() {
+        let response = AtomicResponse {
+            status: LegacyReturnCode::Success,
+        };
+
+        assert_eq!(AtomicResponse::decode_body(&response.encode_body()).unwrap(), response);
     }
 
     #[test]
