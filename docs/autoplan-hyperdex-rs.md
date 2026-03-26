@@ -123,6 +123,8 @@ stable traits from the start.
 - Done: `server` now selects the consensus backend from `ClusterConfig` at
   runtime, and rejects feature-gated backends when the corresponding server
   feature is not compiled in.
+- Done: `server` now also selects placement, storage, and internode transport
+  from `ClusterConfig`, with working RocksDB-backed runtime coverage.
 - Running: worktree lanes for gRPC frontend, hyperspace placement fidelity,
   OpenRaft scaffolding, and OmniPaxos scaffolding.
 - Next: integrate the remaining completed worktree results back into `main`
@@ -130,9 +132,9 @@ stable traits from the start.
 
 ## Next Bounded Iteration
 
-Use the same runtime-selection approach for placement, storage, and internode
-transport so `ClusterConfig` starts controlling the whole process shape instead
-of only the consensus choice.
+Use the new runtime-shape selection to start making the external processes honor
+their configured backends, beginning with daemon startup and richer legacy
+request handling over the configured runtime.
 
 ## Loop Ledger
 
@@ -150,3 +152,4 @@ of only the consensus choice.
 | 10 | The placement branch is the next highest-value completed worker result because real hyperspace-style placement is part of the user’s core requirements and the change is already validated in its worktree. | Cherry-pick the placement branch onto `main`, validate placement-specific tests first, and then revalidate the full workspace against the new placement API and behavior. | `cargo test -p placement-core` passes with the new hyperspace ring tests, and `cargo test --workspace` passes on `main` after the cherry-pick. | Confirmed. | advance | Integrate the feature-gated OpenRaft backend next and make the two consensus alternatives coexist on `main`. |
 | 11 | The OpenRaft backend can coexist with OmniPaxos in `consensus-core` if both are kept feature-gated and the workspace dependencies are merged cleanly. | Cherry-pick the OpenRaft branch onto `main`, resolve the feature/dependency conflicts so both backends remain available, validate the default build plus the `openraft` feature path, and revalidate the full workspace. | `cargo test -p consensus-core` passes, `cargo test -p consensus-core --features openraft` passes, and `cargo test --workspace` passes after the merged OpenRaft integration. | Confirmed. | advance | Wire runtime-side backend selection next so the consensus alternatives can be exercised from configuration instead of existing only as compile-time options. |
 | 12 | The next useful improvement is to make the already-landed consensus alternatives selectable from `ClusterConfig` in `server`, so backend choice becomes part of the runtime shape instead of a compile-time-only detail. | Expand `ConsensusBackend` to name the concrete backends, add server feature forwarding plus runtime backend selection, test both disabled and enabled feature cases in `server`, and revalidate the workspace. | `cargo test -p consensus-core` passes, `cargo test -p consensus-core --features omnipaxos` passes, `cargo test -p consensus-core --features openraft` passes, `cargo test -p server --features omnipaxos` passes, `cargo test -p server --features openraft` passes, and `cargo test --workspace` passes after the selector lands. | Confirmed. | advance | Apply the same configuration-driven selection pattern to placement, storage, and transport next. |
+| 13 | The runtime shape is still too hard-coded if placement, storage, and internode transport remain fixed even after consensus became configurable. | Add placement, storage, and internode-transport selection to `server`, back RocksDB selection with an ephemeral runtime directory for tests, add shape-selection tests, and revalidate the workspace plus the feature-enabled server builds. | `cargo test -p server` passes, `cargo test --workspace` passes, `cargo test -p server --features omnipaxos` passes, and `cargo test -p server --features openraft` passes after the new selectors land. | Confirmed. | advance | Start using the configured runtime shape in daemon startup and richer legacy request handling next. |

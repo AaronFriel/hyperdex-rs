@@ -2,21 +2,30 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use cluster_config::{ClusterConfig, ConsensusBackend};
+use cluster_config::{
+    ClusterConfig, ConsensusBackend, PlacementBackend, StorageBackend, TransportBackend,
+};
 use control_plane::{Catalog, InMemoryCatalog};
 use data_model::{parse_hyperdex_space, Space};
 use data_plane::DataPlane;
+use engine_memory::MemoryEngine;
+use engine_rocks::RocksEngine;
 use hyperdex_admin_protocol::{AdminRequest, AdminResponse, HyperdexAdminService};
 use hyperdex_client_protocol::{ClientRequest, ClientResponse, HyperdexClientService};
-use placement_core::{HyperSpacePlacement, PlacementStrategy};
+use placement_core::{HyperSpacePlacement, PlacementStrategy, RendezvousPlacement};
 use storage_core::{StorageEngine, WriteResult};
-use engine_memory::MemoryEngine;
+use tempfile::TempDir;
+use transport_core::InProcessTransport;
 
 pub struct ClusterRuntime {
     catalog: Arc<dyn Catalog>,
     storage: Arc<dyn StorageEngine>,
     data_plane: DataPlane,
     consensus: ConsensusRuntime,
+    placement: PlacementRuntime,
+    storage_backend: StorageRuntime,
+    internode_transport: TransportRuntime,
+    _ephemeral_storage_dir: Option<TempDir>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -27,12 +36,34 @@ pub enum ConsensusRuntime {
     OpenRaft,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PlacementRuntime {
+    Hyperspace,
+    Rendezvous,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StorageRuntime {
+    Memory,
+    RocksDb,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TransportRuntime {
+    InProcess,
+    Grpc,
+}
+
 impl ClusterRuntime {
     pub fn new(
         catalog: Arc<dyn Catalog>,
         storage: Arc<dyn StorageEngine>,
         placement: Arc<dyn PlacementStrategy>,
         consensus: ConsensusRuntime,
+        placement_runtime: PlacementRuntime,
+        storage_backend: StorageRuntime,
+        internode_transport: TransportRuntime,
+        ephemeral_storage_dir: Option<TempDir>,
     ) -> Self {
         let data_plane = DataPlane::new(catalog.clone(), storage.clone(), placement);
         Self {
@@ -40,20 +71,30 @@ impl ClusterRuntime {
             storage,
             data_plane,
             consensus,
+            placement: placement_runtime,
+            storage_backend,
+            internode_transport,
+            _ephemeral_storage_dir: ephemeral_storage_dir,
         }
     }
 
     pub fn single_node(config: ClusterConfig) -> Result<Self> {
         let catalog: Arc<dyn Catalog> =
             Arc::new(InMemoryCatalog::new(config.nodes.clone(), config.replicas));
-        let storage: Arc<dyn StorageEngine> = Arc::new(MemoryEngine::new());
         let consensus = select_consensus_backend(&config)?;
+        let (placement, placement_runtime) = select_placement_backend(&config);
+        let (storage, storage_backend, ephemeral_storage_dir) = select_storage_backend(&config)?;
+        let internode_transport = select_internode_transport(&config);
 
         Ok(Self::new(
             catalog,
             storage,
-            Arc::new(HyperSpacePlacement::default()),
+            placement,
             consensus,
+            placement_runtime,
+            storage_backend,
+            internode_transport,
+            ephemeral_storage_dir,
         ))
     }
 
@@ -66,6 +107,18 @@ impl ClusterRuntime {
     pub fn consensus_backend_name(&self) -> &'static str {
         self.consensus.name()
     }
+
+    pub fn placement_backend_name(&self) -> &'static str {
+        self.placement.name()
+    }
+
+    pub fn storage_backend_name(&self) -> &'static str {
+        self.storage_backend.name()
+    }
+
+    pub fn internode_transport_name(&self) -> &'static str {
+        self.internode_transport.name()
+    }
 }
 
 impl ConsensusRuntime {
@@ -75,6 +128,33 @@ impl ConsensusRuntime {
             Self::Mirror => "mirror",
             Self::OmniPaxos => "omnipaxos",
             Self::OpenRaft => "openraft",
+        }
+    }
+}
+
+impl PlacementRuntime {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Hyperspace => "hyperspace",
+            Self::Rendezvous => "rendezvous",
+        }
+    }
+}
+
+impl StorageRuntime {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Memory => "memory",
+            Self::RocksDb => "rocksdb",
+        }
+    }
+}
+
+impl TransportRuntime {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::InProcess => "in-process",
+            Self::Grpc => "grpc",
         }
     }
 }
@@ -107,6 +187,44 @@ pub fn select_consensus_backend(config: &ClusterConfig) -> Result<ConsensusRunti
                 ))
             }
         }
+    }
+}
+
+fn select_placement_backend(
+    config: &ClusterConfig,
+) -> (Arc<dyn PlacementStrategy>, PlacementRuntime) {
+    match config.placement {
+        PlacementBackend::Hyperspace => (
+            Arc::new(HyperSpacePlacement::default()),
+            PlacementRuntime::Hyperspace,
+        ),
+        PlacementBackend::Rendezvous => (
+            Arc::new(RendezvousPlacement),
+            PlacementRuntime::Rendezvous,
+        ),
+    }
+}
+
+fn select_storage_backend(
+    config: &ClusterConfig,
+) -> Result<(Arc<dyn StorageEngine>, StorageRuntime, Option<TempDir>)> {
+    match config.storage {
+        StorageBackend::Memory => Ok((Arc::new(MemoryEngine::new()), StorageRuntime::Memory, None)),
+        StorageBackend::RocksDb => {
+            let dir = tempfile::tempdir()?;
+            let engine = RocksEngine::open(dir.path())?;
+            Ok((Arc::new(engine), StorageRuntime::RocksDb, Some(dir)))
+        }
+    }
+}
+
+fn select_internode_transport(config: &ClusterConfig) -> TransportRuntime {
+    match config.internode_transport {
+        TransportBackend::InProcess => {
+            let _ = InProcessTransport;
+            TransportRuntime::InProcess
+        }
+        TransportBackend::Grpc => TransportRuntime::Grpc,
     }
 }
 
@@ -240,7 +358,7 @@ fn required_option(args: &[String], name: &str) -> Result<String> {
 mod tests {
     use super::*;
     use bytes::Bytes;
-    use cluster_config::ConsensusBackend;
+    use cluster_config::{ConsensusBackend, PlacementBackend, StorageBackend, TransportBackend};
     use data_model::{Attribute, Check, Mutation, Predicate, Value};
     use hyperdex_admin_protocol::HyperdexAdminService;
     use hyperdex_client_protocol::HyperdexClientService;
@@ -250,6 +368,9 @@ mod tests {
         let runtime = bootstrap_runtime();
 
         assert_eq!(runtime.consensus_backend_name(), "single-node");
+        assert_eq!(runtime.placement_backend_name(), "hyperspace");
+        assert_eq!(runtime.storage_backend_name(), "memory");
+        assert_eq!(runtime.internode_transport_name(), "in-process");
     }
 
     #[cfg(not(feature = "omnipaxos"))]
@@ -284,6 +405,81 @@ mod tests {
         let runtime = ClusterRuntime::single_node(config).unwrap();
 
         assert_eq!(runtime.consensus_backend_name(), "mirror");
+    }
+
+    #[test]
+    fn runtime_selects_rendezvous_placement_from_config() {
+        let mut config = ClusterConfig::default();
+        config.placement = PlacementBackend::Rendezvous;
+
+        let runtime = ClusterRuntime::single_node(config).unwrap();
+
+        assert_eq!(runtime.placement_backend_name(), "rendezvous");
+    }
+
+    #[tokio::test]
+    async fn runtime_selects_rocksdb_storage_from_config() {
+        let mut config = ClusterConfig::default();
+        config.storage = StorageBackend::RocksDb;
+
+        let runtime = ClusterRuntime::single_node(config).unwrap();
+        assert_eq!(runtime.storage_backend_name(), "rocksdb");
+
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+                mutations: vec![
+                    Mutation::Set(Attribute {
+                        name: "username".to_owned(),
+                        value: Value::Bytes(Bytes::from_static(b"ada")),
+                    }),
+                    Mutation::Set(Attribute {
+                        name: "first".to_owned(),
+                        value: Value::String("Ada".to_owned()),
+                    }),
+                ],
+            },
+        )
+        .await
+        .unwrap();
+
+        let record = HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(matches!(record, ClientResponse::Record(Some(_))));
+    }
+
+    #[test]
+    fn runtime_selects_grpc_internode_transport_from_config() {
+        let mut config = ClusterConfig::default();
+        config.internode_transport = TransportBackend::Grpc;
+
+        let runtime = ClusterRuntime::single_node(config).unwrap();
+
+        assert_eq!(runtime.internode_transport_name(), "grpc");
     }
 
     #[cfg(feature = "omnipaxos")]
