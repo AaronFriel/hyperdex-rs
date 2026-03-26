@@ -13,7 +13,10 @@ use data_model::{
 use data_plane::DataPlane;
 use engine_memory::MemoryEngine;
 use engine_rocks::RocksEngine;
-use hyperdex_admin_protocol::{AdminRequest, AdminResponse, HyperdexAdminService};
+use hyperdex_admin_protocol::{
+    AdminRequest, AdminResponse, CoordinatorAdminRequest, CoordinatorReturnCode,
+    HyperdexAdminService, LegacyAdminRequest, LegacyAdminReturnCode,
+};
 use hyperdex_client_protocol::{ClientRequest, ClientResponse, HyperdexClientService};
 use legacy_protocol::{
     config_mismatch_response, AtomicRequest, AtomicResponse, CountRequest, CountResponse,
@@ -691,6 +694,82 @@ fn model_numeric_op_from_legacy(name: LegacyFuncallName) -> NumericOp {
     }
 }
 
+pub async fn handle_coordinator_admin_request(
+    runtime: &ClusterRuntime,
+    request: CoordinatorAdminRequest,
+) -> Result<CoordinatorReturnCode> {
+    match request {
+        CoordinatorAdminRequest::SpaceAdd(space) => {
+            match HyperdexAdminService::handle(runtime, AdminRequest::CreateSpace(space)).await {
+                Ok(AdminResponse::Unit) => Ok(CoordinatorReturnCode::Success),
+                Ok(other) => anyhow::bail!("unexpected admin response to space_add: {other:?}"),
+                Err(err) => Ok(map_admin_error_to_coordinator(&err)),
+            }
+        }
+        CoordinatorAdminRequest::SpaceRm(name) => {
+            match HyperdexAdminService::handle(runtime, AdminRequest::DropSpace(name)).await {
+                Ok(AdminResponse::Unit) => Ok(CoordinatorReturnCode::Success),
+                Ok(other) => anyhow::bail!(
+                    "unexpected admin response to space_rm: {other:?}"
+                ),
+                Err(err) => Ok(map_admin_error_to_coordinator(&err)),
+            }
+        }
+    }
+}
+
+pub async fn handle_coordinator_admin_method(
+    runtime: &ClusterRuntime,
+    method: &str,
+    request: CoordinatorAdminRequest,
+) -> Result<[u8; 2]> {
+    let status = match (method, request) {
+        ("space_add", CoordinatorAdminRequest::SpaceAdd(space)) => {
+            handle_coordinator_admin_request(runtime, CoordinatorAdminRequest::SpaceAdd(space))
+                .await?
+        }
+        ("space_rm", CoordinatorAdminRequest::SpaceRm(name)) => {
+            handle_coordinator_admin_request(runtime, CoordinatorAdminRequest::SpaceRm(name))
+                .await?
+        }
+        _ => CoordinatorReturnCode::Malformed,
+    };
+
+    Ok(status.encode())
+}
+
+pub async fn handle_legacy_admin_request(
+    runtime: &ClusterRuntime,
+    request: LegacyAdminRequest,
+) -> Result<LegacyAdminReturnCode> {
+    match request {
+        LegacyAdminRequest::SpaceAddDsl(schema) => {
+            let Ok(space) = parse_hyperdex_space(&schema) else {
+                return Ok(LegacyAdminReturnCode::BadSpace);
+            };
+            Ok(handle_coordinator_admin_request(runtime, CoordinatorAdminRequest::SpaceAdd(space))
+                .await?
+                .legacy_admin_status())
+        }
+        LegacyAdminRequest::SpaceRm(name) => Ok(
+            handle_coordinator_admin_request(runtime, CoordinatorAdminRequest::SpaceRm(name))
+                .await?
+                .legacy_admin_status(),
+        ),
+    }
+}
+
+fn map_admin_error_to_coordinator(err: &anyhow::Error) -> CoordinatorReturnCode {
+    let msg = err.to_string();
+    if msg.contains("already exists") {
+        CoordinatorReturnCode::Duplicate
+    } else if msg.contains("not found") {
+        CoordinatorReturnCode::NotFound
+    } else {
+        CoordinatorReturnCode::NoCanDo
+    }
+}
+
 #[async_trait]
 impl HyperdexAdminService for ClusterRuntime {
     async fn handle(&self, request: AdminRequest) -> Result<AdminResponse> {
@@ -898,7 +977,10 @@ mod tests {
     use bytes::Bytes;
     use cluster_config::{ConsensusBackend, PlacementBackend, StorageBackend, TransportBackend};
     use data_model::{Attribute, Check, Mutation, Predicate, Value};
-    use hyperdex_admin_protocol::{AdminRequest, AdminResponse, ConfigView, HyperdexAdminService};
+    use hyperdex_admin_protocol::{
+        AdminRequest, AdminResponse, ConfigView, CoordinatorAdminRequest,
+        CoordinatorReturnCode, HyperdexAdminService, LegacyAdminRequest, LegacyAdminReturnCode,
+    };
     use hyperdex_client_protocol::HyperdexClientService;
     use legacy_protocol::{
         AtomicRequest, AtomicResponse, CountRequest, CountResponse, GetRequest, GetResponse,
@@ -1153,6 +1235,135 @@ mod tests {
                 .await
                 .unwrap(),
             AdminResponse::Stable { version: 2 }
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_admin_space_add_success_maps_to_hyperdex_status() {
+        let runtime = bootstrap_runtime();
+
+        let status = handle_legacy_admin_request(
+            &runtime,
+            LegacyAdminRequest::SpaceAddDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first,\n\
+                    int profile_views\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(status, LegacyAdminReturnCode::Success);
+    }
+
+    #[tokio::test]
+    async fn legacy_admin_space_add_duplicate_maps_to_hyperdex_status() {
+        let runtime = bootstrap_runtime();
+        let request = LegacyAdminRequest::SpaceAddDsl(
+            "space profiles\n\
+             key username\n\
+             attributes\n\
+                string first,\n\
+                int profile_views\n\
+             tolerate 0 failures\n"
+                .to_owned(),
+        );
+
+        assert_eq!(
+            handle_legacy_admin_request(&runtime, request.clone())
+                .await
+                .unwrap(),
+            LegacyAdminReturnCode::Success
+        );
+        assert_eq!(
+            handle_legacy_admin_request(&runtime, request).await.unwrap(),
+            LegacyAdminReturnCode::Duplicate
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_admin_space_add_bad_schema_maps_to_badspace() {
+        let runtime = bootstrap_runtime();
+
+        let status = handle_legacy_admin_request(
+            &runtime,
+            LegacyAdminRequest::SpaceAddDsl("space broken".to_owned()),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(status, LegacyAdminReturnCode::BadSpace);
+    }
+
+    #[tokio::test]
+    async fn legacy_admin_space_rm_missing_maps_to_notfound() {
+        let runtime = bootstrap_runtime();
+
+        let status = handle_legacy_admin_request(
+            &runtime,
+            LegacyAdminRequest::SpaceRm("profiles".to_owned()),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(status, LegacyAdminReturnCode::NotFound);
+    }
+
+    #[tokio::test]
+    async fn coordinator_admin_space_rm_maps_to_exact_coordinator_code() {
+        let runtime = bootstrap_runtime();
+
+        let status = handle_coordinator_admin_request(
+            &runtime,
+            CoordinatorAdminRequest::SpaceRm("profiles".to_owned()),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(status, CoordinatorReturnCode::NotFound);
+        assert_eq!(
+            CoordinatorReturnCode::decode(&status.encode()).unwrap(),
+            CoordinatorReturnCode::NotFound
+        );
+    }
+
+    #[tokio::test]
+    async fn coordinator_admin_method_dispatch_returns_wire_bytes() {
+        let runtime = bootstrap_runtime();
+
+        let bytes = handle_coordinator_admin_method(
+            &runtime,
+            "space_rm",
+            CoordinatorAdminRequest::SpaceRm("profiles".to_owned()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            CoordinatorReturnCode::decode(&bytes).unwrap(),
+            CoordinatorReturnCode::NotFound
+        );
+
+        let malformed = handle_coordinator_admin_method(
+            &runtime,
+            "space_rm",
+            CoordinatorAdminRequest::SpaceAdd(parse_hyperdex_space(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first\n\
+                 tolerate 0 failures\n",
+            )
+            .unwrap()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            CoordinatorReturnCode::decode(&malformed).unwrap(),
+            CoordinatorReturnCode::Malformed
         );
     }
 
