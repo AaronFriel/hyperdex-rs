@@ -4,9 +4,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
 use data_model::{Attribute as ModelAttribute, Mutation as ModelMutation, Value as ModelValue};
-use prost::Message;
 use server::ClusterRuntime;
-use transport_core::{ClusterTransport, InternodeRequest, InternodeResponse};
+use transport_core::{ClusterTransport, InternodeRequest, InternodeResponse, RemoteNode};
 
 pub mod hyperdex {
     pub mod v1 {
@@ -190,12 +189,39 @@ impl hyperdex::v1::hyperdex_client_server::HyperdexClient for HyperdexClientGrpc
     }
 }
 
-#[derive(Clone, PartialEq, Message)]
-pub struct RpcEnvelope {
-    #[prost(string, tag = "1")]
-    pub method: String,
-    #[prost(bytes = "vec", tag = "2")]
-    pub body: Vec<u8>,
+#[derive(Clone)]
+pub struct InternodeGrpc {
+    runtime: Arc<ClusterRuntime>,
+}
+
+impl InternodeGrpc {
+    pub fn new(runtime: Arc<ClusterRuntime>) -> Self {
+        Self { runtime }
+    }
+}
+
+#[tonic::async_trait]
+impl hyperdex::v1::internode_transport_server::InternodeTransport for InternodeGrpc {
+    async fn send(
+        &self,
+        request: tonic::Request<hyperdex::v1::InternodeRpcRequest>,
+    ) -> std::result::Result<tonic::Response<hyperdex::v1::InternodeRpcResponse>, tonic::Status>
+    {
+        let request = request.into_inner();
+        let response = self
+            .runtime
+            .handle_internode_request(InternodeRequest {
+                method: request.method,
+                body: Bytes::from(request.body),
+            })
+            .await
+            .map_err(status_from_anyhow)?;
+
+        Ok(tonic::Response::new(hyperdex::v1::InternodeRpcResponse {
+            status: response.status as u32,
+            body: response.body.to_vec(),
+        }))
+    }
 }
 
 #[derive(Default)]
@@ -203,16 +229,26 @@ pub struct GrpcTransportAdapter;
 
 #[async_trait]
 impl ClusterTransport for GrpcTransportAdapter {
-    async fn send(&self, _node: u64, request: InternodeRequest) -> Result<InternodeResponse> {
-        let envelope = RpcEnvelope {
-            method: request.method,
-            body: request.body.to_vec(),
-        };
-        let encoded = envelope.encode_to_vec();
+    async fn send(
+        &self,
+        node: &RemoteNode,
+        request: InternodeRequest,
+    ) -> Result<InternodeResponse> {
+        let endpoint = format!("http://{}:{}", node.host, node.port);
+        let mut client =
+            hyperdex::v1::internode_transport_client::InternodeTransportClient::connect(endpoint)
+                .await?;
+        let response = client
+            .send(hyperdex::v1::InternodeRpcRequest {
+                method: request.method,
+                body: request.body.to_vec(),
+            })
+            .await?
+            .into_inner();
 
         Ok(InternodeResponse {
-            status: 200,
-            body: Bytes::from(encoded),
+            status: response.status as u16,
+            body: Bytes::from(response.body),
         })
     }
 

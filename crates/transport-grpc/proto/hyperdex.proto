@@ -17,6 +17,10 @@ service HyperdexClient {
   rpc Get(GetRequest) returns (GetResponse);
 }
 
+service InternodeTransport {
+  rpc Send(InternodeRpcRequest) returns (InternodeRpcResponse);
+}
+
 message PutRequest {
   string space = 1;
   bytes key = 2;
@@ -33,6 +37,16 @@ message GetRequest {
 message GetResponse {
   bool found = 1;
   repeated Attribute attributes = 2;
+}
+
+message InternodeRpcRequest {
+  string method = 1;
+  bytes body = 2;
+}
+
+message InternodeRpcResponse {
+  uint32 status = 1;
+  bytes body = 2;
 }
 
 message Attribute {

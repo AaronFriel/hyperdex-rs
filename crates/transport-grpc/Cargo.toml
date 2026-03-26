@@ -25,3 +25,6 @@ transport-core = { path = "../transport-core" }
 [build-dependencies]
 protoc-bin-vendored = "3"
 tonic-build = "0.12"
+
+[dev-dependencies]
+cluster-config = { path = "../cluster-config" }

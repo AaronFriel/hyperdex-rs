@@ -33,16 +33,31 @@ use storage_core::{StorageEngine, WriteResult};
 use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+<<<<<<< HEAD
+use transport_core::{
+    ClusterTransport, DataPlaneRequest, DataPlaneResponse, InProcessTransport, InternodeRequest,
+    InternodeResponse, RemoteNode, DATA_PLANE_METHOD,
+};
+||||||| parent of 30354c7 (Add gRPC internode forwarding for data plane)
 use transport_core::InProcessTransport;
+=======
+use transport_core::{
+    ClusterTransport, DataPlaneRequest, DataPlaneResponse, InProcessTransport, InternodeRequest,
+    InternodeResponse, RemoteNode, DATA_PLANE_METHOD,
+};
+>>>>>>> 30354c7 (Add gRPC internode forwarding for data plane)
 
 pub const COORDINATOR_CONTROL_HEADER_SIZE: usize = 2 + 4;
 pub const COORDINATOR_CONTROL_BODY_LENGTH_SIZE: usize = 4;
 
 pub struct ClusterRuntime {
+    local_node_id: u64,
     cluster_config: Mutex<ClusterConfig>,
     catalog: Arc<dyn Catalog>,
     storage: Arc<dyn StorageEngine>,
     data_plane: DataPlane,
+    placement_strategy: Arc<dyn PlacementStrategy>,
+    cluster_transport: Arc<dyn ClusterTransport>,
     consensus: ConsensusRuntime,
     placement: PlacementRuntime,
     storage_backend: StorageRuntime,
@@ -96,22 +111,27 @@ pub struct CoordinatorControlResponse {
 
 impl ClusterRuntime {
     pub fn new(
+        local_node_id: u64,
         cluster_config: ClusterConfig,
         catalog: Arc<dyn Catalog>,
         storage: Arc<dyn StorageEngine>,
         placement: Arc<dyn PlacementStrategy>,
+        cluster_transport: Arc<dyn ClusterTransport>,
         consensus: ConsensusRuntime,
         placement_runtime: PlacementRuntime,
         storage_backend: StorageRuntime,
         internode_transport: TransportRuntime,
         ephemeral_storage_dir: Option<TempDir>,
     ) -> Self {
-        let data_plane = DataPlane::new(catalog.clone(), storage.clone(), placement);
+        let data_plane = DataPlane::new(catalog.clone(), storage.clone(), placement.clone());
         Self {
+            local_node_id,
             cluster_config: Mutex::new(cluster_config),
             catalog,
             storage,
             data_plane,
+            placement_strategy: placement,
+            cluster_transport,
             consensus,
             placement: placement_runtime,
             storage_backend,
@@ -133,6 +153,26 @@ impl ClusterRuntime {
         config: ClusterConfig,
         data_dir: Option<&std::path::Path>,
     ) -> Result<Self> {
+        let Some(local_node_id) = config.nodes.first().map(|node| node.id) else {
+            return Err(anyhow!("cluster config must contain at least one node"));
+        };
+        Self::for_node_with_data_dir(config, local_node_id, data_dir)
+    }
+
+    pub fn for_node(config: ClusterConfig, local_node_id: u64) -> Result<Self> {
+        Self::for_node_with_data_dir(config, local_node_id, None)
+    }
+
+    pub fn for_node_with_data_dir(
+        config: ClusterConfig,
+        local_node_id: u64,
+        data_dir: Option<&std::path::Path>,
+    ) -> Result<Self> {
+        if !config.nodes.iter().any(|node| node.id == local_node_id) {
+            return Err(anyhow!(
+                "cluster config does not define local node {local_node_id}"
+            ));
+        }
         let catalog: Arc<dyn Catalog> =
             Arc::new(InMemoryCatalog::new(config.nodes.clone(), config.replicas));
         let consensus = select_consensus_backend(&config)?;
@@ -142,16 +182,27 @@ impl ClusterRuntime {
         let internode_transport = select_internode_transport(&config);
 
         Ok(Self::new(
+            local_node_id,
             config,
             catalog,
             storage,
             placement,
+            Arc::new(InProcessTransport),
             consensus,
             placement_runtime,
             storage_backend,
             internode_transport,
             ephemeral_storage_dir,
         ))
+    }
+
+    pub fn install_cluster_transport(
+        &mut self,
+        transport: Arc<dyn ClusterTransport>,
+        runtime: TransportRuntime,
+    ) {
+        self.cluster_transport = transport;
+        self.internode_transport = runtime;
     }
 
     fn create_space(&self, space: Space) -> Result<()> {
@@ -185,6 +236,63 @@ impl ClusterRuntime {
 
     pub fn internode_transport_name(&self) -> &'static str {
         self.internode_transport.name()
+    }
+
+    pub fn local_node_id(&self) -> u64 {
+        self.local_node_id
+    }
+
+    pub fn route_primary(&self, key: &[u8]) -> Result<u64> {
+        let layout = self.catalog.layout()?;
+        Ok(self.placement_strategy.locate(key, &layout).primary)
+    }
+
+    async fn forward_data_request(
+        &self,
+        node: u64,
+        request: DataPlaneRequest,
+    ) -> Result<DataPlaneResponse> {
+        let node = self.remote_node(node)?;
+        let response = self
+            .cluster_transport
+            .send(
+                &node,
+                InternodeRequest::encode(DATA_PLANE_METHOD, &request)?,
+            )
+            .await?;
+        if response.status != 200 {
+            return Err(anyhow!(
+                "internode request to node {} failed with status {}",
+                node.id,
+                response.status
+            ));
+        }
+        response.decode()
+    }
+
+    pub async fn handle_internode_request(
+        &self,
+        request: InternodeRequest,
+    ) -> Result<InternodeResponse> {
+        match request.method.as_str() {
+            DATA_PLANE_METHOD => {
+                let response = match request.decode()? {
+                    DataPlaneRequest::Put {
+                        space,
+                        key,
+                        mutations,
+                    } => match self.data_plane.put(&space, key, &mutations)? {
+                        WriteResult::Written | WriteResult::Missing => DataPlaneResponse::Unit,
+                        WriteResult::ConditionFailed => DataPlaneResponse::ConditionFailed,
+                    },
+                    DataPlaneRequest::Get { space, key } => {
+                        DataPlaneResponse::Record(self.data_plane.get(&space, &key)?)
+                    }
+                };
+                InternodeResponse::encode(200, &response)
+            }
+            other => Err(anyhow!("unsupported internode method `{other}`")),
+        }
     }
 
     fn only_space_name(&self) -> Result<String> {
@@ -303,6 +411,24 @@ impl ClusterRuntime {
         };
 
         Ok(())
+    }
+
+    fn remote_node(&self, node_id: u64) -> Result<RemoteNode> {
+        let cluster_config = self.cluster_config.lock().expect("cluster config poisoned");
+        let Some(node) = cluster_config
+            .nodes
+            .iter()
+            .find(|node| node.id == node_id)
+        else {
+            return Err(anyhow!(
+                "cluster config does not define remote node {node_id}"
+            ));
+        };
+        Ok(RemoteNode {
+            id: node.id,
+            host: node.host.clone(),
+            port: node.data_port,
+        })
     }
 }
 
@@ -1101,13 +1227,53 @@ impl HyperdexClientService for ClusterRuntime {
                 space,
                 key,
                 mutations,
-            } => Ok(match self.data_plane.put(&space, key, &mutations)? {
-                WriteResult::Written => ClientResponse::Unit,
-                WriteResult::ConditionFailed => ClientResponse::ConditionFailed,
-                WriteResult::Missing => ClientResponse::Unit,
-            }),
+            } => {
+                let primary = self.route_primary(&key)?;
+                if primary == self.local_node_id {
+                    Ok(match self.data_plane.put(&space, key, &mutations)? {
+                        WriteResult::Written => ClientResponse::Unit,
+                        WriteResult::ConditionFailed => ClientResponse::ConditionFailed,
+                        WriteResult::Missing => ClientResponse::Unit,
+                    })
+                } else {
+                    Ok(
+                        match self
+                            .forward_data_request(
+                                primary,
+                                DataPlaneRequest::Put {
+                                    space,
+                                    key,
+                                    mutations,
+                                },
+                            )
+                            .await?
+                        {
+                            DataPlaneResponse::Unit => ClientResponse::Unit,
+                            DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
+                            DataPlaneResponse::Record(_) => {
+                                anyhow::bail!("unexpected record response to remote put")
+                            }
+                        },
+                    )
+                }
+            }
             ClientRequest::Get { space, key } => {
-                Ok(ClientResponse::Record(self.data_plane.get(&space, &key)?))
+                let primary = self.route_primary(&key)?;
+                if primary == self.local_node_id {
+                    Ok(ClientResponse::Record(self.data_plane.get(&space, &key)?))
+                } else {
+                    Ok(
+                        match self
+                            .forward_data_request(primary, DataPlaneRequest::Get { space, key })
+                            .await?
+                        {
+                            DataPlaneResponse::Record(record) => ClientResponse::Record(record),
+                            DataPlaneResponse::Unit | DataPlaneResponse::ConditionFailed => {
+                                anyhow::bail!("unexpected write response to remote get")
+                            }
+                        },
+                    )
+                }
             }
             ClientRequest::Delete { space, key } => {
                 Ok(match self.data_plane.delete(&space, &key)? {
@@ -1442,6 +1608,32 @@ mod tests {
         let runtime = ClusterRuntime::single_node(config).unwrap();
 
         assert_eq!(runtime.internode_transport_name(), "grpc");
+    }
+
+    #[test]
+    fn runtime_rejects_missing_local_node() {
+        let mut config = ClusterConfig::default();
+        config.nodes = vec![
+            ClusterNode {
+                id: 1,
+                host: "127.0.0.1".to_owned(),
+                control_port: 1982,
+                data_port: 2012,
+            },
+            ClusterNode {
+                id: 2,
+                host: "127.0.0.1".to_owned(),
+                control_port: 1983,
+                data_port: 2013,
+            },
+        ];
+
+        let err = ClusterRuntime::for_node(config, 9)
+            .err()
+            .expect("missing local node should be rejected")
+            .to_string();
+
+        assert!(err.contains("local node 9"));
     }
 
     #[cfg(feature = "omnipaxos")]
