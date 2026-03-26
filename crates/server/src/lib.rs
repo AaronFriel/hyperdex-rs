@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -7,7 +8,7 @@ use cluster_config::{
 };
 use control_plane::{Catalog, InMemoryCatalog};
 use data_model::{
-    parse_hyperdex_space, Attribute, Check, Mutation, NumericOp, Predicate, Space, Value,
+    parse_hyperdex_space, Attribute, Check, Mutation, NumericOp, Predicate, Record, Space, Value,
 };
 use data_plane::DataPlane;
 use engine_memory::MemoryEngine;
@@ -18,8 +19,9 @@ use legacy_protocol::{
     config_mismatch_response, AtomicRequest, AtomicResponse, CountRequest, CountResponse,
     GetAttribute, GetRequest, GetResponse, GetValue, LegacyCheck, LegacyFuncall,
     LegacyFuncallName, LegacyMessageType, LegacyPredicate, LegacyReturnCode, RequestHeader,
-    ResponseHeader, LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND, LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND,
-    LEGACY_ATOMIC_FLAG_WRITE,
+    ResponseHeader, SearchContinueRequest, SearchDoneResponse, SearchItemResponse,
+    SearchStartRequest, LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND,
+    LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND, LEGACY_ATOMIC_FLAG_WRITE,
 };
 use placement_core::{HyperSpacePlacement, PlacementStrategy, RendezvousPlacement};
 use storage_core::{StorageEngine, WriteResult};
@@ -34,6 +36,7 @@ pub struct ClusterRuntime {
     placement: PlacementRuntime,
     storage_backend: StorageRuntime,
     internode_transport: TransportRuntime,
+    legacy_searches: Mutex<BTreeMap<u64, VecDeque<Record>>>,
     _ephemeral_storage_dir: Option<TempDir>,
 }
 
@@ -83,6 +86,7 @@ impl ClusterRuntime {
             placement: placement_runtime,
             storage_backend,
             internode_transport,
+            legacy_searches: Mutex::new(BTreeMap::new()),
             _ephemeral_storage_dir: ephemeral_storage_dir,
         }
     }
@@ -328,6 +332,54 @@ pub async fn handle_legacy_request(
                 AtomicResponse { status }.encode_body().to_vec(),
             ))
         }
+        LegacyMessageType::ReqSearchStart => {
+            let request = SearchStartRequest::decode_body(body)?;
+            let response = HyperdexClientService::handle(
+                runtime,
+                ClientRequest::Search {
+                    space: request.space,
+                    checks: legacy_checks_from_request(request.checks),
+                },
+            )
+            .await?;
+
+            let ClientResponse::SearchResult(records) = response else {
+                anyhow::bail!("unexpected runtime response to search request");
+            };
+
+            runtime
+                .legacy_searches
+                .lock()
+                .expect("legacy search state poisoned")
+                .insert(request.search_id, VecDeque::from(records));
+
+            legacy_search_response(runtime, header, request.search_id)
+        }
+        LegacyMessageType::ReqSearchNext => {
+            let request = SearchContinueRequest::decode_body(body)?;
+            legacy_search_response(runtime, header, request.search_id)
+        }
+        LegacyMessageType::ReqSearchStop => {
+            let request = SearchContinueRequest::decode_body(body)?;
+            runtime
+                .legacy_searches
+                .lock()
+                .expect("legacy search state poisoned")
+                .remove(&request.search_id);
+
+            Ok((
+                ResponseHeader {
+                    message_type: LegacyMessageType::RespSearchDone,
+                    target_virtual_server: header.target_virtual_server,
+                    nonce: header.nonce,
+                },
+                SearchDoneResponse {
+                    search_id: request.search_id,
+                }
+                .encode_body()
+                .to_vec(),
+            ))
+        }
         LegacyMessageType::ReqCount => {
             let request = CountRequest::decode_body(body)?;
             let response = HyperdexClientService::handle(
@@ -413,6 +465,65 @@ async fn legacy_record_exists(runtime: &ClusterRuntime, space: &str, key: &[u8])
     };
 
     Ok(record.is_some())
+}
+
+fn legacy_search_response(
+    runtime: &ClusterRuntime,
+    header: RequestHeader,
+    search_id: u64,
+) -> Result<(ResponseHeader, Vec<u8>)> {
+    let mut searches = runtime
+        .legacy_searches
+        .lock()
+        .expect("legacy search state poisoned");
+    let Some(records) = searches.get_mut(&search_id) else {
+        return Ok((
+            ResponseHeader {
+                message_type: LegacyMessageType::RespSearchDone,
+                target_virtual_server: header.target_virtual_server,
+                nonce: header.nonce,
+            },
+            SearchDoneResponse { search_id }.encode_body().to_vec(),
+        ));
+    };
+
+    let response = if let Some(record) = records.pop_front() {
+        (
+            ResponseHeader {
+                message_type: LegacyMessageType::RespSearchItem,
+                target_virtual_server: header.target_virtual_server,
+                nonce: header.nonce,
+            },
+            SearchItemResponse {
+                search_id,
+                key: record.key.to_vec(),
+                attributes: record
+                    .attributes
+                    .into_iter()
+                    .map(|(name, value)| GetAttribute {
+                        name,
+                        value: legacy_value_from_model(value),
+                    })
+                    .collect(),
+            }
+            .encode_body(),
+        )
+    } else {
+        (
+            ResponseHeader {
+                message_type: LegacyMessageType::RespSearchDone,
+                target_virtual_server: header.target_virtual_server,
+                nonce: header.nonce,
+            },
+            SearchDoneResponse { search_id }.encode_body().to_vec(),
+        )
+    };
+
+    if records.is_empty() {
+        searches.remove(&search_id);
+    }
+
+    Ok(response)
 }
 
 fn legacy_atomic_status(response: ClientResponse) -> Result<LegacyReturnCode> {
@@ -724,8 +835,9 @@ mod tests {
     use legacy_protocol::{
         AtomicRequest, AtomicResponse, CountRequest, CountResponse, GetRequest, GetResponse,
         GetValue, LegacyCheck, LegacyFuncall, LegacyFuncallName, LegacyMessageType,
-        LegacyPredicate, LegacyReturnCode, RequestHeader, LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND,
-        LEGACY_ATOMIC_FLAG_WRITE,
+        LegacyPredicate, LegacyReturnCode, RequestHeader, SearchContinueRequest,
+        SearchDoneResponse, SearchItemResponse, SearchStartRequest,
+        LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND, LEGACY_ATOMIC_FLAG_WRITE,
     };
 
     #[test]
@@ -1394,6 +1506,160 @@ mod tests {
 
         assert_eq!(header.message_type, LegacyMessageType::RespCount);
         assert_eq!(CountResponse::decode_body(&body).unwrap().count, 0);
+    }
+
+    #[tokio::test]
+    async fn legacy_search_start_returns_first_matching_record() {
+        let runtime = bootstrap_runtime();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first,\n\
+                    int profile_views\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        for (key, first, views) in [("ada", "Ada", 5), ("grace", "Grace", 3), ("eve", "Eve", 1)] {
+            HyperdexClientService::handle(
+                &runtime,
+                ClientRequest::Put {
+                    space: "profiles".to_owned(),
+                    key: Bytes::copy_from_slice(key.as_bytes()),
+                    mutations: vec![
+                        Mutation::Set(Attribute {
+                            name: "first".to_owned(),
+                            value: Value::String(first.to_owned()),
+                        }),
+                        Mutation::Set(Attribute {
+                            name: "profile_views".to_owned(),
+                            value: Value::Int(views),
+                        }),
+                    ],
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        let (header, body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqSearchStart,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 19,
+            },
+            &SearchStartRequest {
+                space: "profiles".to_owned(),
+                search_id: 41,
+                checks: vec![LegacyCheck {
+                    attribute: "profile_views".to_owned(),
+                    predicate: LegacyPredicate::GreaterThanOrEqual,
+                    value: GetValue::Int(3),
+                }],
+            }
+            .encode_body(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(header.message_type, LegacyMessageType::RespSearchItem);
+        let item = SearchItemResponse::decode_body(&body).unwrap();
+        assert_eq!(item.search_id, 41);
+        assert_eq!(item.key, b"ada".to_vec());
+    }
+
+    #[tokio::test]
+    async fn legacy_search_next_drains_cursor_then_returns_done() {
+        let runtime = bootstrap_runtime();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        for (key, first) in [("ada", "Ada"), ("grace", "Grace")] {
+            HyperdexClientService::handle(
+                &runtime,
+                ClientRequest::Put {
+                    space: "profiles".to_owned(),
+                    key: Bytes::copy_from_slice(key.as_bytes()),
+                    mutations: vec![Mutation::Set(Attribute {
+                        name: "first".to_owned(),
+                        value: Value::String(first.to_owned()),
+                    })],
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        let _ = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqSearchStart,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 19,
+            },
+            &SearchStartRequest {
+                space: "profiles".to_owned(),
+                search_id: 99,
+                checks: Vec::new(),
+            }
+            .encode_body(),
+        )
+        .await
+        .unwrap();
+
+        let (header, body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqSearchNext,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 20,
+            },
+            &SearchContinueRequest { search_id: 99 }.encode_body(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(header.message_type, LegacyMessageType::RespSearchItem);
+        assert_eq!(SearchItemResponse::decode_body(&body).unwrap().key, b"grace".to_vec());
+
+        let (header, body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqSearchNext,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 21,
+            },
+            &SearchContinueRequest { search_id: 99 }.encode_body(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(header.message_type, LegacyMessageType::RespSearchDone);
+        assert_eq!(SearchDoneResponse::decode_body(&body).unwrap().search_id, 99);
     }
 
     #[test]

@@ -6,6 +6,8 @@ pub const LEGACY_RESPONSE_HEADER_SIZE: usize = BUSYBEE_HEADER_SIZE + 1 + 8 + 8;
 pub const GET_REQUEST_PREFIX_SIZE: usize = 2;
 pub const COUNT_REQUEST_PREFIX_SIZE: usize = 2;
 pub const COUNT_RESPONSE_BODY_SIZE: usize = 8;
+pub const SEARCH_START_REQUEST_PREFIX_SIZE: usize = 2 + 8 + 2;
+pub const SEARCH_CONTINUE_REQUEST_SIZE: usize = 8;
 pub const ATOMIC_REQUEST_PREFIX_SIZE: usize = 2 + 1 + 2 + 2;
 pub const ATOMIC_RESPONSE_BODY_SIZE: usize = 2;
 pub const LEGACY_ATOMIC_FLAG_WRITE: u8 = 0x80;
@@ -155,6 +157,30 @@ pub struct LegacyFuncall {
 pub struct GetResponse {
     pub status: LegacyReturnCode,
     pub attributes: Vec<GetAttribute>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SearchStartRequest {
+    pub space: String,
+    pub search_id: u64,
+    pub checks: Vec<LegacyCheck>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SearchContinueRequest {
+    pub search_id: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SearchItemResponse {
+    pub search_id: u64,
+    pub key: Vec<u8>,
+    pub attributes: Vec<GetAttribute>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SearchDoneResponse {
+    pub search_id: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -353,6 +379,126 @@ impl GetResponse {
         }
 
         Ok(Self { status, attributes })
+    }
+}
+
+impl SearchStartRequest {
+    pub fn encode_body(&self) -> Vec<u8> {
+        let mut body = Vec::new();
+        let space = self.space.as_bytes();
+        body.extend_from_slice(&(space.len() as u16).to_be_bytes());
+        body.extend_from_slice(space);
+        body.extend_from_slice(&self.search_id.to_be_bytes());
+        body.extend_from_slice(&(self.checks.len() as u16).to_be_bytes());
+        encode_checks_into(&mut body, &self.checks);
+        body
+    }
+
+    pub fn decode_body(bytes: &[u8]) -> Result<Self, LegacyProtocolError> {
+        if bytes.len() < SEARCH_START_REQUEST_PREFIX_SIZE {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        let space_len =
+            u16::from_be_bytes(bytes[..2].try_into().expect("fixed-width slice")) as usize;
+        if bytes.len() < 2 + space_len + 10 {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        let space = std::str::from_utf8(&bytes[2..2 + space_len])
+            .map_err(|_| LegacyProtocolError::InvalidUtf8)?
+            .to_owned();
+        let search_id = u64::from_be_bytes(
+            bytes[2 + space_len..10 + space_len]
+                .try_into()
+                .expect("fixed-width slice"),
+        );
+        let check_count = u16::from_be_bytes(
+            bytes[10 + space_len..12 + space_len]
+                .try_into()
+                .expect("fixed-width slice"),
+        ) as usize;
+        let (checks, offset) = decode_checks(bytes, 12 + space_len, check_count)?;
+
+        if offset != bytes.len() {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        Ok(Self {
+            space,
+            search_id,
+            checks,
+        })
+    }
+}
+
+impl SearchContinueRequest {
+    pub fn encode_body(self) -> [u8; SEARCH_CONTINUE_REQUEST_SIZE] {
+        self.search_id.to_be_bytes()
+    }
+
+    pub fn decode_body(bytes: &[u8]) -> Result<Self, LegacyProtocolError> {
+        if bytes.len() < SEARCH_CONTINUE_REQUEST_SIZE {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        Ok(Self {
+            search_id: u64::from_be_bytes(bytes[..8].try_into().expect("fixed-width slice")),
+        })
+    }
+}
+
+impl SearchItemResponse {
+    pub fn encode_body(&self) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&self.search_id.to_be_bytes());
+        body.extend_from_slice(&(self.key.len() as u16).to_be_bytes());
+        body.extend_from_slice(&self.key);
+        body.extend_from_slice(&(self.attributes.len() as u16).to_be_bytes());
+        encode_attributes_into(&mut body, &self.attributes);
+        body
+    }
+
+    pub fn decode_body(bytes: &[u8]) -> Result<Self, LegacyProtocolError> {
+        if bytes.len() < 12 {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        let search_id = u64::from_be_bytes(bytes[..8].try_into().expect("fixed-width slice"));
+        let key_len = u16::from_be_bytes(bytes[8..10].try_into().expect("fixed-width slice"))
+            as usize;
+        if bytes.len() < 10 + key_len + 2 {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+        let key = bytes[10..10 + key_len].to_vec();
+        let attr_count = u16::from_be_bytes(
+            bytes[10 + key_len..12 + key_len]
+                .try_into()
+                .expect("fixed-width slice"),
+        ) as usize;
+        let (attributes, offset) = decode_attributes(bytes, 12 + key_len, attr_count)?;
+
+        if offset != bytes.len() {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        Ok(Self {
+            search_id,
+            key,
+            attributes,
+        })
+    }
+}
+
+impl SearchDoneResponse {
+    pub fn encode_body(self) -> [u8; SEARCH_CONTINUE_REQUEST_SIZE] {
+        self.search_id.to_be_bytes()
+    }
+
+    pub fn decode_body(bytes: &[u8]) -> Result<Self, LegacyProtocolError> {
+        SearchContinueRequest::decode_body(bytes).map(|request| Self {
+            search_id: request.search_id,
+        })
     }
 }
 
@@ -869,6 +1015,61 @@ mod tests {
         };
 
         assert_eq!(GetResponse::decode_body(&response.encode_body()).unwrap(), response);
+    }
+
+    #[test]
+    fn search_start_request_round_trips() {
+        let request = SearchStartRequest {
+            space: "profiles".to_owned(),
+            search_id: 41,
+            checks: vec![LegacyCheck {
+                attribute: "profile_views".to_owned(),
+                predicate: LegacyPredicate::GreaterThanOrEqual,
+                value: LegacyValue::Int(2),
+            }],
+        };
+
+        assert_eq!(
+            SearchStartRequest::decode_body(&request.encode_body()).unwrap(),
+            request
+        );
+    }
+
+    #[test]
+    fn search_continue_request_round_trips() {
+        let request = SearchContinueRequest { search_id: 41 };
+
+        assert_eq!(
+            SearchContinueRequest::decode_body(&request.encode_body()).unwrap(),
+            request
+        );
+    }
+
+    #[test]
+    fn search_item_response_round_trips() {
+        let response = SearchItemResponse {
+            search_id: 41,
+            key: b"ada".to_vec(),
+            attributes: vec![GetAttribute {
+                name: "first".to_owned(),
+                value: GetValue::String("Ada".to_owned()),
+            }],
+        };
+
+        assert_eq!(
+            SearchItemResponse::decode_body(&response.encode_body()).unwrap(),
+            response
+        );
+    }
+
+    #[test]
+    fn search_done_response_round_trips() {
+        let response = SearchDoneResponse { search_id: 41 };
+
+        assert_eq!(
+            SearchDoneResponse::decode_body(&response.encode_body()).unwrap(),
+            response
+        );
     }
 
     #[test]

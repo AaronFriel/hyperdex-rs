@@ -109,8 +109,8 @@ mod tests {
     use super::*;
     use legacy_protocol::{
         AtomicRequest, AtomicResponse, CountRequest, CountResponse, GetValue, LegacyFuncall,
-        LegacyFuncallName, LegacyMessageType, LegacyReturnCode, RequestHeader,
-        LEGACY_ATOMIC_FLAG_WRITE,
+        LegacyFuncallName, LegacyMessageType, LegacyPredicate, LegacyReturnCode,
+        RequestHeader, SearchItemResponse, SearchStartRequest, LEGACY_ATOMIC_FLAG_WRITE,
     };
 
     #[tokio::test]
@@ -267,5 +267,75 @@ mod tests {
             AtomicResponse::decode_body(&body).unwrap().status,
             LegacyReturnCode::Success
         );
+    }
+
+    #[tokio::test]
+    async fn serve_once_with_handles_search_start() {
+        let frontend = LegacyFrontend::bind("127.0.0.1:0".parse().unwrap())
+            .await
+            .unwrap();
+        let address = frontend.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            frontend
+                .serve_once_with(|header, body| async move {
+                    assert_eq!(header.message_type, LegacyMessageType::ReqSearchStart);
+                    let request = SearchStartRequest::decode_body(&body).unwrap();
+                    assert_eq!(request.space, "profiles");
+                    assert_eq!(request.search_id, 41);
+                    assert_eq!(request.checks.len(), 1);
+                    assert_eq!(request.checks[0].attribute, "profile_views");
+                    assert_eq!(request.checks[0].predicate, LegacyPredicate::GreaterThanOrEqual);
+
+                    Ok((
+                        ResponseHeader {
+                            message_type: LegacyMessageType::RespSearchItem,
+                            target_virtual_server: header.target_virtual_server,
+                            nonce: header.nonce,
+                        },
+                        SearchItemResponse {
+                            search_id: request.search_id,
+                            key: b"ada".to_vec(),
+                            attributes: vec![legacy_protocol::GetAttribute {
+                                name: "first".to_owned(),
+                                value: GetValue::String("Ada".to_owned()),
+                            }],
+                        }
+                        .encode_body(),
+                    ))
+                })
+                .await
+                .unwrap()
+        });
+
+        let (response, body) = request_once(
+            address,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqSearchStart,
+                flags: 0,
+                version: 7,
+                target_virtual_server: 11,
+                nonce: 19,
+            },
+            &SearchStartRequest {
+                space: "profiles".to_owned(),
+                search_id: 41,
+                checks: vec![legacy_protocol::LegacyCheck {
+                    attribute: "profile_views".to_owned(),
+                    predicate: LegacyPredicate::GreaterThanOrEqual,
+                    value: GetValue::Int(2),
+                }],
+            }
+            .encode_body(),
+        )
+        .await
+        .unwrap();
+
+        server.await.unwrap();
+
+        assert_eq!(response.message_type, LegacyMessageType::RespSearchItem);
+        let item = SearchItemResponse::decode_body(&body).unwrap();
+        assert_eq!(item.search_id, 41);
+        assert_eq!(item.key, b"ada".to_vec());
     }
 }
