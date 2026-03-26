@@ -79,11 +79,19 @@ impl ClusterRuntime {
     }
 
     pub fn single_node(config: ClusterConfig) -> Result<Self> {
+        Self::single_node_with_data_dir(config, None)
+    }
+
+    pub fn single_node_with_data_dir(
+        config: ClusterConfig,
+        data_dir: Option<&std::path::Path>,
+    ) -> Result<Self> {
         let catalog: Arc<dyn Catalog> =
             Arc::new(InMemoryCatalog::new(config.nodes.clone(), config.replicas));
         let consensus = select_consensus_backend(&config)?;
         let (placement, placement_runtime) = select_placement_backend(&config);
-        let (storage, storage_backend, ephemeral_storage_dir) = select_storage_backend(&config)?;
+        let (storage, storage_backend, ephemeral_storage_dir) =
+            select_storage_backend(&config, data_dir)?;
         let internode_transport = select_internode_transport(&config);
 
         Ok(Self::new(
@@ -207,13 +215,19 @@ fn select_placement_backend(
 
 fn select_storage_backend(
     config: &ClusterConfig,
+    data_dir: Option<&std::path::Path>,
 ) -> Result<(Arc<dyn StorageEngine>, StorageRuntime, Option<TempDir>)> {
     match config.storage {
         StorageBackend::Memory => Ok((Arc::new(MemoryEngine::new()), StorageRuntime::Memory, None)),
         StorageBackend::RocksDb => {
-            let dir = tempfile::tempdir()?;
-            let engine = RocksEngine::open(dir.path())?;
-            Ok((Arc::new(engine), StorageRuntime::RocksDb, Some(dir)))
+            if let Some(path) = data_dir {
+                let engine = RocksEngine::open(path)?;
+                Ok((Arc::new(engine), StorageRuntime::RocksDb, None))
+            } else {
+                let dir = tempfile::tempdir()?;
+                let engine = RocksEngine::open(dir.path())?;
+                Ok((Arc::new(engine), StorageRuntime::RocksDb, Some(dir)))
+            }
         }
     }
 }
@@ -318,6 +332,10 @@ pub enum ProcessMode {
         listen_port: u16,
         coordinator_host: String,
         coordinator_port: u16,
+        consensus: ConsensusBackend,
+        placement: PlacementBackend,
+        storage: StorageBackend,
+        internode_transport: TransportBackend,
     },
 }
 
@@ -339,6 +357,10 @@ pub fn parse_process_mode(args: &[String]) -> Result<ProcessMode> {
             listen_port: required_option(args, "--listen-port")?.parse()?,
             coordinator_host: required_option(args, "--coordinator")?,
             coordinator_port: required_option(args, "--coordinator-port")?.parse()?,
+            consensus: optional_consensus_backend(args)?,
+            placement: optional_placement_backend(args)?,
+            storage: optional_storage_backend(args)?,
+            internode_transport: optional_transport_backend(args)?,
         }),
         other => Err(anyhow!("unknown subcommand `{other}`")),
     }
@@ -352,6 +374,70 @@ fn required_option(args: &[String], name: &str) -> Result<String> {
     }
 
     Err(anyhow!("missing required option `{name}=...`"))
+}
+
+fn optional_consensus_backend(args: &[String]) -> Result<ConsensusBackend> {
+    Ok(match optional_option(args, "--consensus").as_deref() {
+        None | Some("single-node") => ConsensusBackend::SingleNode,
+        Some("mirror") => ConsensusBackend::Mirror,
+        Some("omnipaxos") => ConsensusBackend::OmniPaxos,
+        Some("openraft") => ConsensusBackend::OpenRaft,
+        Some(other) => return Err(anyhow!("unknown consensus backend `{other}`")),
+    })
+}
+
+fn optional_placement_backend(args: &[String]) -> Result<PlacementBackend> {
+    Ok(match optional_option(args, "--placement").as_deref() {
+        None | Some("hyperspace") => PlacementBackend::Hyperspace,
+        Some("rendezvous") => PlacementBackend::Rendezvous,
+        Some(other) => return Err(anyhow!("unknown placement backend `{other}`")),
+    })
+}
+
+fn optional_storage_backend(args: &[String]) -> Result<StorageBackend> {
+    Ok(match optional_option(args, "--storage").as_deref() {
+        None | Some("memory") => StorageBackend::Memory,
+        Some("rocksdb") => StorageBackend::RocksDb,
+        Some(other) => return Err(anyhow!("unknown storage backend `{other}`")),
+    })
+}
+
+fn optional_transport_backend(args: &[String]) -> Result<TransportBackend> {
+    Ok(match optional_option(args, "--transport").as_deref() {
+        None | Some("in-process") => TransportBackend::InProcess,
+        Some("grpc") => TransportBackend::Grpc,
+        Some(other) => return Err(anyhow!("unknown transport backend `{other}`")),
+    })
+}
+
+fn optional_option(args: &[String], name: &str) -> Option<String> {
+    for arg in args {
+        if let Some(value) = arg.strip_prefix(&format!("{name}=")) {
+            return Some(value.to_owned());
+        }
+    }
+
+    None
+}
+
+pub fn daemon_cluster_config(mode: &ProcessMode) -> ClusterConfig {
+    let mut config = ClusterConfig::default();
+
+    if let ProcessMode::Daemon {
+        consensus,
+        placement,
+        storage,
+        internode_transport,
+        ..
+    } = mode
+    {
+        config.consensus = consensus.clone();
+        config.placement = placement.clone();
+        config.storage = storage.clone();
+        config.internode_transport = internode_transport.clone();
+    }
+
+    config
 }
 
 #[cfg(test)]
@@ -658,6 +744,43 @@ mod tests {
                 listen_port: 2012,
                 coordinator_host: "127.0.0.1".to_owned(),
                 coordinator_port: 1982,
+                consensus: ConsensusBackend::SingleNode,
+                placement: PlacementBackend::Hyperspace,
+                storage: StorageBackend::Memory,
+                internode_transport: TransportBackend::InProcess,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_daemon_cli_with_runtime_shape() {
+        let args = vec![
+            "daemon".to_owned(),
+            "--threads=1".to_owned(),
+            "--data=/tmp/daemon".to_owned(),
+            "--listen=127.0.0.1".to_owned(),
+            "--listen-port=2012".to_owned(),
+            "--coordinator=127.0.0.1".to_owned(),
+            "--coordinator-port=1982".to_owned(),
+            "--consensus=mirror".to_owned(),
+            "--placement=rendezvous".to_owned(),
+            "--storage=rocksdb".to_owned(),
+            "--transport=grpc".to_owned(),
+        ];
+
+        assert_eq!(
+            parse_process_mode(&args).unwrap(),
+            ProcessMode::Daemon {
+                threads: 1,
+                data_dir: "/tmp/daemon".to_owned(),
+                listen_host: "127.0.0.1".to_owned(),
+                listen_port: 2012,
+                coordinator_host: "127.0.0.1".to_owned(),
+                coordinator_port: 1982,
+                consensus: ConsensusBackend::Mirror,
+                placement: PlacementBackend::Rendezvous,
+                storage: StorageBackend::RocksDb,
+                internode_transport: TransportBackend::Grpc,
             }
         );
     }

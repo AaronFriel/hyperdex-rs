@@ -3,6 +3,8 @@ use thiserror::Error;
 pub const BUSYBEE_HEADER_SIZE: usize = 4;
 pub const LEGACY_REQUEST_HEADER_SIZE: usize = BUSYBEE_HEADER_SIZE + 1 + 1 + 8 + 8 + 8;
 pub const LEGACY_RESPONSE_HEADER_SIZE: usize = BUSYBEE_HEADER_SIZE + 1 + 8 + 8;
+pub const COUNT_REQUEST_PREFIX_SIZE: usize = 2;
+pub const COUNT_RESPONSE_BODY_SIZE: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -60,12 +62,24 @@ pub struct ResponseHeader {
     pub nonce: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CountRequest {
+    pub space: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CountResponse {
+    pub count: u64,
+}
+
 #[derive(Debug, Error)]
 pub enum LegacyProtocolError {
     #[error("unknown message type {0}")]
     UnknownMessageType(u8),
     #[error("buffer too short for header")]
     ShortBuffer,
+    #[error("invalid utf-8 in request body")]
+    InvalidUtf8,
 }
 
 impl RequestHeader {
@@ -147,6 +161,63 @@ pub fn config_mismatch_response(request: RequestHeader) -> ResponseHeader {
         target_virtual_server: request.target_virtual_server,
         nonce: request.nonce,
     }
+}
+
+impl CountRequest {
+    pub fn encode_body(&self) -> Vec<u8> {
+        let space = self.space.as_bytes();
+        let mut body = Vec::with_capacity(COUNT_REQUEST_PREFIX_SIZE + space.len());
+        body.extend_from_slice(&(space.len() as u16).to_be_bytes());
+        body.extend_from_slice(space);
+        body
+    }
+
+    pub fn decode_body(bytes: &[u8]) -> Result<Self, LegacyProtocolError> {
+        if bytes.len() < COUNT_REQUEST_PREFIX_SIZE {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        let len = u16::from_be_bytes(bytes[..2].try_into().expect("fixed-width slice")) as usize;
+        if bytes.len() < COUNT_REQUEST_PREFIX_SIZE + len {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        let space = std::str::from_utf8(&bytes[2..2 + len])
+            .map_err(|_| LegacyProtocolError::InvalidUtf8)?
+            .to_owned();
+        Ok(Self { space })
+    }
+}
+
+impl CountResponse {
+    pub fn encode_body(self) -> [u8; COUNT_RESPONSE_BODY_SIZE] {
+        self.count.to_be_bytes()
+    }
+
+    pub fn decode_body(bytes: &[u8]) -> Result<Self, LegacyProtocolError> {
+        if bytes.len() < COUNT_RESPONSE_BODY_SIZE {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+
+        Ok(Self {
+            count: u64::from_be_bytes(bytes[..8].try_into().expect("fixed-width slice")),
+        })
+    }
+}
+
+pub fn encode_request_frame(header: RequestHeader, body: &[u8]) -> Vec<u8> {
+    encode_frame(header.encode().to_vec(), body)
+}
+
+pub fn encode_response_frame(header: ResponseHeader, body: &[u8]) -> Vec<u8> {
+    encode_frame(header.encode().to_vec(), body)
+}
+
+fn encode_frame(mut head: Vec<u8>, body: &[u8]) -> Vec<u8> {
+    let payload_len = (head.len() - BUSYBEE_HEADER_SIZE + body.len()) as u32;
+    head[..BUSYBEE_HEADER_SIZE].copy_from_slice(&payload_len.to_be_bytes());
+    head.extend_from_slice(body);
+    head
 }
 
 fn decode_message_type(value: u8) -> Result<LegacyMessageType, LegacyProtocolError> {
@@ -245,6 +316,44 @@ mod tests {
                 target_virtual_server: 23,
                 nonce: 29,
             }
+        );
+    }
+
+    #[test]
+    fn count_request_round_trips() {
+        let request = CountRequest {
+            space: "profiles".to_owned(),
+        };
+
+        assert_eq!(CountRequest::decode_body(&request.encode_body()).unwrap(), request);
+    }
+
+    #[test]
+    fn count_response_round_trips() {
+        let response = CountResponse { count: 42 };
+
+        assert_eq!(CountResponse::decode_body(&response.encode_body()).unwrap(), response);
+    }
+
+    #[test]
+    fn request_frame_prefix_matches_payload_length() {
+        let frame = encode_request_frame(
+            RequestHeader {
+                message_type: LegacyMessageType::ReqCount,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 2,
+                nonce: 3,
+            },
+            &CountRequest {
+                space: "profiles".to_owned(),
+            }
+            .encode_body(),
+        );
+
+        assert_eq!(
+            u32::from_be_bytes(frame[..4].try_into().unwrap()) as usize,
+            frame.len() - BUSYBEE_HEADER_SIZE
         );
     }
 }

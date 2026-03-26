@@ -24,6 +24,7 @@ engine-rocks = { path = "../engine-rocks" }
 hyperdex-admin-protocol = { path = "../hyperdex-admin-protocol" }
 hyperdex-client-protocol = { path = "../hyperdex-client-protocol" }
 legacy-frontend = { path = "../legacy-frontend" }
+legacy-protocol = { path = "../legacy-protocol" }
 placement-core = { path = "../placement-core" }
 storage-core = { path = "../storage-core" }
 tempfile.workspace = true

@@ -125,6 +125,9 @@ stable traits from the start.
   feature is not compiled in.
 - Done: `server` now also selects placement, storage, and internode transport
   from `ClusterConfig`, with working RocksDB-backed runtime coverage.
+- Done: `daemon` startup now instantiates the configured runtime shape and the
+  legacy frontend handles a real `REQ_COUNT` request over framed legacy
+  messages, instead of only returning `CONFIGMISMATCH`.
 - Running: worktree lanes for gRPC frontend, hyperspace placement fidelity,
   OpenRaft scaffolding, and OmniPaxos scaffolding.
 - Next: integrate the remaining completed worktree results back into `main`
@@ -132,9 +135,9 @@ stable traits from the start.
 
 ## Next Bounded Iteration
 
-Use the new runtime-shape selection to start making the external processes honor
-their configured backends, beginning with daemon startup and richer legacy
-request handling over the configured runtime.
+Broaden the legacy-compatible public surface beyond `REQ_COUNT`, starting with a
+real key-based request such as `REQ_GET` or an atomic write path, and back it
+with the configured runtime rather than placeholder responses.
 
 ## Loop Ledger
 
@@ -153,3 +156,4 @@ request handling over the configured runtime.
 | 11 | The OpenRaft backend can coexist with OmniPaxos in `consensus-core` if both are kept feature-gated and the workspace dependencies are merged cleanly. | Cherry-pick the OpenRaft branch onto `main`, resolve the feature/dependency conflicts so both backends remain available, validate the default build plus the `openraft` feature path, and revalidate the full workspace. | `cargo test -p consensus-core` passes, `cargo test -p consensus-core --features openraft` passes, and `cargo test --workspace` passes after the merged OpenRaft integration. | Confirmed. | advance | Wire runtime-side backend selection next so the consensus alternatives can be exercised from configuration instead of existing only as compile-time options. |
 | 12 | The next useful improvement is to make the already-landed consensus alternatives selectable from `ClusterConfig` in `server`, so backend choice becomes part of the runtime shape instead of a compile-time-only detail. | Expand `ConsensusBackend` to name the concrete backends, add server feature forwarding plus runtime backend selection, test both disabled and enabled feature cases in `server`, and revalidate the workspace. | `cargo test -p consensus-core` passes, `cargo test -p consensus-core --features omnipaxos` passes, `cargo test -p consensus-core --features openraft` passes, `cargo test -p server --features omnipaxos` passes, `cargo test -p server --features openraft` passes, and `cargo test --workspace` passes after the selector lands. | Confirmed. | advance | Apply the same configuration-driven selection pattern to placement, storage, and transport next. |
 | 13 | The runtime shape is still too hard-coded if placement, storage, and internode transport remain fixed even after consensus became configurable. | Add placement, storage, and internode-transport selection to `server`, back RocksDB selection with an ephemeral runtime directory for tests, add shape-selection tests, and revalidate the workspace plus the feature-enabled server builds. | `cargo test -p server` passes, `cargo test --workspace` passes, `cargo test -p server --features omnipaxos` passes, and `cargo test -p server --features openraft` passes after the new selectors land. | Confirmed. | advance | Start using the configured runtime shape in daemon startup and richer legacy request handling next. |
+| 14 | Backend selection is not fully real until daemon startup uses it and the legacy listener serves at least one actual request through the configured runtime. | Build the daemon runtime from the parsed backend flags, keep RocksDB pointed at the daemon data directory, add framed legacy request/response helpers, implement `REQ_COUNT` over the configured runtime, and revalidate the targeted crates plus the full workspace. | `cargo test -p legacy-protocol -p legacy-frontend -p server` passes and `cargo test --workspace` passes after the daemon startup and `REQ_COUNT` handling changes. | Confirmed. | advance | Extend the legacy-compatible public surface with another real operation such as `REQ_GET` or a write path next. |
