@@ -88,11 +88,10 @@ One bounded design-or-implementation step with validation and a recorded verdict
 
 ## Current Hypothesis
 
-The fastest acceptable path is to build the real distributed substrate in
-parallel with the public compatibility path. Legacy admin and client behavior
-still matter, but they cannot stay ahead of coordinator-driven cluster
-formation, live daemon membership, and real internode replication between
-separate processes.
+The control plane can now move ahead in bounded steps if each daemon first
+registers its identity and then consumes coordinator-published cluster state.
+That should create a real distributed foundation for the later data-plane
+forwarding work, instead of leaving each daemon on an isolated startup config.
 
 ## Milestones
 
@@ -159,22 +158,25 @@ separate processes.
 - Done: the live coordinator control service now serves `wait_until_stable`
   with a stable-version body and `config_get` with a structured config snapshot,
   while preserving the exact 2-byte reply path for `space_add` and `space_rm`.
-- Known gap: coordinator and daemon processes still do not form a real
-  multi-daemon cluster; daemon startup still constructs an isolated local
-  runtime instead of joining distributed control/data planes.
+- Done: coordinator mode now accepts `daemon_register`, tracks live daemon
+  identity in `ConfigView.cluster.nodes`, and updates placement layout metadata
+  as registrations arrive.
+- Known gap: daemons still bootstrap their own local runtime state and do not
+  yet register with or consume coordinator-published cluster config during
+  startup.
 - Known gap: internode transport and consensus backends remain in-process
   scaffolding rather than live cross-process replication.
-- Idle: parked worktrees remain available for later backend-specific work, but
-  they are not currently producing changes.
-- Next: prioritize real distributed control-plane and data-plane work, starting
-  with daemon registration and live cluster layout updates driven by the
-  coordinator.
+- Active: dedicated worktrees are now producing distributed control-plane,
+  distributed data-plane, and multiprocess validation changes in parallel.
+- Next: wire daemon startup into the new registration and config-consumption
+  path, then prove that multiple daemons stop behaving like isolated runtimes.
 
 ## Next Bounded Iteration
 
-Implement the first real distributed control-plane step, starting with daemon
-registration and live cluster layout updates driven by the coordinator instead
-of isolated per-daemon runtimes.
+Make daemon startup use the distributed control plane for real: register the
+daemon with the coordinator, fetch or follow the coordinator config, and prove
+that multiple daemons consume one shared cluster view instead of isolated local
+startup state.
 
 ## Loop Ledger
 
@@ -203,3 +205,4 @@ of isolated per-daemon runtimes.
 | 21 | Once the runtime has versioned admin state, the next useful compatibility increment is exact coordinator reply handling for `space_add` and `space_rm`, because that is the smallest real HyperDex admin wire contract and it can be validated without full Replicant or full config-payload compatibility. | Extend `hyperdex-admin-protocol` with exact HyperDex coordinator return codes, exact admin-status mapping, and typed admin request forms; add server-side `space_add` / `space_rm` dispatch plus a method-based handler that returns the exact 2-byte coordinator reply bytes; add focused protocol and server tests; and revalidate the full workspace. | `cargo test -p hyperdex-admin-protocol -p server` passes with the new coordinator-code and dispatch tests, and `cargo test --workspace` passes after the new admin boundary lands locally on `main`. | Confirmed. | advance | Build the first live coordinator control service next, serving `space_add` and `space_rm` on the control port with the new 2-byte replies while full `config` payload compatibility remains deferred. |
 | 22 | The next useful step after in-process admin dispatch is a live coordinator control service, because it turns the existing method handler into an actual network boundary without yet forcing full Replicant compatibility. | Add a TCP control listener for coordinator mode, frame control requests as method plus typed body, serve `space_add` and `space_rm` through `handle_coordinator_admin_method`, add focused TCP listener tests, and revalidate the full workspace. | `cargo test -p server` passes with the new control-service tests, and `cargo test --workspace` passes after coordinator mode begins serving the control port on `main`. | Confirmed. | advance | Extend the live coordinator control path next with `wait_until_stable` and a minimal config-follow path that a compatibility client can actually consume. |
 | 23 | Once the live control service exists, the next useful compatibility increment is to add `wait_until_stable` and a minimal config-follow path so a client can observe coordinator state instead of only issuing space mutations. | Extend `CoordinatorAdminRequest` with `WaitUntilStable` and `ConfigGet`, add an optional-body control response path, serve stable-version and config-snapshot bodies from coordinator mode, add focused TCP tests for both operations, and revalidate the full workspace. | `cargo test -p server` passes with the new stable/config control-service tests, and `cargo test --workspace` passes after the live control service grows those two operations on `main`. | Confirmed. | advance | Build the first legacy-admin client compatibility path next, starting with deferred-call and event-loop semantics that can back `hyperdex_admin_loop`, `add_space`, `rm_space`, and `wait_until_stable`. |
+| 24 | Real distributed control-plane progress starts with the coordinator owning daemon membership instead of every daemon keeping a fixed local node list. | Cherry-pick the daemon-registration worktree onto `main`, add coordinator-side daemon registration plumbing plus daemon identity parsing, validate control-plane protocol/runtime behavior with focused tests, and reframe the next move around daemon startup consuming shared coordinator state. | Commit `7c864a6` lands `daemon_register` on `main`; `cargo test -p control-plane -p hyperdex-admin-protocol -p server` passes with new registration tests; the coordinator now updates both `ConfigView.cluster.nodes` and placement layout membership as daemons register. | Confirmed. | advance | Make daemon startup register and synchronize against coordinator state so real multi-daemon formation exists outside the coordinator process. |
