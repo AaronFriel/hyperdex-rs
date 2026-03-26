@@ -150,16 +150,20 @@ stable traits from the start.
 - Done: coordinator mode now starts a live control service on the control port,
   serving `space_add` and `space_rm` over TCP on top of the existing dispatcher
   and exact 2-byte coordinator replies.
-- Running: worktree lanes for gRPC frontend, hyperspace placement fidelity,
-  OpenRaft scaffolding, and OmniPaxos scaffolding.
-- Next: make the live control service useful to a compatibility client by
-  adding `wait_until_stable` and the first config-follow path.
+- Done: the live coordinator control service now serves `wait_until_stable`
+  with a stable-version body and `config_get` with a structured config snapshot,
+  while preserving the exact 2-byte reply path for `space_add` and `space_rm`.
+- Idle: parked worktrees remain available for later backend-specific work, but
+  they are not currently producing changes.
+- Next: move from the custom live control service toward the public legacy
+  admin contract, starting with the event-loop and deferred-call semantics that
+  `hyhac`'s admin bindings expect.
 
 ## Next Bounded Iteration
 
-Implement the next live coordinator control operations a compatibility client
-needs, starting with `wait_until_stable` and a minimal config-follow path on
-top of the live control service.
+Implement the first legacy-admin client compatibility path on top of the live
+control service, starting with deferred-call and event-loop semantics that can
+back `hyperdex_admin_loop`, `add_space`, `rm_space`, and `wait_until_stable`.
 
 ## Loop Ledger
 
@@ -187,3 +191,4 @@ top of the live control service.
 | 20 | Before adding the real coordinator listener, the runtime needs explicit admin-visible config state and stable semantics so later wire-compatibility work has something concrete to expose. | Extend `hyperdex-admin-protocol` with config-view and stable-wait requests, add versioned coordinator state to `ClusterRuntime`, make space create and drop advance that state, add a focused lifecycle test, and revalidate the full workspace. | `cargo test -p hyperdex-admin-protocol -p server` passes with the new lifecycle test, and `cargo test --workspace` passes after the versioned config-view and stable-wait changes land locally on `main`. | Confirmed. | advance | Implement the first coordinator-side legacy admin boundary next, starting with `space_add` and `space_rm` dispatch plus HyperDex return-code mapping. |
 | 21 | Once the runtime has versioned admin state, the next useful compatibility increment is exact coordinator reply handling for `space_add` and `space_rm`, because that is the smallest real HyperDex admin wire contract and it can be validated without full Replicant or full config-payload compatibility. | Extend `hyperdex-admin-protocol` with exact HyperDex coordinator return codes, exact admin-status mapping, and typed admin request forms; add server-side `space_add` / `space_rm` dispatch plus a method-based handler that returns the exact 2-byte coordinator reply bytes; add focused protocol and server tests; and revalidate the full workspace. | `cargo test -p hyperdex-admin-protocol -p server` passes with the new coordinator-code and dispatch tests, and `cargo test --workspace` passes after the new admin boundary lands locally on `main`. | Confirmed. | advance | Build the first live coordinator control service next, serving `space_add` and `space_rm` on the control port with the new 2-byte replies while full `config` payload compatibility remains deferred. |
 | 22 | The next useful step after in-process admin dispatch is a live coordinator control service, because it turns the existing method handler into an actual network boundary without yet forcing full Replicant compatibility. | Add a TCP control listener for coordinator mode, frame control requests as method plus typed body, serve `space_add` and `space_rm` through `handle_coordinator_admin_method`, add focused TCP listener tests, and revalidate the full workspace. | `cargo test -p server` passes with the new control-service tests, and `cargo test --workspace` passes after coordinator mode begins serving the control port on `main`. | Confirmed. | advance | Extend the live coordinator control path next with `wait_until_stable` and a minimal config-follow path that a compatibility client can actually consume. |
+| 23 | Once the live control service exists, the next useful compatibility increment is to add `wait_until_stable` and a minimal config-follow path so a client can observe coordinator state instead of only issuing space mutations. | Extend `CoordinatorAdminRequest` with `WaitUntilStable` and `ConfigGet`, add an optional-body control response path, serve stable-version and config-snapshot bodies from coordinator mode, add focused TCP tests for both operations, and revalidate the full workspace. | `cargo test -p server` passes with the new stable/config control-service tests, and `cargo test --workspace` passes after the live control service grows those two operations on `main`. | Confirmed. | advance | Build the first legacy-admin client compatibility path next, starting with deferred-call and event-loop semantics that can back `hyperdex_admin_loop`, `add_space`, `rm_space`, and `wait_until_stable`. |
