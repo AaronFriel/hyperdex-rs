@@ -6,7 +6,16 @@ version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+omnipaxos = ["dep:omnipaxos", "dep:omnipaxos_storage", "dep:parking_lot"]
+
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
+omnipaxos = { workspace = true, optional = true }
+omnipaxos_storage = { workspace = true, optional = true }
+parking_lot = { workspace = true, optional = true }
 serde.workspace = true
+
+[dev-dependencies]
+futures.workspace = true
