@@ -5,7 +5,8 @@ use std::sync::{Arc, Mutex};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use cluster_config::{
-    ClusterConfig, ConsensusBackend, PlacementBackend, StorageBackend, TransportBackend,
+    ClusterConfig, ClusterNode, ConsensusBackend, PlacementBackend, StorageBackend,
+    TransportBackend,
 };
 use control_plane::{Catalog, InMemoryCatalog};
 use data_model::{
@@ -21,24 +22,24 @@ use hyperdex_admin_protocol::{
 use hyperdex_client_protocol::{ClientRequest, ClientResponse, HyperdexClientService};
 use legacy_protocol::{
     config_mismatch_response, AtomicRequest, AtomicResponse, CountRequest, CountResponse,
-    GetAttribute, GetRequest, GetResponse, GetValue, LegacyCheck, LegacyFuncall,
-    LegacyFuncallName, LegacyMessageType, LegacyPredicate, LegacyReturnCode, RequestHeader,
-    ResponseHeader, SearchContinueRequest, SearchDoneResponse, SearchItemResponse,
-    SearchStartRequest, LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND,
-    LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND, LEGACY_ATOMIC_FLAG_WRITE,
+    GetAttribute, GetRequest, GetResponse, GetValue, LegacyCheck, LegacyFuncall, LegacyFuncallName,
+    LegacyMessageType, LegacyPredicate, LegacyReturnCode, RequestHeader, ResponseHeader,
+    SearchContinueRequest, SearchDoneResponse, SearchItemResponse, SearchStartRequest,
+    LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND, LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND,
+    LEGACY_ATOMIC_FLAG_WRITE,
 };
 use placement_core::{HyperSpacePlacement, PlacementStrategy, RendezvousPlacement};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
 use storage_core::{StorageEngine, WriteResult};
 use tempfile::TempDir;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 use transport_core::InProcessTransport;
 
 pub const COORDINATOR_CONTROL_HEADER_SIZE: usize = 2 + 4;
 pub const COORDINATOR_CONTROL_BODY_LENGTH_SIZE: usize = 4;
 
 pub struct ClusterRuntime {
-    cluster_config: ClusterConfig,
+    cluster_config: Mutex<ClusterConfig>,
     catalog: Arc<dyn Catalog>,
     storage: Arc<dyn StorageEngine>,
     data_plane: DataPlane,
@@ -107,7 +108,7 @@ impl ClusterRuntime {
     ) -> Self {
         let data_plane = DataPlane::new(catalog.clone(), storage.clone(), placement);
         Self {
-            cluster_config,
+            cluster_config: Mutex::new(cluster_config),
             catalog,
             storage,
             data_plane,
@@ -190,7 +191,9 @@ impl ClusterRuntime {
         let spaces = self.catalog.list_spaces()?;
         match spaces.as_slice() {
             [space] => Ok(space.clone()),
-            [] => Err(anyhow!("legacy request handling requires one created space")),
+            [] => Err(anyhow!(
+                "legacy request handling requires one created space"
+            )),
             _ => Err(anyhow!(
                 "legacy request handling is ambiguous with multiple spaces"
             )),
@@ -202,6 +205,11 @@ impl ClusterRuntime {
             .coordinator_state
             .lock()
             .expect("coordinator state poisoned");
+        let cluster = self
+            .cluster_config
+            .lock()
+            .expect("cluster config poisoned")
+            .clone();
         let mut spaces = Vec::new();
         for name in self.catalog.list_spaces()? {
             let Some(space) = self.catalog.get_space(&name)? else {
@@ -215,9 +223,23 @@ impl ClusterRuntime {
         Ok(hyperdex_admin_protocol::ConfigView {
             version: coordinator_state.version,
             stable_through: coordinator_state.stable_through,
-            cluster: self.cluster_config.clone(),
+            cluster,
             spaces,
         })
+    }
+
+    fn register_daemon(&self, node: ClusterNode) -> Result<()> {
+        let catalog_changed = self.catalog.register_daemon(node.clone())?;
+        let config_changed = {
+            let mut cluster_config = self.cluster_config.lock().expect("cluster config poisoned");
+            upsert_cluster_node(&mut cluster_config.nodes, node)
+        };
+
+        if catalog_changed || config_changed {
+            self.record_config_change();
+        }
+
+        Ok(())
     }
 
     fn stable_version(&self) -> u64 {
@@ -349,10 +371,9 @@ fn select_placement_backend(
             Arc::new(HyperSpacePlacement::default()),
             PlacementRuntime::Hyperspace,
         ),
-        PlacementBackend::Rendezvous => (
-            Arc::new(RendezvousPlacement),
-            PlacementRuntime::Rendezvous,
-        ),
+        PlacementBackend::Rendezvous => {
+            (Arc::new(RendezvousPlacement), PlacementRuntime::Rendezvous)
+        }
     }
 }
 
@@ -383,6 +404,20 @@ fn select_internode_transport(config: &ClusterConfig) -> TransportRuntime {
         }
         TransportBackend::Grpc => TransportRuntime::Grpc,
     }
+}
+
+fn upsert_cluster_node(nodes: &mut Vec<ClusterNode>, node: ClusterNode) -> bool {
+    if let Some(existing) = nodes.iter_mut().find(|existing| existing.id == node.id) {
+        if *existing == node {
+            return false;
+        }
+        *existing = node;
+    } else {
+        nodes.push(node);
+    }
+
+    nodes.sort_by_key(|node| node.id);
+    true
 }
 
 pub async fn handle_legacy_request(
@@ -750,6 +785,15 @@ pub async fn handle_coordinator_admin_request(
     request: CoordinatorAdminRequest,
 ) -> Result<CoordinatorReturnCode> {
     match request {
+        CoordinatorAdminRequest::DaemonRegister(node) => {
+            match HyperdexAdminService::handle(runtime, AdminRequest::RegisterDaemon(node)).await {
+                Ok(AdminResponse::Unit) => Ok(CoordinatorReturnCode::Success),
+                Ok(other) => {
+                    anyhow::bail!("unexpected admin response to daemon_register: {other:?}")
+                }
+                Err(err) => Ok(map_admin_error_to_coordinator(&err)),
+            }
+        }
         CoordinatorAdminRequest::SpaceAdd(space) => {
             match HyperdexAdminService::handle(runtime, AdminRequest::CreateSpace(space)).await {
                 Ok(AdminResponse::Unit) => Ok(CoordinatorReturnCode::Success),
@@ -760,9 +804,7 @@ pub async fn handle_coordinator_admin_request(
         CoordinatorAdminRequest::SpaceRm(name) => {
             match HyperdexAdminService::handle(runtime, AdminRequest::DropSpace(name)).await {
                 Ok(AdminResponse::Unit) => Ok(CoordinatorReturnCode::Success),
-                Ok(other) => anyhow::bail!(
-                    "unexpected admin response to space_rm: {other:?}"
-                ),
+                Ok(other) => anyhow::bail!("unexpected admin response to space_rm: {other:?}"),
                 Err(err) => Ok(map_admin_error_to_coordinator(&err)),
             }
         }
@@ -788,6 +830,14 @@ pub async fn handle_coordinator_control_method(
     request: CoordinatorAdminRequest,
 ) -> Result<CoordinatorControlResponse> {
     let (status, body) = match (method, request) {
+        ("daemon_register", CoordinatorAdminRequest::DaemonRegister(node)) => (
+            handle_coordinator_admin_request(
+                runtime,
+                CoordinatorAdminRequest::DaemonRegister(node),
+            )
+            .await?,
+            Vec::new(),
+        ),
         ("space_add", CoordinatorAdminRequest::SpaceAdd(space)) => (
             handle_coordinator_admin_request(runtime, CoordinatorAdminRequest::SpaceAdd(space))
                 .await?,
@@ -919,15 +969,18 @@ pub async fn handle_legacy_admin_request(
             let Ok(space) = parse_hyperdex_space(&schema) else {
                 return Ok(LegacyAdminReturnCode::BadSpace);
             };
-            Ok(handle_coordinator_admin_request(runtime, CoordinatorAdminRequest::SpaceAdd(space))
-                .await?
-                .legacy_admin_status())
+            Ok(
+                handle_coordinator_admin_request(runtime, CoordinatorAdminRequest::SpaceAdd(space))
+                    .await?
+                    .legacy_admin_status(),
+            )
         }
-        LegacyAdminRequest::SpaceRm(name) => Ok(
-            handle_coordinator_admin_request(runtime, CoordinatorAdminRequest::SpaceRm(name))
-                .await?
-                .legacy_admin_status(),
-        ),
+        LegacyAdminRequest::SpaceRm(name) => Ok(handle_coordinator_admin_request(
+            runtime,
+            CoordinatorAdminRequest::SpaceRm(name),
+        )
+        .await?
+        .legacy_admin_status()),
     }
 }
 
@@ -946,6 +999,10 @@ fn map_admin_error_to_coordinator(err: &anyhow::Error) -> CoordinatorReturnCode 
 impl HyperdexAdminService for ClusterRuntime {
     async fn handle(&self, request: AdminRequest) -> Result<AdminResponse> {
         match request {
+            AdminRequest::RegisterDaemon(node) => {
+                self.register_daemon(node)?;
+                Ok(AdminResponse::Unit)
+            }
             AdminRequest::CreateSpace(space) => {
                 self.create_space(space)?;
                 Ok(AdminResponse::Unit)
@@ -1021,6 +1078,12 @@ pub fn bootstrap_runtime() -> ClusterRuntime {
     ClusterRuntime::single_node(ClusterConfig::default()).expect("default cluster config is valid")
 }
 
+pub fn coordinator_cluster_config() -> ClusterConfig {
+    let mut config = ClusterConfig::default();
+    config.nodes.clear();
+    config
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ProcessMode {
     Coordinator {
@@ -1029,10 +1092,12 @@ pub enum ProcessMode {
         listen_port: u16,
     },
     Daemon {
+        node_id: u64,
         threads: usize,
         data_dir: String,
         listen_host: String,
         listen_port: u16,
+        control_port: u16,
         coordinator_host: String,
         coordinator_port: u16,
         consensus: ConsensusBackend,
@@ -1053,18 +1118,26 @@ pub fn parse_process_mode(args: &[String]) -> Result<ProcessMode> {
             listen_host: required_option(args, "--listen")?,
             listen_port: required_option(args, "--listen-port")?.parse()?,
         }),
-        "daemon" => Ok(ProcessMode::Daemon {
-            threads: required_option(args, "--threads")?.parse()?,
-            data_dir: required_option(args, "--data")?,
-            listen_host: required_option(args, "--listen")?,
-            listen_port: required_option(args, "--listen-port")?.parse()?,
-            coordinator_host: required_option(args, "--coordinator")?,
-            coordinator_port: required_option(args, "--coordinator-port")?.parse()?,
-            consensus: optional_consensus_backend(args)?,
-            placement: optional_placement_backend(args)?,
-            storage: optional_storage_backend(args)?,
-            internode_transport: optional_transport_backend(args)?,
-        }),
+        "daemon" => {
+            let listen_port = required_option(args, "--listen-port")?.parse()?;
+            Ok(ProcessMode::Daemon {
+                node_id: required_option(args, "--node-id")?.parse()?,
+                threads: required_option(args, "--threads")?.parse()?,
+                data_dir: required_option(args, "--data")?,
+                listen_host: required_option(args, "--listen")?,
+                listen_port,
+                control_port: optional_option(args, "--control-port")
+                    .map(|value| value.parse())
+                    .transpose()?
+                    .unwrap_or(listen_port),
+                coordinator_host: required_option(args, "--coordinator")?,
+                coordinator_port: required_option(args, "--coordinator-port")?.parse()?,
+                consensus: optional_consensus_backend(args)?,
+                placement: optional_placement_backend(args)?,
+                storage: optional_storage_backend(args)?,
+                internode_transport: optional_transport_backend(args)?,
+            })
+        }
         other => Err(anyhow!("unknown subcommand `{other}`")),
     }
 }
@@ -1123,6 +1196,24 @@ fn optional_option(args: &[String], name: &str) -> Option<String> {
     None
 }
 
+pub fn daemon_registration_node(mode: &ProcessMode) -> Option<ClusterNode> {
+    match mode {
+        ProcessMode::Daemon {
+            node_id,
+            listen_host,
+            listen_port,
+            control_port,
+            ..
+        } => Some(ClusterNode {
+            id: *node_id,
+            host: listen_host.clone(),
+            control_port: *control_port,
+            data_port: *listen_port,
+        }),
+        ProcessMode::Coordinator { .. } => None,
+    }
+}
+
 pub fn daemon_cluster_config(mode: &ProcessMode) -> ClusterConfig {
     let mut config = ClusterConfig::default();
 
@@ -1134,6 +1225,7 @@ pub fn daemon_cluster_config(mode: &ProcessMode) -> ClusterConfig {
         ..
     } = mode
     {
+        config.nodes = vec![daemon_registration_node(mode).expect("daemon mode has a node")];
         config.consensus = consensus.clone();
         config.placement = placement.clone();
         config.storage = storage.clone();
@@ -1147,11 +1239,13 @@ pub fn daemon_cluster_config(mode: &ProcessMode) -> ClusterConfig {
 mod tests {
     use super::*;
     use bytes::Bytes;
-    use cluster_config::{ConsensusBackend, PlacementBackend, StorageBackend, TransportBackend};
+    use cluster_config::{
+        ClusterNode, ConsensusBackend, PlacementBackend, StorageBackend, TransportBackend,
+    };
     use data_model::{Attribute, Check, Mutation, Predicate, Value};
     use hyperdex_admin_protocol::{
-        AdminRequest, AdminResponse, ConfigView, CoordinatorAdminRequest,
-        CoordinatorReturnCode, HyperdexAdminService, LegacyAdminRequest, LegacyAdminReturnCode,
+        AdminRequest, AdminResponse, ConfigView, CoordinatorAdminRequest, CoordinatorReturnCode,
+        HyperdexAdminService, LegacyAdminRequest, LegacyAdminReturnCode,
     };
     use hyperdex_client_protocol::HyperdexClientService;
     use legacy_protocol::{
@@ -1411,6 +1505,65 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn runtime_register_daemon_updates_config_and_layout() {
+        let runtime = ClusterRuntime::single_node(coordinator_cluster_config()).unwrap();
+
+        assert_eq!(runtime.catalog.layout().unwrap().nodes, Vec::<u64>::new());
+
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::RegisterDaemon(ClusterNode {
+                id: 4,
+                host: "10.0.0.4".to_owned(),
+                control_port: 2982,
+                data_port: 3012,
+            }),
+        )
+        .await
+        .unwrap();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::RegisterDaemon(ClusterNode {
+                id: 9,
+                host: "10.0.0.9".to_owned(),
+                control_port: 3982,
+                data_port: 4012,
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(runtime.catalog.layout().unwrap().nodes, vec![4, 9]);
+
+        let AdminResponse::Config(config_view) =
+            HyperdexAdminService::handle(&runtime, AdminRequest::DumpConfig)
+                .await
+                .unwrap()
+        else {
+            panic!("expected config response after daemon registration");
+        };
+        assert_eq!(config_view.version, 2);
+        assert_eq!(config_view.stable_through, 2);
+        assert_eq!(
+            config_view.cluster.nodes,
+            vec![
+                ClusterNode {
+                    id: 4,
+                    host: "10.0.0.4".to_owned(),
+                    control_port: 2982,
+                    data_port: 3012,
+                },
+                ClusterNode {
+                    id: 9,
+                    host: "10.0.0.9".to_owned(),
+                    control_port: 3982,
+                    data_port: 4012,
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn legacy_admin_space_add_success_maps_to_hyperdex_status() {
         let runtime = bootstrap_runtime();
 
@@ -1452,7 +1605,9 @@ mod tests {
             LegacyAdminReturnCode::Success
         );
         assert_eq!(
-            handle_legacy_admin_request(&runtime, request).await.unwrap(),
+            handle_legacy_admin_request(&runtime, request)
+                .await
+                .unwrap(),
             LegacyAdminReturnCode::Duplicate
         );
     }
@@ -1522,14 +1677,16 @@ mod tests {
         let malformed = handle_coordinator_admin_method(
             &runtime,
             "space_rm",
-            CoordinatorAdminRequest::SpaceAdd(parse_hyperdex_space(
-                "space profiles\n\
+            CoordinatorAdminRequest::SpaceAdd(
+                parse_hyperdex_space(
+                    "space profiles\n\
                  key username\n\
                  attributes\n\
                     string first\n\
                  tolerate 0 failures\n",
-            )
-            .unwrap()),
+                )
+                .unwrap(),
+            ),
         )
         .await
         .unwrap();
@@ -1582,6 +1739,78 @@ mod tests {
             CoordinatorReturnCode::decode(&response).unwrap(),
             CoordinatorReturnCode::Success
         );
+    }
+
+    #[tokio::test]
+    async fn coordinator_control_service_registers_multiple_daemons_over_tcp() {
+        let runtime = Arc::new(ClusterRuntime::single_node(coordinator_cluster_config()).unwrap());
+
+        for node in [
+            ClusterNode {
+                id: 2,
+                host: "10.0.0.2".to_owned(),
+                control_port: 2982,
+                data_port: 3012,
+            },
+            ClusterNode {
+                id: 8,
+                host: "10.0.0.8".to_owned(),
+                control_port: 3982,
+                data_port: 4012,
+            },
+        ] {
+            let service = CoordinatorControlService::bind("127.0.0.1:0".parse().unwrap())
+                .await
+                .unwrap();
+            let address = service.local_addr().unwrap();
+            let runtime_for_server = runtime.clone();
+
+            let server = tokio::spawn(async move {
+                service
+                    .serve_once_with(move |method, request| {
+                        let runtime = runtime_for_server.clone();
+                        async move {
+                            handle_coordinator_control_method(runtime.as_ref(), &method, request)
+                                .await
+                        }
+                    })
+                    .await
+                    .unwrap()
+            });
+
+            let response = request_coordinator_control_once(
+                address,
+                "daemon_register",
+                &CoordinatorAdminRequest::DaemonRegister(node),
+            )
+            .await
+            .unwrap();
+
+            server.await.unwrap();
+            assert_eq!(
+                CoordinatorReturnCode::decode(&response).unwrap(),
+                CoordinatorReturnCode::Success
+            );
+        }
+
+        let AdminResponse::Config(config_view) =
+            HyperdexAdminService::handle(runtime.as_ref(), AdminRequest::DumpConfig)
+                .await
+                .unwrap()
+        else {
+            panic!("expected config response after daemon registration");
+        };
+        assert_eq!(config_view.version, 2);
+        assert_eq!(
+            config_view
+                .cluster
+                .nodes
+                .iter()
+                .map(|node| node.id)
+                .collect::<Vec<_>>(),
+            vec![2, 8]
+        );
+        assert_eq!(runtime.catalog.layout().unwrap().nodes, vec![2, 8]);
     }
 
     #[tokio::test]
@@ -2368,7 +2597,10 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(header.message_type, LegacyMessageType::RespSearchItem);
-        assert_eq!(SearchItemResponse::decode_body(&body).unwrap().key, b"grace".to_vec());
+        assert_eq!(
+            SearchItemResponse::decode_body(&body).unwrap().key,
+            b"grace".to_vec()
+        );
 
         let (header, body) = handle_legacy_request(
             &runtime,
@@ -2384,7 +2616,10 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(header.message_type, LegacyMessageType::RespSearchDone);
-        assert_eq!(SearchDoneResponse::decode_body(&body).unwrap().search_id, 99);
+        assert_eq!(
+            SearchDoneResponse::decode_body(&body).unwrap().search_id,
+            99
+        );
     }
 
     #[test]
@@ -2412,6 +2647,7 @@ mod tests {
         let args = vec![
             "daemon".to_owned(),
             "--foreground".to_owned(),
+            "--node-id=7".to_owned(),
             "--threads=1".to_owned(),
             "--data=/tmp/daemon".to_owned(),
             "--listen=127.0.0.1".to_owned(),
@@ -2423,10 +2659,12 @@ mod tests {
         assert_eq!(
             parse_process_mode(&args).unwrap(),
             ProcessMode::Daemon {
+                node_id: 7,
                 threads: 1,
                 data_dir: "/tmp/daemon".to_owned(),
                 listen_host: "127.0.0.1".to_owned(),
                 listen_port: 2012,
+                control_port: 2012,
                 coordinator_host: "127.0.0.1".to_owned(),
                 coordinator_port: 1982,
                 consensus: ConsensusBackend::SingleNode,
@@ -2441,10 +2679,12 @@ mod tests {
     fn parse_daemon_cli_with_runtime_shape() {
         let args = vec![
             "daemon".to_owned(),
+            "--node-id=7".to_owned(),
             "--threads=1".to_owned(),
             "--data=/tmp/daemon".to_owned(),
             "--listen=127.0.0.1".to_owned(),
             "--listen-port=2012".to_owned(),
+            "--control-port=3012".to_owned(),
             "--coordinator=127.0.0.1".to_owned(),
             "--coordinator-port=1982".to_owned(),
             "--consensus=mirror".to_owned(),
@@ -2456,10 +2696,12 @@ mod tests {
         assert_eq!(
             parse_process_mode(&args).unwrap(),
             ProcessMode::Daemon {
+                node_id: 7,
                 threads: 1,
                 data_dir: "/tmp/daemon".to_owned(),
                 listen_host: "127.0.0.1".to_owned(),
                 listen_port: 2012,
+                control_port: 3012,
                 coordinator_host: "127.0.0.1".to_owned(),
                 coordinator_port: 1982,
                 consensus: ConsensusBackend::Mirror,
@@ -2467,6 +2709,34 @@ mod tests {
                 storage: StorageBackend::RocksDb,
                 internode_transport: TransportBackend::Grpc,
             }
+        );
+    }
+
+    #[test]
+    fn daemon_cluster_config_uses_daemon_identity() {
+        let mode = ProcessMode::Daemon {
+            node_id: 11,
+            threads: 1,
+            data_dir: "/tmp/daemon".to_owned(),
+            listen_host: "10.0.0.11".to_owned(),
+            listen_port: 2012,
+            control_port: 3012,
+            coordinator_host: "127.0.0.1".to_owned(),
+            coordinator_port: 1982,
+            consensus: ConsensusBackend::Mirror,
+            placement: PlacementBackend::Rendezvous,
+            storage: StorageBackend::Memory,
+            internode_transport: TransportBackend::Grpc,
+        };
+
+        assert_eq!(
+            daemon_cluster_config(&mode).nodes,
+            vec![ClusterNode {
+                id: 11,
+                host: "10.0.0.11".to_owned(),
+                control_port: 3012,
+                data_port: 2012,
+            }]
         );
     }
 }

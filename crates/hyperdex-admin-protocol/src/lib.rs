@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use cluster_config::ClusterConfig;
+use cluster_config::{ClusterConfig, ClusterNode};
 use data_model::{Space, SpaceName};
 use serde::{Deserialize, Serialize};
 
@@ -42,6 +42,7 @@ pub enum LegacyAdminRequest {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CoordinatorAdminRequest {
+    DaemonRegister(ClusterNode),
     SpaceAdd(Space),
     SpaceRm(SpaceName),
     WaitUntilStable,
@@ -50,6 +51,7 @@ pub enum CoordinatorAdminRequest {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AdminRequest {
+    RegisterDaemon(ClusterNode),
     CreateSpace(Space),
     CreateSpaceDsl(String),
     DropSpace(SpaceName),
@@ -74,6 +76,7 @@ pub trait HyperdexAdminService: Send + Sync {
 impl CoordinatorAdminRequest {
     pub fn method_name(&self) -> &'static str {
         match self {
+            Self::DaemonRegister(_) => "daemon_register",
             Self::SpaceAdd(_) => "space_add",
             Self::SpaceRm(_) => "space_rm",
             Self::WaitUntilStable => "wait_until_stable",
@@ -117,9 +120,7 @@ impl CoordinatorReturnCode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use data_model::{
-        AttributeDefinition, SchemaFormat, SpaceOptions, Subspace, ValueKind,
-    };
+    use data_model::{AttributeDefinition, SchemaFormat, SpaceOptions, Subspace, ValueKind};
 
     #[test]
     fn coordinator_return_codes_round_trip_through_wire_bytes() {
@@ -185,6 +186,16 @@ mod tests {
         };
 
         assert_eq!(
+            CoordinatorAdminRequest::DaemonRegister(ClusterNode {
+                id: 9,
+                host: "127.0.0.1".to_owned(),
+                control_port: 1982,
+                data_port: 2012,
+            })
+            .method_name(),
+            "daemon_register"
+        );
+        assert_eq!(
             CoordinatorAdminRequest::SpaceAdd(space).method_name(),
             "space_add"
         );
@@ -196,6 +207,9 @@ mod tests {
             CoordinatorAdminRequest::WaitUntilStable.method_name(),
             "wait_until_stable"
         );
-        assert_eq!(CoordinatorAdminRequest::ConfigGet.method_name(), "config_get");
+        assert_eq!(
+            CoordinatorAdminRequest::ConfigGet.method_name(),
+            "config_get"
+        );
     }
 }

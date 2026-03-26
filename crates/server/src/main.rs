@@ -2,10 +2,12 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
+use hyperdex_admin_protocol::{CoordinatorAdminRequest, CoordinatorReturnCode};
 use legacy_frontend::LegacyFrontend;
 use server::{
-    daemon_cluster_config, handle_coordinator_control_method, handle_legacy_request,
-    parse_process_mode, ClusterRuntime, CoordinatorControlService, ProcessMode,
+    coordinator_cluster_config, daemon_cluster_config, daemon_registration_node,
+    handle_coordinator_control_method, handle_legacy_request, parse_process_mode,
+    request_coordinator_control_once, ClusterRuntime, CoordinatorControlService, ProcessMode,
 };
 use tracing::info;
 
@@ -15,7 +17,6 @@ async fn main() -> Result<()> {
 
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     let mode = parse_process_mode(&args)?;
-    let daemon_config = daemon_cluster_config(&mode);
 
     match mode {
         ProcessMode::Coordinator {
@@ -24,7 +25,7 @@ async fn main() -> Result<()> {
             listen_port,
         } => {
             let runtime = Arc::new(ClusterRuntime::single_node_with_data_dir(
-                cluster_config::ClusterConfig::default(),
+                coordinator_cluster_config(),
                 Some(Path::new(&data_dir)),
             )?);
             info!(
@@ -53,10 +54,12 @@ async fn main() -> Result<()> {
             }
         }
         ProcessMode::Daemon {
+            node_id,
             threads,
             data_dir,
             listen_host,
             listen_port,
+            control_port,
             coordinator_host,
             coordinator_port,
             consensus,
@@ -64,6 +67,40 @@ async fn main() -> Result<()> {
             storage,
             internode_transport,
         } => {
+            let daemon_mode = ProcessMode::Daemon {
+                node_id,
+                threads,
+                data_dir: data_dir.clone(),
+                listen_host: listen_host.clone(),
+                listen_port,
+                control_port,
+                coordinator_host: coordinator_host.clone(),
+                coordinator_port,
+                consensus: consensus.clone(),
+                placement: placement.clone(),
+                storage: storage.clone(),
+                internode_transport: internode_transport.clone(),
+            };
+            let daemon_config = daemon_cluster_config(&daemon_mode);
+            let daemon_node =
+                daemon_registration_node(&daemon_mode).expect("daemon mode has a node identity");
+            let status = request_coordinator_control_once(
+                format!("{coordinator_host}:{coordinator_port}")
+                    .parse()
+                    .expect("validated socket address"),
+                "daemon_register",
+                &CoordinatorAdminRequest::DaemonRegister(daemon_node.clone()),
+            )
+            .await?;
+            let status = CoordinatorReturnCode::decode(&status)?;
+            if status != CoordinatorReturnCode::Success {
+                anyhow::bail!(
+                    "coordinator rejected daemon registration for node {} with {:?}",
+                    daemon_node.id,
+                    status
+                );
+            }
+
             let runtime = Arc::new(server::ClusterRuntime::single_node_with_data_dir(
                 daemon_config,
                 Some(Path::new(&data_dir)),
@@ -73,6 +110,7 @@ async fn main() -> Result<()> {
                 data_dir,
                 listen_host,
                 listen_port,
+                control_port,
                 coordinator_host,
                 coordinator_port,
                 consensus = ?consensus,
