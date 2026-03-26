@@ -114,6 +114,8 @@ stable traits from the start.
   with `daemon` mode starting that listener.
 - Done: the gRPC public frontend now runs a real tonic server over
   `ClusterRuntime` for create-space, put, and get, with an end-to-end test.
+- Done: `consensus-core` now has a feature-gated OmniPaxos backend on `main`,
+  validated in both default and `omnipaxos`-enabled builds.
 - Running: worktree lanes for gRPC frontend, hyperspace placement fidelity,
   OpenRaft scaffolding, and OmniPaxos scaffolding.
 - Next: integrate the remaining completed worktree results back into `main`
@@ -121,9 +123,9 @@ stable traits from the start.
 
 ## Next Bounded Iteration
 
-Cherry-pick the feature-gated OmniPaxos backend onto `main`, validate both the
-default and `omnipaxos`-enabled consensus-core tests, and then decide whether
-the placement branch should land in the same sweep.
+Review and integrate the placement branch next, then decide whether the
+OpenRaft backend should land immediately after it or wait for runtime-side
+backend selection wiring.
 
 ## Loop Ledger
 
@@ -137,3 +139,4 @@ the placement branch should land in the same sweep.
 | 6 | A HyperDex-shaped process interface should exist before the external listener is implemented so cluster launch semantics are stable while the network surface grows. | Add `coordinator` and `daemon` process parsing to the `server` crate, test both command forms, and revalidate the workspace. | `cargo test -p server` passes with the new CLI tests, and `cargo test --workspace` still passes after the `server` binary starts parsing process modes. | Confirmed. | advance | Implement the first legacy frontend listener and hang it off the `daemon` mode instead of leaving the protocol crate as definitions only. |
 | 7 | Even before full request decoding exists, the main branch should expose a real legacy TCP listener so external compatibility work stops being abstract. | Add the `legacy-frontend` crate, implement a TCP accept path that reads a legacy request header and returns `CONFIGMISMATCH`, wire `daemon` mode to start that listener, and revalidate the workspace. | `cargo test -p legacy-protocol -p legacy-frontend -p server` passes, and `cargo test --workspace` still passes with the new listener crate and daemon wiring in place. | Confirmed. | advance | Integrate the completed gRPC worktree branch, then return to richer legacy request handling. |
 | 8 | The gRPC public frontend is independent enough from the legacy listener that it can be integrated immediately as a second public surface without destabilizing the compatibility path. | Replace the placeholder `transport-grpc` crate with a tonic/prost public frontend over `ClusterRuntime`, add a generated protobuf schema plus an end-to-end server test, and revalidate the workspace. | `cargo test -p transport-grpc` passes with the new end-to-end test, and `cargo test --workspace` still passes after the gRPC public surface lands on `main`. | Confirmed. | advance | Land one of the feature-gated consensus backends next, starting with OmniPaxos because its change set is small and isolated. |
+| 9 | The OmniPaxos backend is sufficiently isolated behind a feature flag that it can be landed on `main` now without forcing backend selection decisions elsewhere in the stack. | Cherry-pick the `consensus-core` OmniPaxos branch onto `main`, validate the default build plus the `omnipaxos` feature path, and revalidate the full workspace. | `cargo test -p consensus-core` passes, `cargo test -p consensus-core --features omnipaxos` passes, and `cargo test --workspace` still passes after the cherry-pick. | Confirmed. | advance | Review and integrate the placement branch next, then return to feature-gated OpenRaft and runtime-side backend selection. |
