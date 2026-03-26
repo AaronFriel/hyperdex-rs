@@ -17,6 +17,7 @@ data-plane = { path = "../data-plane" }
 engine-memory = { path = "../engine-memory" }
 hyperdex-admin-protocol = { path = "../hyperdex-admin-protocol" }
 hyperdex-client-protocol = { path = "../hyperdex-client-protocol" }
+legacy-frontend = { path = "../legacy-frontend" }
 placement-core = { path = "../placement-core" }
 storage-core = { path = "../storage-core" }
 tokio.workspace = true

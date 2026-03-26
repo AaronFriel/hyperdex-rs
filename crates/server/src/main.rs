@@ -1,4 +1,5 @@
 use anyhow::Result;
+use legacy_frontend::LegacyFrontend;
 use server::{bootstrap_runtime, parse_process_mode, ProcessMode};
 use tracing::info;
 
@@ -38,6 +39,23 @@ async fn main() -> Result<()> {
                 coordinator_port,
                 "hyperdex-rs daemon bootstrapped"
             );
+
+            let legacy_frontend = LegacyFrontend::bind(
+                format!("{listen_host}:{listen_port}")
+                    .parse()
+                    .expect("validated socket address"),
+            )
+            .await?;
+
+            info!(
+                address = %legacy_frontend.local_addr()?,
+                "legacy HyperDex frontend listening"
+            );
+
+            tokio::select! {
+                result = legacy_frontend.serve_forever() => result?,
+                _ = tokio::signal::ctrl_c() => {}
+            }
         }
     }
 

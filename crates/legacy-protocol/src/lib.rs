@@ -141,6 +141,14 @@ impl ResponseHeader {
     }
 }
 
+pub fn config_mismatch_response(request: RequestHeader) -> ResponseHeader {
+    ResponseHeader {
+        message_type: LegacyMessageType::ConfigMismatch,
+        target_virtual_server: request.target_virtual_server,
+        nonce: request.nonce,
+    }
+}
+
 fn decode_message_type(value: u8) -> Result<LegacyMessageType, LegacyProtocolError> {
     let message_type = match value {
         8 => LegacyMessageType::ReqGet,
@@ -218,5 +226,25 @@ mod tests {
         assert_eq!(LegacyReturnCode::NotFound as u16, 8321);
         assert_eq!(LegacyReturnCode::CompareFailed as u16, 8325);
         assert_eq!(LegacyReturnCode::Unauthorized as u16, 8329);
+    }
+
+    #[test]
+    fn config_mismatch_response_preserves_routing_fields() {
+        let request = RequestHeader {
+            message_type: LegacyMessageType::ReqGet,
+            flags: 0,
+            version: 1,
+            target_virtual_server: 23,
+            nonce: 29,
+        };
+
+        assert_eq!(
+            config_mismatch_response(request),
+            ResponseHeader {
+                message_type: LegacyMessageType::ConfigMismatch,
+                target_virtual_server: 23,
+                nonce: 29,
+            }
+        );
     }
 }
