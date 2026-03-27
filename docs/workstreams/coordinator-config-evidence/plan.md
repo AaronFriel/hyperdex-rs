@@ -74,6 +74,9 @@ first atomic write.
   packed-config mismatch: zero-based ID allocation, especially
   `virtual_server_id=0`, where the original coordinator uses nonzero IDs from
   a shared counter.
+- [x] (2026-03-27 20:36Z) Finished `cce-005` and proved that the concrete
+  failing key `"large"` already routes to a non-null replica tuple on current
+  `main`, so the remaining blocker lies beyond coordinator route selection.
 - [x] (2026-03-27 20:14Z) Reopened this workstream for a second read-only step
   that compares the Rust `default_legacy_config_encoder` output against the
   original HyperDex `configuration` / `space` packing rules on a live
@@ -90,14 +93,16 @@ now identifies the next one: Rust still emits zero-based `space_id`,
 `subspace_id`, `region_id`, and especially `virtual_server_id=0`, while the
 original coordinator allocates all of those IDs from a shared counter seeded
 at `1`.
+at `1`. `cce-005` narrows that again for the concrete failing key: `"large"`
+does not route through the zero-valued replica tuple, so the remaining public
+failure is beyond coordinator route selection.
 
 ## Next Bounded Step
 
 Keep this workstream read-only. The next bounded step is now narrower than
-general comparison: tie the zero-based ID-allocation mismatch to the specific
-failing large-object key path, or identify the next packed-config field after
-ID allocation if the key `"large"` still would not route correctly once IDs
-are fixed.
+general comparison: follow the original client path one step beyond route
+selection for the failing large-object put and identify the next exact
+pre-daemon contract that must hold before `REQ_ATOMIC` is actually sent.
 
 ## Surprises & Discoveries
 
@@ -135,6 +140,11 @@ are fixed.
   shared counter seeded at `1`; the original client treats
   `virtual_server_id()` as the null sentinel and refuses to send if the chosen
   replica returns that default value.
+- Observation: the concrete failing key `"large"` does not hit the null
+  `virtual_server_id` path.
+  Evidence: `CityHash64("large") = 0xe2d4d8f959c0215c`, which maps to primary
+  region index `56`, and the current Rust config already gives that region a
+  non-null replica tuple `(server_id=1, virtual_server_id=56)`.
 
 ## Decision Log
 
@@ -162,6 +172,11 @@ are fixed.
   focused public failure is still keyed to `"large"`, so one more tie-off pass
   is useful while the product worker patches IDs.
   Date/Author: 2026-03-27 / root
+- Decision: keep the workstream active for one more step beyond `cce-005`.
+  Rationale: the tie-off ruled out route selection for the concrete key, so
+  the next high-value read-only question is the next client-side contract after
+  route selection, not another packed-config comparison.
+  Date/Author: 2026-03-27 / root
 
 ## Outcomes & Retrospective
 
@@ -187,3 +202,8 @@ are fixed.
   likely route-preparation blocker. The next read-only pass should not repeat
   general comparison; it should tie that mismatch directly to the failing
   large-object key or move one field deeper if needed.
+- The fifth bounded step tied the concrete key to the route-selection path and
+  ruled that path out: `"large"` already maps to a non-null replica tuple on
+  current `main`. The next read-only pass should therefore move one step later
+  in the client path and identify the next exact pre-daemon contract before
+  `REQ_ATOMIC` is sent.

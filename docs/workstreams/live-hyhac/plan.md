@@ -180,6 +180,9 @@ stronger live probe before returning control.
   exact packed-config mismatch after region intervals: zero-based ID
   allocation, especially `virtual_server_id=0`, where the original
   coordinator uses nonzero IDs from a shared counter.
+- [x] (2026-03-27 20:36Z) The follow-up tie-off proved that the concrete
+  failing key `"large"` already routes to a non-null replica tuple on current
+  `main`, so the remaining blocker is later than coordinator route selection.
 - [ ] Rerun the bounded live `hyhac` probe after the next packed-config/body
   mismatch is fixed.
 
@@ -198,17 +201,20 @@ next concrete gap is therefore deeper inside the packed
 correction. The next proven bad field is now the ID-allocation contract:
 Rust emits zero-based `space_id`, `subspace_id`, `region_id`, and especially
 `virtual_server_id=0`, while the original coordinator allocates those IDs from
-one shared counter seeded at `1`.
+one shared counter seeded at `1`. But the concrete failing key `"large"`
+already routes to a non-null replica tuple on current `main`, so the active
+public blocker is now one step later than route selection.
 
 ## Next Bounded Step
 
 Own the next packed `hyperdex::configuration` / `hyperdex::space` body fix for
 the full `profiles` schema through the focused large-object `ClientGarbage`
-repro now that region intervals are corrected. The next exact target is the
-ID-allocation contract, starting with `virtual_server_id`. Stay on the fast
-public loop until that path either clears or yields the next exact
-coordinator-side mismatch, and only widen back to broader pooled operations
-after this focused path moves forward.
+repro now that region intervals are corrected. Use the ID-allocation mismatch
+as a correctness fix if it is already in flight, but do not stop there: the
+concrete failing key is already past route selection, so drive until the next
+exact pre-daemon mismatch is exposed or fixed. Stay on the fast public loop
+until that path either clears or yields that next exact coordinator-side
+contract.
 
 ## Surprises & Discoveries
 

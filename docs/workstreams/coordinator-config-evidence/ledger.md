@@ -259,3 +259,57 @@
   - direct tie-off between the `"large"` key path and the ID-allocation
     mismatch, or a tighter next mismatch beyond IDs
   - concrete file/function pointers for the original producer and consumer
+
+### Entry `cce-005` - Outcome
+
+- Timestamp: `2026-03-27 20:36Z`
+- Kind: `outcome`
+- End commit: `05f3abd`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyhac/test/Test/HyperDex/Shared.hs`
+  - `/home/friel/c/aaronfriel/hyhac/test/Test/HyperDex/Pool.hs`
+  - `/home/friel/c/aaronfriel/HyperDex/common/datatype_string.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/common/configuration.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+- Evidence summary:
+  - the failing key is `"large"` in the `hyhac` large-object tests
+  - `CityHash64("large") = 0xe2d4d8f959c0215c`, which maps to primary region
+    index `56` under the corrected 64-partition intervals
+  - current Rust config already gives region `56` a non-null replica tuple
+    `(server_id=1, virtual_server_id=56)`
+  - the original client only rejects the null sentinel path when
+    `point_leader(...) == virtual_server_id()`, so `"large"` does not fail
+    specifically because of `virtual_server_id=0`
+  - the focused public validator still reproduces `Left ClientGarbage`
+- Conclusion: the ID-allocation mismatch is real, but it is not the specific
+  cause of the failing `"large"` route. The remaining blocker is one step later
+  in the client path, beyond coordinator route selection.
+- Disposition: `reframe`
+- Next move: reopen this workstream one step later in the path and identify
+  the next exact pre-daemon contract after route selection for the large-object
+  put.
+
+### Entry `cce-006` - Preregistration
+
+- Timestamp: `2026-03-27 20:36Z`
+- Kind: `preregister`
+- Hypothesis: a new read-only pass that follows the original client path one
+  step beyond route selection for the large-object put will identify the next
+  exact pre-daemon contract that must hold before `REQ_ATOMIC` is actually
+  sent.
+- Owner: next delegated read-only worker
+- Start commit: `05f3abd`
+- Worktree / branch:
+  - none required; read-only evidence gathering only
+- Mutable surface:
+  - none
+- Validator:
+  - source-backed explanation of the next client-side contract after
+    `configuration::point_leader` for the large-object put path
+  - or the next exact encoding or function-selection mismatch before daemon
+    traffic is sent
+- Expected artifacts:
+  - the next exact pre-daemon contract after route selection for the large
+    object path
+  - concrete file/function pointers for the original producer and consumer

@@ -122,8 +122,8 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` | Hold until the product worker needs another harness change. | `advance` |
-| `live-hyhac` | active | running forked product worker on a clean compatibility worktree | `1d6093c` fixed primary-region interval encoding, and `cce-004` shows the next proven mismatch is zero-based ID allocation in the packed config body, especially `virtual_server_id=0`. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-config-body` on `live-hyhac-config-body` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused manual cluster probes | Own the ID-allocation fix inside the packed `configuration` / `space` body and keep the fast public loop green or narrower. | `advance` |
-| `coordinator-config-evidence` | active | next delegated read-only worker | None; `cce-004` already identified the ID-allocation mismatch, so this active read-only step now needs to tie that mismatch directly to the failing `"large"` key path or name the next field after IDs. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required for the bounded step | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus source-backed route comparison | Turn the post-interval, post-ID large-object failure into the narrowest remaining coordinator-side contract statement. | `advance` |
+| `live-hyhac` | active | running forked product worker on a clean compatibility worktree | `cce-004` proved a real ID-allocation mismatch in the packed config body, but `cce-005` also proved that the concrete failing key `"large"` already routes to a non-null replica tuple, so the active blocker is later than route selection. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-config-body` on `live-hyhac-config-body` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused manual cluster probes | Drive past route selection and expose or fix the next exact pre-daemon contract for the large-object put. | `advance` |
+| `coordinator-config-evidence` | active | next delegated read-only worker | None; `cce-005` ruled out route selection for the failing key, so this active read-only step now needs to identify the next client-side contract after `configuration::point_leader`. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required for the bounded step | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus source-backed client-path comparison | Name the next exact pre-daemon contract after route selection for the large-object path. | `reframe` |
 
 ## Progress
 
@@ -302,6 +302,9 @@ split, sequencing, or validator set needs to change.
   packed-config mismatch after region intervals: zero-based ID allocation,
   with `virtual_server_id=0` as a likely route-preparation blocker before any
   `REQ_ATOMIC` can be sent.
+- [x] (2026-03-27 20:36Z) Finished `cce-005`, which proved that the concrete
+  failing key `"large"` already routes to a non-null replica tuple on current
+  `main`, so the remaining blocker is later than route selection.
 - [ ] Rerun the bounded live `hyhac` probe after the next packed-config/body
   mismatch is fixed.
 
@@ -309,16 +312,17 @@ split, sequencing, or validator set needs to change.
 
 Drive the next live compatibility step around the remaining packed
 `hyperdex::configuration` / `hyperdex::space` mismatch after the region-interval
-fix that landed in `1d6093c`. The next exact target is now the ID-allocation
-contract in the packed config body, starting with `virtual_server_id`, while a
-parallel read-only worker ties that mismatch directly to the failing `"large"`
-key path or names the next field after IDs.
+fix that landed in `1d6093c`. A real ID-allocation mismatch still exists in
+the packed config body, but the concrete failing key `"large"` is already past
+that route-selection boundary, so the next exact target is now the next
+client-side contract after `configuration::point_leader` and before the first
+daemon request is sent.
 
 ## Next Root Move
 
-Send the ID-allocation mismatch directly into the running product fork, relaunch
-the read-only evidence thread on the `"large"` key tie-off question, and
-reconcile the first substantive result that moves the fast public loop.
+Keep the product fork moving past route selection, relaunch the read-only
+evidence thread one step later in the client path, and reconcile the first
+substantive result that exposes or fixes the next pre-daemon contract.
 
 ## Surprises & Discoveries
 
