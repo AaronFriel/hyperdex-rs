@@ -134,7 +134,8 @@ mod tests {
         runtime
     }
 
-    async fn distributed_runtime_pair() -> (Arc<ClusterRuntime>, Arc<ClusterRuntime>) {
+    async fn distributed_runtime_fixture(
+    ) -> (Arc<SimTransport>, Arc<ClusterRuntime>, Arc<ClusterRuntime>) {
         let config = ClusterConfig {
             nodes: vec![
                 ClusterNode {
@@ -181,6 +182,11 @@ mod tests {
         .await
         .unwrap();
 
+        (transport, runtime1, runtime2)
+    }
+
+    async fn distributed_runtime_pair() -> (Arc<ClusterRuntime>, Arc<ClusterRuntime>) {
+        let (_, runtime1, runtime2) = distributed_runtime_fixture().await;
         (runtime1, runtime2)
     }
 
@@ -843,6 +849,99 @@ mod tests {
                 .await
                 .unwrap();
                 assert!(matches!(primary_view, ClientResponse::Record(Some(_))));
+            });
+        })
+        .settings(hegel::Settings::new().test_cases(15))
+        .run();
+    }
+
+    #[test]
+    fn hegel_distributed_runtime_preserves_degraded_get_and_count() {
+        let _guard = HEGEL_ENV_LOCK.lock().unwrap();
+        let hegel_server_command = ensure_hegel_server_command();
+        unsafe {
+            std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
+        }
+
+        hegel::Hegel::new(|tc: hegel::TestCase| {
+            let degraded_suffix: u16 =
+                tc.draw(hegel::generators::integers::<u16>().max_value(4095));
+            let degraded_value_id: u16 =
+                tc.draw(hegel::generators::integers::<u16>().max_value(99));
+            let survivor_value_id: u16 =
+                tc.draw(hegel::generators::integers::<u16>().max_value(99));
+
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            runtime.block_on(async move {
+                let (transport, runtime1, runtime2) = distributed_runtime_fixture().await;
+                let (survivor_runtime, unavailable_node, degraded_key) =
+                    degraded_read_target(&runtime1, &runtime2, &format!("hegel-degraded-{degraded_suffix}"));
+                let degraded_value = format!("v{degraded_value_id}");
+                let survivor_value = format!("sv{survivor_value_id}");
+                let survivor_key = format!("survivor-{degraded_suffix}");
+
+                let put_degraded = HyperdexClientService::handle(
+                    runtime1.as_ref(),
+                    ClientRequest::Put {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(degraded_key.clone().into_bytes()),
+                        mutations: vec![Mutation::Set(Attribute {
+                            name: "name".to_owned(),
+                            value: Value::String(degraded_value.clone()),
+                        })],
+                    },
+                )
+                .await
+                .unwrap();
+                assert_eq!(put_degraded, ClientResponse::Unit);
+
+                let put_survivor = HyperdexClientService::handle(
+                    survivor_runtime.as_ref(),
+                    ClientRequest::Put {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(survivor_key.clone().into_bytes()),
+                        mutations: vec![Mutation::Set(Attribute {
+                            name: "name".to_owned(),
+                            value: Value::String(survivor_value.clone()),
+                        })],
+                    },
+                )
+                .await
+                .unwrap();
+                assert_eq!(put_survivor, ClientResponse::Unit);
+
+                transport.set_unavailable(unavailable_node, true).await;
+
+                let degraded_get = HyperdexClientService::handle(
+                    survivor_runtime.as_ref(),
+                    ClientRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(degraded_key.clone().into_bytes()),
+                    },
+                )
+                .await
+                .unwrap();
+                match degraded_get {
+                    ClientResponse::Record(Some(record)) => {
+                        let actual = match record.attributes.get("name") {
+                            Some(Value::String(value)) => value.clone(),
+                            other => panic!("unexpected record attribute: {other:?}"),
+                        };
+                        assert_eq!(actual, degraded_value);
+                    }
+                    other => panic!("unexpected degraded get response: {other:?}"),
+                }
+
+                let degraded_count = HyperdexClientService::handle(
+                    survivor_runtime.as_ref(),
+                    ClientRequest::Count {
+                        space: "profiles".to_owned(),
+                        checks: Vec::new(),
+                    },
+                )
+                .await
+                .unwrap();
+                assert_eq!(degraded_count, ClientResponse::Count(2));
             });
         })
         .settings(hegel::Settings::new().test_cases(15))
