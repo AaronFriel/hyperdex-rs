@@ -297,6 +297,12 @@ impl ClusterRuntime {
                     DataPlaneRequest::Get { space, key } => {
                         DataPlaneResponse::Record(self.data_plane.get(&space, &key)?)
                     }
+                    DataPlaneRequest::Delete { space, key } => {
+                        match self.data_plane.delete(&space, &key)? {
+                            WriteResult::Written | WriteResult::Missing => DataPlaneResponse::Unit,
+                            WriteResult::ConditionFailed => DataPlaneResponse::ConditionFailed,
+                        }
+                    }
                 };
                 InternodeResponse::encode(200, &response)
             }
@@ -1285,10 +1291,26 @@ impl HyperdexClientService for ClusterRuntime {
                 }
             }
             ClientRequest::Delete { space, key } => {
-                Ok(match self.data_plane.delete(&space, &key)? {
-                    WriteResult::Written | WriteResult::Missing => ClientResponse::Unit,
-                    WriteResult::ConditionFailed => ClientResponse::ConditionFailed,
-                })
+                let primary = self.route_primary(&key)?;
+                if primary == self.local_node_id {
+                    Ok(match self.data_plane.delete(&space, &key)? {
+                        WriteResult::Written | WriteResult::Missing => ClientResponse::Unit,
+                        WriteResult::ConditionFailed => ClientResponse::ConditionFailed,
+                    })
+                } else {
+                    Ok(
+                        match self
+                            .forward_data_request(primary, DataPlaneRequest::Delete { space, key })
+                            .await?
+                        {
+                            DataPlaneResponse::Unit => ClientResponse::Unit,
+                            DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
+                            DataPlaneResponse::Record(_) => {
+                                anyhow::bail!("unexpected record response to remote delete")
+                            }
+                        },
+                    )
+                }
             }
             ClientRequest::ConditionalPut {
                 space,

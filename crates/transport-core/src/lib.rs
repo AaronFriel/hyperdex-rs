@@ -36,6 +36,10 @@ pub enum DataPlaneRequest {
         space: String,
         key: Bytes,
     },
+    Delete {
+        space: String,
+        key: Bytes,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
