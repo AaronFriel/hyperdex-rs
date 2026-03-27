@@ -1953,7 +1953,7 @@
   handle/completion path will expose the remaining public contract mismatch
   before the first daemon request, and that differential will either produce a
   fix or one exact blocker.
-- Owner: next delegated product worker
+- Owner: delegated worker `019d3180-ba84-7443-9a62-8de2faaeb9c1` (`Parfit`)
 - Start commit: `a618ea0`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
@@ -1983,7 +1983,7 @@
   and Hyhac’s `clientDeferred` / `wrapDeferred` / `demandHandle` path will map
   the exact handle/completion contract the product worker must satisfy or
   probe, without waiting for another broad implementation attempt.
-- Owner: next delegated read-only worker
+- Owner: delegated worker `019d3180-bc6b-7800-aa9e-552c9c2c1853` (`Laplace`)
 - Start commit: `a618ea0`
 - Worktree / branch:
   - none required; read-only evidence gathering only
