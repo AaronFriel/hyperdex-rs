@@ -115,6 +115,25 @@ mod tests {
         }
     }
 
+    async fn single_node_runtime() -> Arc<ClusterRuntime> {
+        let config = ClusterConfig {
+            nodes: vec![ClusterNode {
+                id: 1,
+                host: "node1".to_owned(),
+                control_port: 1001,
+                data_port: 2001,
+            }],
+            replicas: 1,
+            ..ClusterConfig::default()
+        };
+
+        let runtime = Arc::new(ClusterRuntime::for_node(config, 1).unwrap());
+        HyperdexAdminService::handle(runtime.as_ref(), AdminRequest::CreateSpaceDsl(profiles_schema()))
+            .await
+            .unwrap();
+        runtime
+    }
+
     impl SimTransport {
         async fn register(&self, node_id: u64, runtime: Arc<ClusterRuntime>) {
             self.runtimes.lock().await.insert(node_id, runtime);
@@ -591,6 +610,120 @@ mod tests {
             }
         })
         .settings(hegel::Settings::new().test_cases(25))
+        .run();
+    }
+
+    #[test]
+    fn hegel_single_node_runtime_matches_sequence_model() {
+        let _guard = HEGEL_ENV_LOCK.lock().unwrap();
+        let hegel_server_command = ensure_hegel_server_command();
+        unsafe {
+            std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
+        }
+
+        hegel::Hegel::new(|tc: hegel::TestCase| {
+            let ops: Vec<(u8, u8, u16)> = tc.draw(
+                hegel::generators::vecs(hegel::generators::tuples3(
+                    hegel::generators::integers::<u8>().max_value(3),
+                    hegel::generators::integers::<u8>().max_value(12),
+                    hegel::generators::integers::<u16>().max_value(99),
+                ))
+                .max_size(25),
+            );
+
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            runtime.block_on(async move {
+                let runtime = single_node_runtime().await;
+                let mut model = BTreeMap::<String, String>::new();
+
+                for (kind, key_id, value_id) in ops {
+                    let key = format!("k{key_id}");
+                    let key_bytes = Bytes::from(key.clone().into_bytes());
+
+                    match kind {
+                        0 => {
+                            let value = format!("v{value_id}");
+                            let response = HyperdexClientService::handle(
+                                runtime.as_ref(),
+                                ClientRequest::Put {
+                                    space: "profiles".to_owned(),
+                                    key: key_bytes.clone(),
+                                    mutations: vec![Mutation::Set(Attribute {
+                                        name: "name".to_owned(),
+                                        value: Value::String(value.clone()),
+                                    })],
+                                },
+                            )
+                            .await
+                            .unwrap();
+                            assert_eq!(response, ClientResponse::Unit);
+                            model.insert(key.clone(), value);
+                        }
+                        1 => {
+                            let response = HyperdexClientService::handle(
+                                runtime.as_ref(),
+                                ClientRequest::Delete {
+                                    space: "profiles".to_owned(),
+                                    key: key_bytes.clone(),
+                                },
+                            )
+                            .await
+                            .unwrap();
+                            assert_eq!(response, ClientResponse::Unit);
+                            model.remove(&key);
+                        }
+                        2 => {
+                            let response = HyperdexClientService::handle(
+                                runtime.as_ref(),
+                                ClientRequest::Get {
+                                    space: "profiles".to_owned(),
+                                    key: key_bytes.clone(),
+                                },
+                            )
+                            .await
+                            .unwrap();
+                            let expected = model.get(&key).cloned();
+                            match response {
+                                ClientResponse::Record(Some(record)) => {
+                                    let actual = match record.attributes.get("name") {
+                                        Some(Value::String(value)) => Some(value.clone()),
+                                        _ => None,
+                                    };
+                                    assert_eq!(actual, expected);
+                                }
+                                ClientResponse::Record(None) => assert_eq!(expected, None),
+                                other => panic!("unexpected get response: {other:?}"),
+                            }
+                        }
+                        3 => {
+                            let response = HyperdexClientService::handle(
+                                runtime.as_ref(),
+                                ClientRequest::Count {
+                                    space: "profiles".to_owned(),
+                                    checks: Vec::new(),
+                                },
+                            )
+                            .await
+                            .unwrap();
+                            assert_eq!(response, ClientResponse::Count(model.len() as u64));
+                        }
+                        _ => unreachable!("operation kind is bounded to 0..=3"),
+                    }
+
+                    let count = HyperdexClientService::handle(
+                        runtime.as_ref(),
+                        ClientRequest::Count {
+                            space: "profiles".to_owned(),
+                            checks: Vec::new(),
+                        },
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(count, ClientResponse::Count(model.len() as u64));
+                }
+            });
+        })
+        .settings(hegel::Settings::new().test_cases(20))
         .run();
     }
 
