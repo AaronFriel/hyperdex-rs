@@ -192,6 +192,10 @@ stronger live probe before returning control.
 - [x] (2026-03-27 20:51Z) The first body comparison did not find a concrete
   mismatch either, so the remaining blocker is now later than function
   selection and `key_change` packing.
+- [x] (2026-03-27 20:56Z) The next read-only pass identified the first exact
+  daemon-side divergence after a structurally valid atomic request: missing
+  schema validation plus missing explicit `RESP_ATOMIC/NET_BADDIMSPEC`
+  response semantics.
 - [ ] Rerun the bounded live `hyhac` probe after the next packed-config/body
   mismatch is fixed.
 
@@ -220,7 +224,9 @@ header contract now appears sound for the concrete failing key, so the next
 exact question is the first body contract after an accepted daemon header. That
 first body contract also appears sound, so the next exact question is the first
 daemon-side processing or response contract after a structurally valid atomic
-request.
+request. That contract is now concrete: current Rust lacks upstream-equivalent
+atomic schema validation and the explicit `RESP_ATOMIC/NET_BADDIMSPEC`
+response path that follows it.
 
 ## Next Bounded Step
 
@@ -230,9 +236,11 @@ repro now that region intervals are corrected. Use the ID-allocation mismatch
 as a correctness fix if it is already in flight, but do not stop there: the
 concrete failing key is already past route selection, so drive until the next
 exact pre-daemon mismatch is exposed or fixed. The next exact target is the
-first body contract after the daemon would accept the header. Stay on the fast
-public loop until that path either clears or yields the next exact
-coordinator-side contract, which is now later than request structure itself.
+first daemon-side processing or response contract after the daemon would accept
+the header. Stay on the fast public loop until that path either clears or
+yields the next exact coordinator-side contract, which is now later than
+request structure itself. The active target is the missing validation-and-
+explicit-error-response contract after atomic decode.
 
 ## Surprises & Discoveries
 

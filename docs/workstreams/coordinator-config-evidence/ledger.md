@@ -473,3 +473,33 @@
   - the next exact daemon-side processing or response contract for the large
     object path
   - concrete file/function pointers for the original producer and consumer
+
+### Entry `cce-009` - Outcome
+
+- Timestamp: `2026-03-27 20:56Z`
+- Kind: `outcome`
+- End commit: `e29034a`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/HyperDex/daemon/replication_manager.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/common/key_change.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/common/funcall.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/common/attribute_check.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/client/pending_atomic.cc`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+- Evidence summary:
+  - upstream `replication_manager::client_atomic` validates `key_change`
+    against the target region schema before execution
+  - when that validation fails, upstream emits immediate
+    `RESP_ATOMIC/NET_BADDIMSPEC`
+  - the original client response path expects a two-byte network return code
+    inside `RESP_ATOMIC`
+  - current Rust legacy atomic handling decodes and translates directly into
+    execution with no upstream-equivalent `kc->validate(schema)` branch and no
+    explicit `RESP_ATOMIC/NET_BADDIMSPEC` path
+  - the focused public validator still reproduces `Left ClientGarbage`
+- Conclusion: the first exact daemon-side divergence after a structurally valid
+  atomic request is missing schema validation plus missing explicit
+  `RESP_ATOMIC/NET_BADDIMSPEC` response semantics.
+- Disposition: `advance`
+- Next move: hand this validation-and-error-response contract to the active
+  product worker and let product work take priority.

@@ -87,6 +87,10 @@ first atomic write.
 - [x] (2026-03-27 20:51Z) Finished `cce-008` and ruled out the first atomic
   body contract as well: current `hyperdex-rs` is structurally aligned with the
   original `key_change` and `FUNC_SET` packing for the large-object put.
+- [x] (2026-03-27 20:56Z) Finished `cce-009` and identified the first exact
+  daemon-side divergence after a structurally valid atomic request: missing
+  `kc->validate(schema)` handling and missing explicit
+  `RESP_ATOMIC/NET_BADDIMSPEC` response semantics.
 - [x] (2026-03-27 20:14Z) Reopened this workstream for a second read-only step
   that compares the Rust `default_legacy_config_encoder` output against the
   original HyperDex `configuration` / `space` packing rules on a live
@@ -114,7 +118,10 @@ header contract out for the concrete failing key as well, so the next exact
 question is the first body contract after a daemon-acceptable header.
 `cce-008` rules out that first body contract too, so the next exact question is
 the first daemon-side processing or response contract after a structurally
-valid `REQ_ATOMIC`.
+valid `REQ_ATOMIC`. `cce-009` now identifies that contract concretely: upstream
+validates `key_change` against the region schema before execution and responds
+with explicit `RESP_ATOMIC/NET_BADDIMSPEC` when that validation fails, while
+current Rust has no equivalent gate or response path.
 
 ## Next Bounded Step
 
@@ -125,7 +132,8 @@ exact body contract, function-selection contract, or `key_change` encoding
 contract that must hold before the daemon can process `REQ_ATOMIC`. That
 request-shape contract now looks sound, so the next bounded step is the first
 daemon-side processing or response contract after a structurally valid atomic
-request.
+request. The next exact target is now that validation-and-explicit-error
+contract.
 
 ## Surprises & Discoveries
 
@@ -185,6 +193,12 @@ request.
   Evidence: both the original path and Rust lower `put` to `FUNC_SET`
   funcalls, pack `nonce >> key_change`, and use compatible funcall and
   `key_change` field orderings for the large-object put.
+- Observation: the first exact daemon-side divergence is missing validation and
+  explicit atomic error response semantics.
+  Evidence: upstream `replication_manager::client_atomic` validates
+  `key_change` against schema and emits `RESP_ATOMIC/NET_BADDIMSPEC` on
+  failure, while current Rust goes straight from decode into translation and
+  execution without an upstream-equivalent gate.
 
 ## Decision Log
 
@@ -232,6 +246,12 @@ request.
   first atomic-body contract, so the next useful read-only question is the
   first daemon-side processing or response contract after `REQ_ATOMIC`.
   Date/Author: 2026-03-27 / root
+- Decision: keep the read-only path available for one narrower follow-up only
+  if the product fix needs exact validation-rule coverage or response-body
+  details.
+  Rationale: `cce-009` already names a concrete implementation target, so the
+  next root priority is product code rather than another broad read-only pass.
+  Date/Author: 2026-03-27 / root
 
 ## Outcomes & Retrospective
 
@@ -273,3 +293,5 @@ request.
 - The eighth bounded step ruled out that first body contract as well. The next
   read-only pass should inspect the first daemon-side processing or response
   contract after a structurally valid atomic request.
+- The ninth bounded step found that contract: missing schema validation and
+  missing explicit `RESP_ATOMIC/NET_BADDIMSPEC` handling after atomic decode.
