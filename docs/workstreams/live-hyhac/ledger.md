@@ -1614,6 +1614,71 @@
     evidence
   - a shorter branch-local loop than the broader selected `hyhac` command
 
+### Entry `hyh-036` - Outcome
+
+- Timestamp: `2026-03-27 21:05Z`
+- Kind: `outcome`
+- End commit: `475f4eb`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/main.rs`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/legacy-frontend/src/lib.rs`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/legacy-protocol/src/lib.rs`
+- Evidence summary:
+  - added upstream-style post-decode atomic validation with explicit
+    `RespAtomic/BadDimensionSpec` replies
+  - added focused tests for schema-mismatched `FUNC_SET` and erase-with-funcalls
+  - integrated BusyBee identify handling, persistent legacy connections, config
+    ID allocation fixes, map datatype fix, and daemon config-refresh retry
+  - `cargo test -p server legacy_atomic_returns_bad_dim_spec_for_schema_mismatched_set -- --nocapture`
+    passed
+  - `cargo test -p server legacy_atomic_returns_bad_dim_spec_for_erase_with_funcalls -- --nocapture`
+    passed
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
+    still reproduces `Left ClientGarbage`
+  - `cargo test -p server --test dist_multiprocess_harness coordinator_space_add_reaches_multiple_daemon_processes -- --nocapture`
+    fails with `Error: early eof`
+- Conclusion: the missing atomic validation-and-explicit-error contract was
+  real and is now implemented on `main`, but it did not clear the focused
+  large-object failure. The next concrete failing surface is the multiprocess
+  process-level `early eof` path.
+- Disposition: `reframe`
+- Next move: preregister a fresh product-owned step from current `main` on the
+  multiprocess `early eof` path.
+
+### Entry `hyh-037` - Preregistration
+
+- Timestamp: `2026-03-27 21:05Z`
+- Kind: `preregister`
+- Hypothesis: a fresh forked worker starting from current `main` can fix the
+  multiprocess `early eof` process-level path exposed after `hyh-036`, which is
+  now the next concrete blocker for trustworthy live-cluster validation.
+- Owner: next forked worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-process-eof`
+- Start commit: `acfdcdc`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-process-eof` on
+    `live-hyhac-process-eof`
+- Mutable surface:
+  - `crates/server/**`
+  - `crates/legacy-frontend/**`
+  - `crates/legacy-protocol/**`
+  - `crates/transport-grpc/**` only if strictly required by the failing
+    process-level path
+- Validator:
+  - fastest useful check:
+    - `cargo test -p server --test dist_multiprocess_harness coordinator_space_add_reaches_multiple_daemon_processes -- --nocapture`
+  - strong checks:
+    - `cargo test -p server --test dist_multiprocess_harness legacy_atomic_routes_numeric_update_to_remote_primary_process -- --nocapture`
+    - `cargo test -p server --test dist_multiprocess_harness degraded_search_and_count_survive_one_daemon_process_shutdown -- --nocapture`
+    - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
+    - `cargo test -p server`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - code and tests that remove the `early eof` multiprocess failures
+  - a clean next live-cluster baseline for the remaining large-object failure
+  - or a tighter process-level mismatch with code and evidence
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`

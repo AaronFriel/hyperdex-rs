@@ -196,6 +196,11 @@ stronger live probe before returning control.
   daemon-side divergence after a structurally valid atomic request: missing
   schema validation plus missing explicit `RESP_ATOMIC/NET_BADDIMSPEC`
   response semantics.
+- [x] (2026-03-27 21:05Z) Reconciled `acfdcdc` (`Improve legacy daemon
+  protocol handling`), which lands that validation-and-explicit-error path on
+  `main` but still leaves the focused large-object public loop failing.
+- [x] (2026-03-27 21:05Z) Verified that the next concrete failing surface is
+  now the multiprocess process-level `early eof` path.
 - [ ] Rerun the bounded live `hyhac` probe after the next packed-config/body
   mismatch is fixed.
 
@@ -226,7 +231,9 @@ first body contract also appears sound, so the next exact question is the first
 daemon-side processing or response contract after a structurally valid atomic
 request. That contract is now concrete: current Rust lacks upstream-equivalent
 atomic schema validation and the explicit `RESP_ATOMIC/NET_BADDIMSPEC`
-response path that follows it.
+response path that follows it. That gap is now fixed on `main`, so the next
+active blocker is the multiprocess process-level `early eof` path exposed by
+the server harness.
 
 ## Next Bounded Step
 
@@ -239,8 +246,10 @@ exact pre-daemon mismatch is exposed or fixed. The next exact target is the
 first daemon-side processing or response contract after the daemon would accept
 the header. Stay on the fast public loop until that path either clears or
 yields the next exact coordinator-side contract, which is now later than
-request structure itself. The active target is the missing validation-and-
-explicit-error-response contract after atomic decode.
+request structure itself. The atomic validation-and-explicit-error target is
+now landed, so the active target is the multiprocess `early eof` process-level
+path that blocks a clean live-cluster baseline for the remaining large-object
+failure.
 
 ## Surprises & Discoveries
 

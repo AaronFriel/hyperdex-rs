@@ -122,7 +122,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` | Hold until the product worker needs another harness change. | `advance` |
-| `live-hyhac` | active | running forked product worker on a clean compatibility worktree | `cce-009` identified the first exact daemon-side divergence after a structurally valid atomic request: missing schema validation plus missing explicit `RESP_ATOMIC/NET_BADDIMSPEC` response semantics. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-config-body` on `live-hyhac-config-body` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused manual cluster probes | Implement or expose the missing validation-and-explicit-error contract after atomic decode. | `advance` |
+| `live-hyhac` | active | next forked product worker on a fresh current-main worktree | `acfdcdc` lands the atomic validation-and-explicit-error contract, but the focused large-object public loop still fails and the next concrete failing surface is now the multiprocess process-level `early eof` path. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-process-eof` on `live-hyhac-process-eof` | `cargo test -p server --test dist_multiprocess_harness coordinator_space_add_reaches_multiple_daemon_processes -- --nocapture` | Remove the multiprocess `early eof` failures so the remaining large-object mismatch can be investigated on a trustworthy live-cluster baseline. | `reframe` |
 | `coordinator-config-evidence` | ready | root | None; `cce-009` already named a concrete implementation target, so more read-only passes should wait until product work either lands or uncovers a later boundary. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` | Hold until the product fix needs another exact read-only narrowing step. | `advance` |
 
 ## Progress
@@ -319,6 +319,10 @@ split, sequencing, or validator set needs to change.
   daemon-side divergence after a structurally valid atomic request: missing
   validation plus missing explicit `RESP_ATOMIC/NET_BADDIMSPEC` response
   semantics.
+- [x] (2026-03-27 21:05Z) Reconciled `acfdcdc` (`Improve legacy daemon
+  protocol handling`), verified the two new focused atomic-validation tests,
+  and confirmed that the next concrete failing surface is the multiprocess
+  `early eof` process-level path.
 - [ ] Rerun the bounded live `hyhac` probe after the next packed-config/body
   mismatch is fixed.
 
@@ -333,14 +337,14 @@ contracts now also look sound for that key. The next exact target is therefore
 the first daemon-side processing or response contract after a structurally
 valid atomic request. That target is now concrete: missing schema validation
 plus missing explicit `RESP_ATOMIC/NET_BADDIMSPEC` handling after atomic
-decode.
+decode. That target is now fixed on `main`, and the next active blocker is the
+multiprocess process-level `early eof` path.
 
 ## Next Root Move
 
-Keep the concrete validation-and-error-response target in the running product
-fork, hold the read-only workstream until product work lands or needs another
-narrowing pass, and reconcile the first substantive result that changes the
-fast public loop.
+Refresh the live product workstream onto a fresh current-main worktree, target
+the multiprocess `early eof` path directly, and use the focused process-level
+test as the fast loop before returning to the remaining large-object mismatch.
 
 ## Surprises & Discoveries
 
