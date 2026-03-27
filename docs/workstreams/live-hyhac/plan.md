@@ -112,27 +112,30 @@ surface.
   requests`), which ports the packed `hyperdex::space` decoder, maps Replicant
   admin requests into coordinator requests, and emits real Replicant
   completions for `space_add`, `space_rm`, and `wait_until_stable`.
+- [x] (2026-03-27 05:48Z) Landed `78162d5` (`Add legacy coordinator admin
+  service core`) and `f26d042` (`Add config-follow bootstrap helper`), giving
+  `main` a BusyBee/Replicant session core with focused tests and a green
+  workspace.
+- [x] (2026-03-27 05:48Z) Relaunched the next two concrete follow-ups in
+  parallel: coordinator startup plus bounded live probes, and selective
+  decoder hardening from the richer admin-decoder worktree result.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
-The packed `space_add` and Replicant request-core work is no longer the gap.
-The remaining live contract is the session layer around it: the original admin
-client still needs Replicant bootstrap, persistent Replicant condition follows,
-and HyperDex `config` condition responses before it can reach the now-implemented
-`space_add` / `wait_until_stable` request handling.
+The request core and the session core are both on `main`. The remaining live
+contract is now the gap between tests and the real process: the coordinator
+binary still needs to host the legacy admin listener, and the config-follow
+payload still needs to match what the original C admin client can decode.
 
 ## Next Bounded Step
 
-Implement the minimal live BusyBee/Replicant coordinator session in one bounded
-step:
-1. reply to Replicant bootstrap with a valid one-coordinator bootstrap message
-2. serve the required Replicant condition follows for `replicant/tick` and
-   `replicant/configuration`
-3. serve HyperDex `config` and `stable` condition responses on top of the new
-   request core
-Then rerun the bounded `hyperdex-add-space` and `hyperdex-wait-until-stable`
-probes.
+Finish the first live coordinator admin path in one bounded pass:
+1. wire `CoordinatorAdminLegacyService` into coordinator startup
+2. encode the HyperDex `config` follow payload in the original binary format
+3. rerun the bounded `hyperdex-add-space` and `hyperdex-wait-until-stable`
+   probes
+4. if those probes advance, rerun the bounded direct `hyhac` Cabal test
 
 ## Surprises & Discoveries
 
@@ -218,6 +221,11 @@ probes.
   single-byte BusyBee payload `0x1c`, and `Replicant/client/client.cc` treats
   `REPLNET_BOOTSTRAP` as the special message that installs the coordinator set
   before any condition follows are processed.
+- Observation: the service-core portion of that session layer is no longer
+  hypothetical; it is on `main` and validated locally.
+  Evidence: `78162d5` adds `CoordinatorAdminLegacyService`, focused server
+  tests cover bootstrap, `space_add`, and `wait_until_stable`, and
+  `cargo test --workspace` passed after `f26d042`.
 
 ## Decision Log
 

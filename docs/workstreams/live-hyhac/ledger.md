@@ -850,3 +850,97 @@
 - Next move: implement the minimal live BusyBee/Replicant coordinator session
   around this new request core, starting with bootstrap and condition-follow
   responses.
+
+### Entry `hyh-020` - Preregistration
+
+- Timestamp: `2026-03-27 05:39Z`
+- Kind: `preregister`
+- Hypothesis: reconciling the completed `admin-server` worktree result will put
+  the missing BusyBee/Replicant session core on `main`, leaving startup wiring
+  and payload fidelity as the next live gap rather than session semantics.
+- Owner: root reconciliation of the completed `admin-server` worktree
+- Start commit: `063d8a1`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Mutable surface:
+  - `crates/server/src/lib.rs`
+  - `crates/hyperdex-admin-protocol/**` only for small integration fixes
+- Validator:
+  - `cargo test -p server`
+  - `cargo test --workspace`
+- Expected artifacts:
+  - `CoordinatorAdminLegacyService` on `main`
+  - focused session-core tests on `main`
+  - clean proof that the request core and session core coexist
+
+### Entry `hyh-020` - Outcome
+
+- Timestamp: `2026-03-27 05:48Z`
+- Kind: `outcome`
+- End commit: `f26d042`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
+- Evidence summary:
+  - `78162d5` lands `CoordinatorAdminLegacyService`, per-connection pending
+    completion state, BusyBee-framed bootstrap handling, and focused server
+    tests for bootstrap, `space_add`, and `wait_until_stable`
+  - the interrupted cherry-pick was resolved without losing the earlier
+    request-core work on `main`
+  - `f26d042` adds the missing `ReplicantAdminRequestMessage::config_follow()`
+    helper required by the service-core tests
+  - `cargo test -p server` passed
+  - `cargo test --workspace` passed
+- Conclusion: the session core is now on `main`. The next live gap is no
+  longer request decoding or session mechanics in isolation; it is coordinator
+  startup wiring plus original-format config-condition payloads.
+- Disposition: `advance`
+- Next move: run coordinator startup/probe implementation and selective
+  decoder hardening in parallel.
+
+### Entry `hyh-021` - Preregistration
+
+- Timestamp: `2026-03-27 05:48Z`
+- Kind: `preregister`
+- Hypothesis: wiring the legacy admin service into coordinator startup and
+  probing it with the original admin tools will expose the next live
+  compatibility gap directly, and may already unblock `space_add` /
+  `wait_until_stable`.
+- Owner: delegated worker `019d2dd3-1489-7153-82b3-b6dc5d937157`
+- Start commit: `f26d042`
+- Worktree / branch:
+  - delegated worker branch from `main`
+- Mutable surface:
+  - `crates/server/src/main.rs`
+  - `crates/server/**` only for startup-facing glue and focused tests
+  - probe helper scripts or notes only if strictly needed
+- Validator:
+  - focused server startup tests
+  - bounded `hyperdex-add-space` probe
+  - bounded `hyperdex-wait-until-stable` probe
+  - `cargo test -p server`
+- Expected artifacts:
+  - coordinator process hosting the legacy admin listener
+  - bounded live admin probe evidence
+  - one commit ready for reconciliation
+
+### Entry `hyh-022` - Preregistration
+
+- Timestamp: `2026-03-27 05:48Z`
+- Kind: `preregister`
+- Hypothesis: selectively porting validation and tests from the richer
+  `admin-decoder` worktree will harden packed-space decoding without colliding
+  with the newer request-core API already on `main`.
+- Owner: delegated worker `019d2dd5-c9cf-7371-b884-147367f7e897`
+- Start commit: `f26d042`
+- Worktree / branch:
+  - delegated worker branch from `main`
+- Mutable surface:
+  - `crates/hyperdex-admin-protocol/**`
+- Validator:
+  - `cargo test -p hyperdex-admin-protocol`
+  - `cargo test --workspace`
+- Expected artifacts:
+  - secret, partition, and index validation in packed-space decoding
+  - richer truncation and fixture tests
+  - one commit ready for reconciliation

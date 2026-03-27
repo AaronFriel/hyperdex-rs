@@ -122,7 +122,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Hold until a new real-cluster failure requires deeper harness work. | `advance` |
-| `live-hyhac` | active | The request core is now implemented, but the live coordinator still lacks the BusyBee/Replicant session layer that the original admin client expects before it reaches `space_add` or `wait_until_stable`. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated admin worktrees | Implement the minimal live BusyBee/Replicant coordinator session: bootstrap, Replicant condition follows, HyperDex `config`/`stable` conditions, then rerun the admin probes. | `advance` |
+| `live-hyhac` | active | The BusyBee/Replicant service core is now on `main`, but the live coordinator still needs startup wiring and original-format config-condition payloads before the C admin client can complete a real probe. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated admin worktrees | Wire the legacy admin listener into coordinator startup, harden the packed-space decoder, then rerun the admin probes. | `advance` |
 
 ## Progress
 
@@ -199,24 +199,31 @@ split, sequencing, or validator set needs to change.
   requests`), which ports the packed `hyperdex::space` decoder, maps
   Replicant admin requests into coordinator requests, and emits real Replicant
   completions for `space_add`, `space_rm`, and `wait_until_stable`.
+- [x] (2026-03-27 05:48Z) Reconciled `78162d5` (`Add legacy coordinator admin
+  service core`) after resolving the interrupted cherry-pick, added `f26d042`
+  (`Add config-follow bootstrap helper`), and restored a green workspace with
+  `cargo test -p server` and `cargo test --workspace`.
+- [x] (2026-03-27 05:48Z) Relaunched two substantial follow-up steps in
+  parallel: coordinator startup plus live admin probes, and selective
+  decoder-hardening based on the richer admin-decoder worktree result.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
-Drive the live coordinator session layer that still stands between the original
-admin client and the now-implemented request core. The next code should make a
-real connection survive long enough to finish bootstrap, condition-follow
-setup, and at least one admin operation.
+Drive the remaining live coordinator compatibility gap now that the request
+core and service core are on `main`. The next code needs to expose that
+service from the real coordinator binary and make its configuration replies
+look enough like HyperDex for the original admin client to finish bootstrap
+and reach a real operation.
 
 ## Next Root Move
 
-Implement the smallest live BusyBee/Replicant session that can satisfy the
-original admin client:
-1. send a valid Replicant bootstrap reply
-2. answer the required Replicant condition follows
-3. answer HyperDex `config` and `stable` waits using correctly encoded
-   condition-completion messages
-Then rerun `hyperdex-add-space` and `hyperdex-wait-until-stable`.
+Finish the first end-to-end live admin path:
+1. wire `CoordinatorAdminLegacyService` into coordinator startup
+2. replace the placeholder config-follow payload with the original binary
+   condition payload the C admin client expects
+3. harden the packed-space decoder with the missing validation and richer tests
+4. rerun `hyperdex-add-space` and `hyperdex-wait-until-stable`
 
 ## Surprises & Discoveries
 
@@ -316,6 +323,12 @@ Then rerun `hyperdex-add-space` and `hyperdex-wait-until-stable`.
   Evidence: the latest worker reported that `ReplicantAdminRequestMessage::space_add`
   carries opaque bytes and the server has no Rust decoder for the original
   packed `hyperdex::space` payload format.
+- Observation: the live admin service core is now on `main`, and the current
+  remaining gap moved outward to startup wiring and config payload fidelity.
+  Evidence: `78162d5` adds `CoordinatorAdminLegacyService` and its focused
+  tests pass inside `cargo test -p server`; the full workspace is green again
+  after `f26d042`, while the active follow-up work is now coordinator startup
+  plus live probes and selective decoder validation.
 
 ## Decision Log
 
