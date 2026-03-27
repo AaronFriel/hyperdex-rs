@@ -88,11 +88,10 @@ One bounded design-or-implementation step with validation and a recorded verdict
 
 ## Current Hypothesis
 
-The runtime now preserves logical degraded reads in fixed integration tests and
-in one deterministic `turmoil` simulation. The next limiting gap is alternate
-deterministic-scheduler coverage, because the user asked for both `turmoil` and
-`madsim`, and degraded-read behavior is still missing that second simulation
-surface.
+The runtime now preserves logical degraded reads in fixed integration tests, in
+one deterministic `turmoil` simulation, and in one deterministic `madsim`
+simulation. The next limiting gap is the requested Hegel-based property path,
+because the current property coverage still depends on `proptest` alone.
 
 ## Milestones
 
@@ -192,19 +191,18 @@ surface.
 - Done: distributed delete-group now converges across replicas too, with a
   focused proof that matching records disappear from every replica while
   non-matching records survive.
-- Known gap: degraded-read behavior is not yet exercised under `madsim`, and
-  the current property coverage still relies on `proptest` rather than the
-  requested Hegel-based path.
+- Known gap: the current property coverage still relies on `proptest`, and the
+  requested Hegel-based path is not yet confirmed or integrated.
 - Active: dedicated worktrees are now producing distributed control-plane,
   distributed data-plane, and multiprocess validation changes in parallel.
-- Next: add `madsim` degraded-read coverage, then address the requested Hegel
-  property-testing path.
+- Next: confirm the requested Hegel property-testing path and either land a
+  first property check with it or record an evidence-backed reframe.
 
 ## Next Bounded Iteration
 
-Add a `madsim`-backed degraded-read proof for replica-backed `Get`, `Search`,
-and `Count`, then verify it agrees with the existing `turmoil` and real-process
-proofs.
+Confirm the requested Hegel property-testing path and either add a first
+property-based check with it in `simulation-harness` or record a bounded
+reframe if no practical Rust Hegel crate exists.
 
 ## Loop Ledger
 
@@ -250,3 +248,4 @@ proofs.
 | 38 | After degraded `Get` fallback, the next missing read-availability property is degraded multi-record reads, because `Search` and `Count` still aborted on one unreachable daemon even when replica coverage meant the logical answer was available from survivors. | Teach distributed `Search` to skip remote unavailability while still failing on real protocol errors or total replica loss, let `Count` inherit that behavior through the existing distributed search path, add a focused degraded-read proof in `transport-grpc` that shuts down one daemon and verifies the surviving runtime still returns the correct logical search results and count, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `distributed_search_and_count_survive_one_daemon_shutdown`; `cargo test -p server` passes; `cargo test --workspace` passes, proving logical search results and logical counts now survive one daemon shutdown when replica coverage remains. | Confirmed. | advance | Carry degraded `Search` and `Count` proof into the real coordinator-plus-daemons harness. |
 | 39 | After degraded multi-record reads work in the gRPC runtime harness, the next missing proof is the real coordinator-plus-daemons process surface, because the user asked for a real distributed system rather than only in-process correctness. | Add a coordinator-plus-daemons harness test that writes replicated data, shuts down one daemon process, and verifies the surviving daemon still returns the expected logical legacy search results and total count, then revalidate `server` and the full workspace. | `cargo test -p server --test dist_multiprocess_harness degraded_search_and_count_survive_one_daemon_process_shutdown -- --nocapture` passes; `cargo test -p server` passes; `cargo test --workspace` passes, proving degraded search and count through the real daemon-process harness. | Confirmed. | advance | Add deterministic simulation coverage for degraded `Get`, `Search`, and `Count`. |
 | 40 | After real-process degraded-read proof, the next missing coverage is deterministic failure simulation, because integration tests alone do not vary node-loss timing cheaply enough to harden the behavior. | Add a `turmoil` simulation with a shared fake transport and two real `ClusterRuntime` instances, inject one node failure after replicated writes, prove degraded `Get`, `Search`, and `Count` still return the expected logical results, add the minimal simulation-harness dependencies needed for that runtime-level proof, harden the process harness readiness check to wait on the daemon control port instead of a log line, and revalidate `simulation-harness`, `server`, and the full workspace. | `cargo test -p simulation-harness` passes with `turmoil_preserves_degraded_read_correctness_after_one_node_loss`; `cargo test -p server` passes after replacing the flaky daemon gRPC log wait with a control-port readiness probe; `cargo test --workspace` passes. | Confirmed. | advance | Add `madsim` degraded-read coverage and compare it against the existing `turmoil` and real-process proofs. |
+| 41 | After the `turmoil` proof, the next missing simulation surface is `madsim`, because the user explicitly asked for both deterministic schedulers and the degraded-read proof should survive the second runtime as well. | Add a cfg-gated `madsim` degraded-read proof to `simulation-harness`, keep default workspace builds clean by registering `cfg(madsim)` with Cargo check-cfg, generalize the degraded-read target selection so it follows actual placement instead of assuming one fixed primary, and revalidate the default harness, the explicit `madsim` path, `server`, and the full workspace. | `cargo test -p simulation-harness` passes; `RUSTFLAGS='--cfg madsim' cargo test -p simulation-harness madsim_preserves_degraded_read_correctness_after_one_node_loss -- --nocapture` passes; `cargo test -p server` passes; `cargo test --workspace` passes, proving the degraded `Get`, `Search`, and `Count` path under both deterministic simulation runtimes plus the existing process harness. | Confirmed. | advance | Confirm the requested Hegel property-testing path and either land a first property check with it or record an evidence-backed reframe if no practical Rust Hegel crate exists. |
