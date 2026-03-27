@@ -92,9 +92,9 @@ The runtime now preserves logical degraded reads in fixed integration tests, in
 one deterministic `turmoil` simulation, and in one deterministic `madsim`
 simulation. The requested Hegel path is now viable and integrated for one real
 memory-engine sequence model and the single-node runtime client surface, so the
-next limiting gap is degraded distributed scope: Hegel now exercises healthy
-multi-runtime routing, but it still does not probe generated behavior when one
-runtime becomes unavailable.
+next limiting gap is distributed mutation diversity: Hegel now exercises both
+healthy and degraded multi-runtime reads, but it still does not cover generated
+delete or conditional-write behavior across runtimes.
 
 ## Milestones
 
@@ -203,18 +203,20 @@ runtime becomes unavailable.
   `ClusterRuntime` sequence model for put/get/delete/count behavior.
 - Done: `simulation-harness` now includes a Hegel-backed distributed routing
   property for a healthy two-runtime pair.
-- Known gap: Hegel still does not cover degraded distributed behavior, so
-  generated routing checks still assume both runtimes remain available.
+- Done: `simulation-harness` now includes a Hegel-backed degraded distributed
+  read property for replica-backed `Get` and logical `Count`.
+- Known gap: Hegel still does not cover distributed delete or conditional-write
+  semantics, so generated cross-runtime mutation diversity remains shallow.
 - Active: dedicated worktrees are now producing distributed control-plane,
   distributed data-plane, and multiprocess validation changes in parallel.
-- Next: extend Hegel coverage from healthy distributed routing to a degraded
-  multi-runtime read property in `simulation-harness`.
+- Next: extend Hegel coverage from distributed reads to distributed delete or
+  conditional-write behavior in `simulation-harness`.
 
 ## Next Bounded Iteration
 
-Add a Hegel-backed degraded distributed read property in `simulation-harness`
-so generated tests cover replica-backed reads after one simulated runtime
-becomes unavailable.
+Add a Hegel-backed distributed delete property in `simulation-harness` so
+generated tests cover a routed mutation that removes state across runtimes, not
+just reads and writes that leave state present.
 
 ## Loop Ledger
 
@@ -265,3 +267,4 @@ becomes unavailable.
 | 43 | After the first Hegel smoke test, the next missing depth is a real stateful sequence model, because one generated write property still left the richer evolving-key behavior to `proptest` alone. | Replace the write-only Hegel check with a stateful put/delete/get sequence model, make Hegel use an explicit `HEGEL_SERVER_COMMAND` pinned to a temp-installed `hegel-core` binary instead of relying on the crate-local bootstrap path, revalidate `simulation-harness`, and rerun the full workspace. | `cargo test -p simulation-harness` passes with `hegel_memory_engine_matches_stateful_sequence_model`; `cargo test --workspace` passes; the Hegel server bootstrap now installs to `/tmp/hyperdex-rs-hegel-core-0.2.3/venv` and no longer depends on a fragile crate-local `.hegel/venv` bootstrap. | Confirmed. | advance | Extend Hegel coverage to the single-node `ClusterRuntime` client surface so property checks move one layer above the raw memory engine. |
 | 44 | After the Hegel memory-engine sequence model, the next missing scope is the single-node runtime surface, because property checks should also cover the client API layer that maps requests into the runtime and storage engine. | Add a single-node runtime fixture to `simulation-harness`, land a Hegel-backed put/get/delete/count sequence property over `HyperdexClientService::handle`, revalidate `simulation-harness`, and rerun the full workspace. | `cargo test -p simulation-harness` passes with `hegel_single_node_runtime_matches_sequence_model`; `cargo test --workspace` passes; the Hegel-backed sequence now covers both the raw memory engine and the single-node runtime client surface. | Confirmed. | advance | Extend Hegel coverage to a small distributed multi-runtime routing property so routed client behavior is also covered by generated tests. |
 | 45 | After the single-node runtime property, the next missing scope is healthy distributed routing, because Hegel should also cover the two-runtime client path that forwards to the primary and reads the routed result back. | Add a two-runtime fixture to `simulation-harness`, land a Hegel-backed distributed put/get routing property over `HyperdexClientService::handle`, revalidate `simulation-harness`, and rerun the full workspace. | `cargo test -p simulation-harness` passes with `hegel_distributed_runtime_routes_put_and_get`; `cargo test --workspace` passes; the Hegel-backed generated checks now cover the raw memory engine, the single-node runtime client surface, and the healthy two-runtime routed path. | Confirmed. | advance | Extend Hegel coverage to degraded distributed reads so generated tests also cover replica-backed availability after one runtime becomes unavailable. |
+| 46 | After healthy distributed routing, the next missing generated property is degraded distributed reads, because Hegel should also cover replica-backed availability after one runtime becomes unavailable. | Extend the distributed fixture to expose the shared simulated transport, add a Hegel-backed degraded distributed read property over routed `Get` and logical `Count`, revalidate `simulation-harness`, rerun the full workspace, and confirm the existing daemon-process degraded-read harness still passes. | `cargo test -p simulation-harness` passes with `hegel_distributed_runtime_preserves_degraded_get_and_count`; `timeout 120s cargo test -p server --test dist_multiprocess_harness degraded_search_and_count_survive_one_daemon_process_shutdown -- --nocapture` passes; `cargo test --workspace` passes, proving the new generated degraded-read property without regressing the existing distributed harness. | Confirmed. | advance | Extend Hegel coverage to a distributed delete property so generated tests cover a routed removal mutation across runtimes. |
