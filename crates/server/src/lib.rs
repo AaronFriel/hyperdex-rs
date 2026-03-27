@@ -16,7 +16,7 @@ use data_plane::DataPlane;
 use engine_memory::MemoryEngine;
 use engine_rocks::RocksEngine;
 use hyperdex_admin_protocol::{
-    AdminRequest, AdminResponse, CoordinatorAdminRequest, CoordinatorReturnCode,
+    AdminRequest, AdminResponse, ConfigView, CoordinatorAdminRequest, CoordinatorReturnCode,
     HyperdexAdminService, LegacyAdminRequest, LegacyAdminReturnCode,
 };
 use hyperdex_client_protocol::{ClientRequest, ClientResponse, HyperdexClientService};
@@ -256,6 +256,53 @@ impl ClusterRuntime {
             .expect("coordinator state poisoned");
         coordinator_state.version += 1;
         coordinator_state.stable_through = coordinator_state.version;
+    }
+
+    fn apply_config_view(&self, view: &ConfigView) -> Result<()> {
+        for node in &view.cluster.nodes {
+            self.catalog.register_daemon(node.clone())?;
+        }
+
+        *self
+            .cluster_config
+            .lock()
+            .expect("cluster config poisoned") = view.cluster.clone();
+
+        let local_spaces = self.catalog.list_spaces()?;
+        let remote_spaces = view
+            .spaces
+            .iter()
+            .map(|space| (space.name.clone(), space))
+            .collect::<BTreeMap<_, _>>();
+
+        for name in &local_spaces {
+            if !remote_spaces.contains_key(name) {
+                self.drop_space(name)?;
+            }
+        }
+
+        for space in &view.spaces {
+            match self.catalog.get_space(&space.name)? {
+                Some(existing) if existing == *space => {}
+                Some(_) => {
+                    self.drop_space(&space.name)?;
+                    self.create_space(space.clone())?;
+                }
+                None => {
+                    self.create_space(space.clone())?;
+                }
+            }
+        }
+
+        *self
+            .coordinator_state
+            .lock()
+            .expect("coordinator state poisoned") = CoordinatorState {
+            version: view.version,
+            stable_through: view.stable_through,
+        };
+
+        Ok(())
     }
 }
 
@@ -944,6 +991,28 @@ pub async fn request_coordinator_control_with_body_once(
         }
         Err(err) => Err(err.into()),
     }
+}
+
+pub async fn sync_runtime_with_coordinator(
+    runtime: &ClusterRuntime,
+    address: SocketAddr,
+) -> Result<ConfigView> {
+    let response = request_coordinator_control_with_body_once(
+        address,
+        CoordinatorAdminRequest::ConfigGet.method_name(),
+        &CoordinatorAdminRequest::ConfigGet,
+    )
+    .await?;
+    let status = CoordinatorReturnCode::decode(&response.status)?;
+    if status != CoordinatorReturnCode::Success {
+        return Err(anyhow!(
+            "coordinator config_get returned unexpected status {status:?}"
+        ));
+    }
+
+    let view: ConfigView = serde_json::from_slice(&response.body)?;
+    runtime.apply_config_view(&view)?;
+    Ok(view)
 }
 
 async fn write_coordinator_control_response(

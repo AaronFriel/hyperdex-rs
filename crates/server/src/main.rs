@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
 use hyperdex_admin_protocol::{CoordinatorAdminRequest, CoordinatorReturnCode};
@@ -7,9 +8,10 @@ use legacy_frontend::LegacyFrontend;
 use server::{
     coordinator_cluster_config, daemon_cluster_config, daemon_registration_node,
     handle_coordinator_control_method, handle_legacy_request, parse_process_mode,
-    request_coordinator_control_once, ClusterRuntime, CoordinatorControlService, ProcessMode,
+    request_coordinator_control_once, sync_runtime_with_coordinator, ClusterRuntime,
+    CoordinatorControlService, ProcessMode,
 };
-use tracing::info;
+use tracing::{info, warn};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -84,10 +86,11 @@ async fn main() -> Result<()> {
             let daemon_config = daemon_cluster_config(&daemon_mode);
             let daemon_node =
                 daemon_registration_node(&daemon_mode).expect("daemon mode has a node identity");
+            let coordinator_address = format!("{coordinator_host}:{coordinator_port}")
+                .parse()
+                .expect("validated socket address");
             let status = request_coordinator_control_once(
-                format!("{coordinator_host}:{coordinator_port}")
-                    .parse()
-                    .expect("validated socket address"),
+                coordinator_address,
                 "daemon_register",
                 &CoordinatorAdminRequest::DaemonRegister(daemon_node.clone()),
             )
@@ -120,6 +123,19 @@ async fn main() -> Result<()> {
                 "hyperdex-rs daemon bootstrapped"
             );
 
+            match sync_runtime_with_coordinator(runtime.as_ref(), coordinator_address).await {
+                Ok(view) => info!(
+                    version = view.version,
+                    stable_through = view.stable_through,
+                    spaces = view.spaces.len(),
+                    "daemon synchronized coordinator config"
+                ),
+                Err(err) => warn!(
+                    error = %err,
+                    "daemon could not fetch coordinator config during startup"
+                ),
+            }
+
             let legacy_frontend = LegacyFrontend::bind(
                 format!("{listen_host}:{listen_port}")
                     .parse()
@@ -132,6 +148,35 @@ async fn main() -> Result<()> {
                 "legacy HyperDex frontend listening"
             );
 
+            let sync_runtime = runtime.clone();
+            let sync_task = tokio::spawn(async move {
+                let mut last_synced_version = None;
+                let mut interval = tokio::time::interval(Duration::from_millis(50));
+
+                loop {
+                    interval.tick().await;
+                    match sync_runtime_with_coordinator(sync_runtime.as_ref(), coordinator_address)
+                        .await
+                    {
+                        Ok(view) => {
+                            if last_synced_version != Some(view.version) {
+                                info!(
+                                    version = view.version,
+                                    stable_through = view.stable_through,
+                                    spaces = view.spaces.len(),
+                                    "daemon synchronized coordinator config"
+                                );
+                                last_synced_version = Some(view.version);
+                            }
+                        }
+                        Err(err) => warn!(
+                            error = %err,
+                            "daemon failed to refresh coordinator config"
+                        ),
+                    }
+                }
+            });
+
             tokio::select! {
                 result = legacy_frontend.serve_forever_with(move |header, body| {
                     let runtime = runtime.clone();
@@ -139,6 +184,9 @@ async fn main() -> Result<()> {
                 }) => result?,
                 _ = tokio::signal::ctrl_c() => {}
             }
+
+            sync_task.abort();
+            let _ = sync_task.await;
         }
     }
 
