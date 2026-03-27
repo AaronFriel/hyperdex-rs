@@ -21,6 +21,9 @@ mod tests {
     use tokio::sync::Mutex;
     use transport_core::{ClusterTransport, InternodeRequest, InternodeResponse, RemoteNode};
 
+    static HEGEL_SERVER_COMMAND: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    static HEGEL_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     struct TestHarness {
         data_plane: DataPlane,
     }
@@ -140,6 +143,39 @@ mod tests {
                 _ => None,
             })
             .expect("expected a key routed to either cluster node")
+    }
+
+    fn ensure_hegel_server_command() -> String {
+        HEGEL_SERVER_COMMAND
+            .get_or_init(|| {
+                let root = std::env::temp_dir().join("hyperdex-rs-hegel-core-0.2.3");
+                let venv_dir = root.join("venv");
+                std::fs::create_dir_all(&root).expect("create hegel temp dir");
+
+                let status = std::process::Command::new("uv")
+                    .args(["venv", "--clear"])
+                    .arg(&venv_dir)
+                    .status()
+                    .expect("run uv venv");
+                assert!(status.success(), "uv venv failed for {:?}", venv_dir);
+
+                let python = venv_dir.join("bin/python");
+                let status = std::process::Command::new("uv")
+                    .args(["pip", "install", "--python"])
+                    .arg(&python)
+                    .arg("hegel-core==0.2.3")
+                    .status()
+                    .expect("run uv pip install");
+                assert!(status.success(), "uv pip install failed for {:?}", python);
+
+                let hegel = venv_dir.join("bin/hegel");
+                assert!(hegel.is_file(), "missing hegel binary at {:?}", hegel);
+                hegel
+                    .to_str()
+                    .expect("hegel path must be utf-8")
+                    .to_owned()
+            })
+            .clone()
     }
 
     #[async_trait]
@@ -506,30 +542,56 @@ mod tests {
         });
     }
 
-    #[hegel::test(test_cases = 25)]
-    fn hegel_memory_engine_tracks_latest_write_per_key(tc: hegel::TestCase) {
-        let writes: Vec<(String, String)> = tc.draw(
-            hegel::generators::vecs(hegel::generators::tuples2(
-                hegel::generators::text().max_size(4),
-                hegel::generators::text().max_size(8),
-            ))
-            .max_size(20),
-        );
-
-        let harness = TestHarness::new();
-        let mut expected = BTreeMap::new();
-
-        for (key, value) in writes {
-            assert_eq!(harness.put_name(&key, &value), WriteResult::Written);
-            expected.insert(key, value);
+    #[test]
+    fn hegel_memory_engine_matches_stateful_sequence_model() {
+        let _guard = HEGEL_ENV_LOCK.lock().unwrap();
+        let hegel_server_command = ensure_hegel_server_command();
+        unsafe {
+            std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
         }
 
-        assert_eq!(harness.snapshot(), expected);
-        assert_eq!(harness.count(), expected.len() as u64);
+        hegel::Hegel::new(|tc: hegel::TestCase| {
+            let ops: Vec<(u8, u8, u16)> = tc.draw(
+                hegel::generators::vecs(hegel::generators::tuples3(
+                    hegel::generators::integers::<u8>().max_value(2),
+                    hegel::generators::integers::<u8>().max_value(12),
+                    hegel::generators::integers::<u16>().max_value(99),
+                ))
+                .max_size(30),
+            );
 
-        for (key, value) in expected {
-            assert_eq!(harness.get_name(&key), Some(value));
-        }
+            let harness = TestHarness::new();
+            let mut model = BTreeMap::<String, String>::new();
+
+            for (kind, key_id, value_id) in ops {
+                let key = format!("k{key_id}");
+
+                match kind {
+                    0 => {
+                        let value = format!("v{value_id}");
+                        assert_eq!(harness.put_name(&key, &value), WriteResult::Written);
+                        model.insert(key.clone(), value);
+                    }
+                    1 => {
+                        let expected = if model.remove(&key).is_some() {
+                            WriteResult::Written
+                        } else {
+                            WriteResult::Missing
+                        };
+                        assert_eq!(harness.delete(&key), expected);
+                    }
+                    2 => {
+                        assert_eq!(harness.get_name(&key), model.get(&key).cloned());
+                    }
+                    _ => unreachable!("operation kind is bounded to 0..=2"),
+                }
+
+                assert_eq!(harness.snapshot(), model);
+                assert_eq!(harness.count(), model.len() as u64);
+            }
+        })
+        .settings(hegel::Settings::new().test_cases(25))
+        .run();
     }
 
     proptest! {
