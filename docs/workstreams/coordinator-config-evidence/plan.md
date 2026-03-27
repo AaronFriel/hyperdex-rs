@@ -64,6 +64,9 @@ first atomic write.
 - [x] (2026-03-27 20:20Z) Identified the first concrete mismatch inside that
   packed config body: Rust is emitting singleton primary-region bounds instead
   of HyperDex partition hash intervals.
+- [x] (2026-03-27 20:24Z) Reopened this workstream for a third read-only step
+  that turns the original HyperDex partition logic into exact expected region
+  intervals and packed bytes for the live `profiles` config body.
 - [x] (2026-03-27 20:14Z) Reopened this workstream for a second read-only step
   that compares the Rust `default_legacy_config_encoder` output against the
   original HyperDex `configuration` / `space` packing rules on a live
@@ -80,10 +83,11 @@ original client expects when it later routes through `configuration::point_leade
 
 ## Next Bounded Step
 
-Keep this workstream read-only unless root opens another evidence step. The
-current useful result is already in hand: fix the primary-subspace region
-bounds first, then reopen read-only comparison only if another packed-config
-mismatch remains.
+Keep this workstream read-only. The next bounded step is now narrower than
+general comparison: recover the exact contiguous region-interval contract and
+expected packed bytes for the primary subspace in the live `profiles` config
+body, so the product worker can implement that fix without re-deriving the
+interval math.
 
 ## Surprises & Discoveries
 
@@ -125,6 +129,11 @@ mismatch remains.
   Rationale: the active product worker now has a precise fix target, so another
   read-only pass is unnecessary until that fix lands and a new mismatch remains.
   Date/Author: 2026-03-27 / root
+- Decision: reopen the workstream immediately for one narrower read-only step.
+  Rationale: the product target is now precise enough that a source-backed
+  interval-and-bytes fixture can materially shorten the next code pass instead
+  of leaving the worker to reconstruct the original partition contract alone.
+  Date/Author: 2026-03-27 / root
 
 ## Outcomes & Retrospective
 
@@ -141,3 +150,6 @@ mismatch remains.
   contiguous partition hash intervals. This workstream can now pause until the
   product fix lands or another packed-config mismatch needs source-backed
   narrowing.
+- The third bounded step should not broaden back out to generic comparison. Its
+  only job is to turn the original HyperDex partition contract into exact
+  expected intervals and packed bytes for the live `profiles` primary subspace.

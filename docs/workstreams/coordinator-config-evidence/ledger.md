@@ -126,3 +126,29 @@
   - hand the exact region-bound mismatch to the active product worker
   - park this read-only workstream until the product fix lands or another
     packed-config mismatch remains
+
+### Entry `cce-003` - Preregistration
+
+- Timestamp: `2026-03-27 20:24Z`
+- Kind: `preregister`
+- Hypothesis: a third read-only pass that follows the original HyperDex
+  partition logic all the way to concrete packed bytes for the live `profiles`
+  primary subspace will produce an exact expected fixture for the region-bounds
+  fix, shortening the product worker’s next code pass materially.
+- Owner: next delegated read-only worker
+- Start commit: `f8306b3`
+- Worktree / branch:
+  - none required for the bounded step
+- Mutable surface:
+  - none; read-only evidence gathering only
+- Validator:
+  - source-backed interval table for the `64` primary regions in the live
+    `profiles` config body
+  - exact expected packed-byte examples for the first few primary-region bounds
+    as emitted by the original HyperDex contract
+  - clear pointer to the Rust encoder location that must match those bytes
+- Expected artifacts:
+  - exact contiguous primary-region interval contract for the live `profiles`
+    schema
+  - byte-level expected fixture for the packed region bounds
+  - a tighter implementation target for `hyh-035`

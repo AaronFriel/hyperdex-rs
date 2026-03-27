@@ -123,7 +123,7 @@ split, sequencing, or validator set needs to change.
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` | Hold until the product worker needs another harness change. | `advance` |
 | `live-hyhac` | active | resumed forked worker in `live-hyhac-data-plane` worktree | The focused large-object path still fails after string-slice and datatype encoding were corrected, so the next product target is the remaining mismatch deeper inside the packed `hyperdex::configuration` / `hyperdex::space` body for the full `profiles` schema. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on `live-hyhac-data-plane` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused manual cluster probes | Own the remaining packed `configuration` / `space` body mismatch until the focused large-object path clears or yields the next exact coordinator-side mismatch. | `advance` |
-| `coordinator-config-evidence` | ready | root | None; the current read-only comparison has already identified the first concrete packed-config mismatch. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required right now | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` plus source inspection if another mismatch remains | Hold until the product fix for primary-region bounds lands or another packed-config mismatch needs read-only narrowing. | `advance` |
+| `coordinator-config-evidence` | active | delegated read-only worker | None; the first concrete mismatch is already known, and this step exists to turn that mismatch into exact expected intervals and packed bytes for the live `profiles` config body. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required for the bounded step | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` plus source-backed partition/packing comparison | Recover the exact contiguous primary-region interval contract and expected packed bytes for the live `profiles` config body. | `advance` |
 
 ## Progress
 
@@ -286,22 +286,26 @@ split, sequencing, or validator set needs to change.
   comparison and identified the first concrete remaining mismatch: the packed
   config body is still writing singleton primary-region bounds instead of the
   original contiguous partition hash intervals.
+- [x] (2026-03-27 20:24Z) Reopened the coordinator-config evidence workstream
+  for one narrower read-only step: turn the original HyperDex partition logic
+  into exact expected intervals and packed bytes for the live `profiles`
+  primary subspace.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
 Drive the next live compatibility step around the now-identified primary-region
 bounds mismatch inside the packed `hyperdex::configuration` / `hyperdex::space`
-body for the full `profiles` schema. The product worker now owns the code
-change that replaces singleton region bounds with the original contiguous
-partition hash intervals. The read-only comparison work can pause until another
-packed-config mismatch remains.
+body for the full `profiles` schema. The product worker owns the code change
+that replaces singleton region bounds with the original contiguous partition
+hash intervals, and a parallel read-only worker now owns the exact interval and
+packed-byte fixture for that same live `profiles` primary subspace.
 
 ## Next Root Move
 
-Close the completed read-only comparison worker, send the exact primary-region
-bounds mismatch to the product worker, and wait for the next product result on
-top of `be0cb38`.
+Launch the narrower read-only region-interval comparison step in parallel,
+keep the product worker on the region-bounds fix, and reconcile whichever
+branch returns the next substantive result first.
 
 ## Surprises & Discoveries
 
