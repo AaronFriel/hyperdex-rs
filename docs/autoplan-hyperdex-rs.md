@@ -118,7 +118,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Hold until a new real-cluster failure requires deeper harness work. | `advance` |
-| `live-hyhac` | active | Server integration depends on the codec surface landing cleanly first. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated worktrees for admin codec and server mapping | Land a pure admin codec with tests, map the exact coordinator session insertion points against that codec, then relaunch server integration and rerun the bounded live probe. | `retry` |
+| `live-hyhac` | active | None. The codec is landed and the server wiring map is complete. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated admin server worktree | Implement the coordinator-side legacy admin listener, session state, config-follow, `space_add`, and `wait_until_stable` loop completion on top of the landed codec, then rerun the bounded live probe. | `advance` |
 
 ## Progress
 
@@ -161,23 +161,32 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 05:00Z) Retired the split admin-codec and admin-server
   workers cleanly when they still produced no file changes in their dedicated
   worktrees.
-- [ ] Relaunch the live-compatibility implementation as two tighter delegated
-  steps: a pure codec implementation and a server-integration map that names
-  the exact listener and session hooks to wire once the codec exists.
+- [x] (2026-03-27 05:00Z) Relaunched the live-compatibility implementation as
+  two tighter delegated steps: a pure codec implementation and a read-only
+  server map that names the exact listener and session hooks to wire once the
+  codec exists.
+- [x] (2026-03-27 05:04Z) Finished the server wiring map with exact
+  coordinator listener, session-state, and test insertion points.
+- [x] (2026-03-27 05:07Z) Reconciled the codec worker result into `489de25`
+  (`Add legacy admin codec helpers`) with `cargo test -p hyperdex-admin-protocol`
+  passing.
+- [ ] Launch one substantial server implementation step using the landed codec
+  and the completed server map.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
-Drive the next live-compatibility step with even tighter delegated scopes.
-The previous split still left too much design work inside each worker, so root
-must force one worker to own only the pure codec and another to produce the
-exact server wiring map against that codec.
+Drive the next live-compatibility step as one substantial server integration.
+The codec and the server map now both exist, so the next useful move is to
+build the coordinator-side legacy admin frontend itself rather than further
+splitting the prep work.
 
 ## Next Root Move
 
-Record the failed split explicitly, relaunch a codec-only worker, relaunch a
-server-mapping worker that names concrete insertion points, and keep root out
-of implementation until one of those returns a real artifact.
+Launch one worker on the full coordinator-side legacy admin implementation:
+listener, session state, request ids, config-follow, `space_add`,
+`wait_until_stable`, and loop completion, then validate with targeted tests
+and the bounded legacy admin probes.
 
 ## Surprises & Discoveries
 
@@ -231,6 +240,16 @@ of implementation until one of those returns a real artifact.
   still not specific enough to force either worker into a concrete diff.
   Evidence: both dedicated worktrees stayed clean at `801d20f` until the
   workers were interrupted.
+- Observation: a read-only server-mapping pass succeeded immediately once it
+  was reduced to exact file, function, and test references, while the codec
+  worker still did not start editing.
+  Evidence: the mapping worker returned concrete insertion points across
+  `crates/server/**`, while the codec worktree remained clean at `e3253b4`.
+- Observation: the codec worker did produce a large useful result once it
+  committed before the final status check.
+  Evidence: `489de25` landed BusyBee framing helpers, Replicant admin message
+  codecs, varint slice helpers, and targeted protocol tests in
+  `crates/hyperdex-admin-protocol/src/lib.rs`.
 
 ## Decision Log
 

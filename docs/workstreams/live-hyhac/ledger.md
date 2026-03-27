@@ -424,3 +424,82 @@
 - Expected artifacts:
   - exact server insertion points and test hooks
   - one narrower implementation target for the follow-up server worker
+
+### Entry `hyh-011` - Outcome
+
+- Timestamp: `2026-03-27 05:04Z`
+- Kind: `outcome`
+- End commit: `e3253b4`
+- Artifact location:
+  - read-only implementation map against
+    `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+    and `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/main.rs`
+- Evidence summary:
+  - the coordinator listener insertion point is the `coordinator` branch in
+    `crates/server/src/main.rs`
+  - the existing usable runtime state is `CoordinatorState`,
+    `ClusterRuntime::config_view`, `ClusterRuntime::stable_version`, and
+    `ClusterRuntime::record_config_change`
+  - the current dispatch path already supports `space_add`, but
+    `handle_coordinator_admin_request` still rejects `WaitUntilStable` and
+    `ConfigGet` as malformed
+  - the exact missing state for a legacy coordinator admin session is:
+    followed config version, request-id allocation, pending completions keyed
+    by request id, and loop polling that removes completions when returned
+  - the smallest useful integration tests are coordinator listener tests for
+    config-follow, `space_add`, and `wait_until_stable`, plus one
+    process-level proof in `dist_multiprocess_harness.rs`
+- Conclusion: the server-side shape is now explicit enough to reopen
+  implementation once the codec exists.
+- Disposition: `advance`
+- Next move: reconcile the codec worker result if it lands, then reopen one
+  substantial server implementation step on top of that codec and this map.
+
+### Entry `hyh-010` - Outcome
+
+- Timestamp: `2026-03-27 05:07Z`
+- Kind: `outcome`
+- End commit: `489de25`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
+- Evidence summary:
+  - the codec worker produced `ac16953` and root reconciled it as `489de25`
+    (`Add legacy admin codec helpers`)
+  - the landed code adds BusyBee frame helpers, Replicant admin request and
+    response codecs, varint slice helpers, and targeted protocol tests
+  - `cargo test -p hyperdex-admin-protocol` passed
+  - the captured 25-byte config-follow request is now covered by an exact byte
+    assertion and BusyBee stream round-trip
+- Conclusion: the protocol foundation is now strong enough to stop splitting
+  prep work and move directly into server implementation.
+- Disposition: `advance`
+- Next move: preregister one substantial server implementation step on top of
+  the landed codec and completed server map.
+
+### Entry `hyh-012` - Preregistration
+
+- Timestamp: `2026-03-27 05:07Z`
+- Kind: `preregister`
+- Hypothesis: one substantial server worker can implement the full
+  coordinator-side legacy admin path now that the codec and the exact server
+  insertion points are both available.
+- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Start commit: `489de25`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Mutable surface:
+  - `crates/server/**`
+  - `crates/hyperdex-admin-protocol/**` only for small integration glue if
+    strictly necessary
+- Validator:
+  - `cargo test -p server`
+  - `cargo test --workspace`
+  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
+- Expected artifacts:
+  - coordinator-side legacy admin listener
+  - session state with request-id allocation and pending completions
+  - initial config-follow handling
+  - `space_add` and `wait_until_stable` loop completion
+  - one bounded commit ready for reconciliation
+  - one bounded commit ready for reconciliation

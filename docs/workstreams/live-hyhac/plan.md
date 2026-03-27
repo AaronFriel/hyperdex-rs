@@ -80,25 +80,28 @@ surface.
   blocker.
 - [x] (2026-03-27 05:00Z) Retired the split admin-codec and admin-server
   workers cleanly when both dedicated worktrees still had no file changes.
-- [ ] Launch a pure codec worker limited to `hyperdex-admin-protocol` and a
-  separate server-mapping worker that names the exact listener and session
-  hooks to wire once that codec exists.
-- [ ] Reconcile those two artifacts onto `main` and use them to relaunch the
-  server implementation step.
+- [x] (2026-03-27 05:00Z) Relaunched a pure codec worker limited to
+  `hyperdex-admin-protocol` and a separate read-only server-mapping worker.
+- [x] (2026-03-27 05:04Z) Finished the server map with exact file, function,
+  state, and test references for the coordinator-side legacy admin path.
+- [x] (2026-03-27 05:07Z) Reconciled the codec worker result into `489de25`
+  (`Add legacy admin codec helpers`) with `cargo test -p hyperdex-admin-protocol`
+  passing.
+- [ ] Launch one substantial server implementation step on top of the landed
+  codec and the completed server map.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
-The first missing live contract is still the legacy coordinator admin frontend,
-and the framing facts are concrete enough. The remaining risk is that workers
-stall when they still have to invent the server-side shape themselves, so the
-next attempt must force one pure codec diff and one explicit server wiring map.
+The first missing live contract is still the legacy coordinator admin frontend.
+The codec and the server-side shape now both exist, so the remaining work is
+to implement the coordinator-side session and loop behavior itself.
 
 ## Next Bounded Step
 
-Implement the BusyBee and Replicant admin codec in isolation, produce a
-concrete server wiring map against that codec, then reopen the coordinator-side
-listener and loop-completion implementation on that narrower target.
+Implement the coordinator-side legacy admin listener, session state, request-id
+allocation, config-follow, `space_add`, and `wait_until_stable` loop
+completion on top of the landed codec.
 
 ## Surprises & Discoveries
 
@@ -141,6 +144,16 @@ listener and loop-completion implementation on that narrower target.
   integration", the workers still did not start editing.
   Evidence: both dedicated worktrees stayed clean at `801d20f` until the
   workers were interrupted.
+- Observation: a read-only server-mapping pass succeeded immediately once it
+  was reduced to exact insertion points and tests, while the codec retry still
+  did not start editing.
+  Evidence: the mapping worker returned concrete paths and functions in
+  `crates/server/**`, while the codec worktree remained clean at `e3253b4`.
+- Observation: the codec worker did in fact land the protocol foundation
+  needed for the next server step.
+  Evidence: `489de25` adds BusyBee frame helpers, Replicant request and
+  response codecs, varint slice helpers, and exact protocol tests in
+  `crates/hyperdex-admin-protocol/src/lib.rs`.
 
 ## Decision Log
 
