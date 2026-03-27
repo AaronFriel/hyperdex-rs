@@ -152,3 +152,54 @@
     schema
   - byte-level expected fixture for the packed region bounds
   - a tighter implementation target for `hyh-035`
+
+### Entry `cce-003` - Outcome
+
+- Timestamp: `2026-03-27 20:28Z`
+- Kind: `outcome`
+- End commit: `1d6093c`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/HyperDex/admin/hyperspace_builder.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/admin/partition.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/common/hyperspace.cc`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+- Evidence summary:
+  - the original `profiles` layout is a one-dimensional primary subspace on
+    attribute `0`
+  - the original partition math is `interval = 0x0400000000000000`,
+    `lower_i = i * interval`, `upper_i = lower_{i+1} - 1`, with the last upper
+    bound `UINT64_MAX`
+  - the packed region contract is `u64 id, u16 num_hashes, u8 num_replicas,
+    (u64 lower, u64 upper)*, replicas...`
+  - exact packed lower/upper bytes for the first four regions were recovered,
+    matching the encoder locations already changed in `crates/server/src/lib.rs`
+- Conclusion: `cce-003` fully verified the region-interval contract that
+  `1d6093c` implements. The interval mismatch is no longer the active
+  coordinator-config question.
+- Disposition: `advance`
+- Next move: reopen this workstream for the next read-only comparison after the
+  interval fix and identify the next exact packed-config mismatch, if any.
+
+### Entry `cce-004` - Preregistration
+
+- Timestamp: `2026-03-27 20:28Z`
+- Kind: `preregister`
+- Hypothesis: a fresh read-only comparison of the interval-corrected Rust
+  packed config body against the original HyperDex `configuration` / `space`
+  packing and client-consumption paths will identify the next exact mismatch
+  that still prevents the focused large-object path from reaching `REQ_ATOMIC`.
+- Owner: next delegated read-only worker
+- Start commit: `1d6093c`
+- Worktree / branch:
+  - none required; read-only evidence gathering only
+- Mutable surface:
+  - none
+- Validator:
+  - source-backed statement of the next exact packed-config or schema-contract
+    mismatch after region intervals
+  - concrete pointer to the original HyperDex producer or consumer code that
+    proves that mismatch
+- Expected artifacts:
+  - the next exact coordinator-side contract mismatch after region intervals
+  - concise explanation of how that mismatch prevents the client from preparing
+    the first atomic write

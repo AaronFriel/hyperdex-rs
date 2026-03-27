@@ -122,8 +122,8 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` | Hold until the product worker needs another harness change. | `advance` |
-| `live-hyhac` | active | resumed forked worker in `live-hyhac-data-plane` worktree | The focused large-object path still fails after string-slice and datatype encoding were corrected, so the next product target is the remaining mismatch deeper inside the packed `hyperdex::configuration` / `hyperdex::space` body for the full `profiles` schema. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on `live-hyhac-data-plane` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused manual cluster probes | Own the remaining packed `configuration` / `space` body mismatch until the focused large-object path clears or yields the next exact coordinator-side mismatch. | `advance` |
-| `coordinator-config-evidence` | active | delegated read-only worker | None; the first concrete mismatch is already known, and this step exists to turn that mismatch into exact expected intervals and packed bytes for the live `profiles` config body. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required for the bounded step | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` plus source-backed partition/packing comparison | Recover the exact contiguous primary-region interval contract and expected packed bytes for the live `profiles` config body. | `advance` |
+| `live-hyhac` | active | next forked product worker on a clean compatibility worktree | `1d6093c` fixed primary-region interval encoding but the focused large-object path still fails, so the next product target is the next mismatch deeper inside the packed `hyperdex::configuration` / `hyperdex::space` body for the full `profiles` schema after region intervals. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-config-body` on `live-hyhac-config-body` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused manual cluster probes | Own the next packed `configuration` / `space` body mismatch until the focused large-object path clears or yields the next exact coordinator-side mismatch. | `advance` |
+| `coordinator-config-evidence` | active | delegated read-only worker | None; `1d6093c` already landed the primary-region interval fix, so this active read-only step now needs to name the next exact packed-config mismatch if one remains. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required for the bounded step | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` plus source-backed packing comparison | Turn the post-interval large-object failure into the next exact packed-config or schema-contract mismatch. | `advance` |
 
 ## Progress
 
@@ -290,22 +290,31 @@ split, sequencing, or validator set needs to change.
   for one narrower read-only step: turn the original HyperDex partition logic
   into exact expected intervals and packed bytes for the live `profiles`
   primary subspace.
-- [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
+- [x] (2026-03-27 20:28Z) Reconciled `1d6093c` (`Use HyperDex partition
+  intervals in legacy config`), verified the new focused interval test, and
+  confirmed that the fast large-object public loop still reproduces
+  `Left ClientGarbage`.
+- [x] (2026-03-27 20:28Z) Finished `cce-003`, which produced the exact
+  interval table and packed-byte fixtures for the live `profiles` primary
+  subspace and confirmed that the landed encoder change matches the original
+  HyperDex partition contract.
+- [ ] Rerun the bounded live `hyhac` probe after the next packed-config/body
+  mismatch is fixed.
 
 ## Current Root Focus
 
-Drive the next live compatibility step around the now-identified primary-region
-bounds mismatch inside the packed `hyperdex::configuration` / `hyperdex::space`
-body for the full `profiles` schema. The product worker owns the code change
-that replaces singleton region bounds with the original contiguous partition
-hash intervals, and a parallel read-only worker now owns the exact interval and
-packed-byte fixture for that same live `profiles` primary subspace.
+Drive the next live compatibility step around the remaining packed
+`hyperdex::configuration` / `hyperdex::space` mismatch after the region-interval
+fix that landed in `1d6093c`. The next product worker should own the next
+coordinator-side compatibility increment end to end on a clean worktree, while
+the parallel read-only worker turns the still-failing large-object path into
+the next exact packing or schema-contract target.
 
 ## Next Root Move
 
-Launch the narrower read-only region-interval comparison step in parallel,
-keep the product worker on the region-bounds fix, and reconcile whichever
-branch returns the next substantive result first.
+Refresh the root package, rearm supervision cleanly, launch the next larger
+product-owned compatibility pass on a clean worktree, and reconcile whichever
+parallel result returns the next substantive packed-config finding first.
 
 ## Surprises & Discoveries
 

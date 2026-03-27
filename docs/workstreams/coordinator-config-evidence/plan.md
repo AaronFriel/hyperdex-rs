@@ -67,6 +67,9 @@ first atomic write.
 - [x] (2026-03-27 20:24Z) Reopened this workstream for a third read-only step
   that turns the original HyperDex partition logic into exact expected region
   intervals and packed bytes for the live `profiles` config body.
+- [x] (2026-03-27 20:28Z) Kept this workstream active after `1d6093c` landed,
+  because the region-interval fix was necessary but not sufficient and the
+  next read-only job is now to name the next exact packed-config mismatch.
 - [x] (2026-03-27 20:14Z) Reopened this workstream for a second read-only step
   that compares the Rust `default_legacy_config_encoder` output against the
   original HyperDex `configuration` / `space` packing rules on a live
@@ -76,18 +79,20 @@ first atomic write.
 
 The focused large-object path is still blocked by the coordinator-side packed
 `hyperdex::configuration` body that the HyperDex client consumes after
-`replicant_client_cond_follow("hyperdex", "config", ...)`. The first concrete
-mismatch is now known: Rust writes singleton primary-subspace region bounds
-instead of the contiguous `hyperdex::partition(...)` hash intervals the
-original client expects when it later routes through `configuration::point_leader`.
+`replicant_client_cond_follow("hyperdex", "config", ...)`. `1d6093c` has now
+corrected the first known mismatch by replacing singleton primary-subspace
+region bounds with the original `hyperdex::partition(...)` hash intervals, but
+the fast large-object path still fails. This workstream should therefore use
+the same evidence sources to name the next exact packed-config mismatch after
+the region fix rather than re-proving the interval math.
 
 ## Next Bounded Step
 
 Keep this workstream read-only. The next bounded step is now narrower than
-general comparison: recover the exact contiguous region-interval contract and
-expected packed bytes for the primary subspace in the live `profiles` config
-body, so the product worker can implement that fix without re-deriving the
-interval math.
+general comparison: use the interval-corrected Rust config body, the harness
+capture, and the original HyperDex sources to identify the next exact packed
+config or schema-contract mismatch that still prevents the focused large-object
+path from reaching `REQ_ATOMIC`.
 
 ## Surprises & Discoveries
 
@@ -113,6 +118,11 @@ interval math.
   `upper=0x03ffffffffffffff` for the first primary region, while Rust currently
   writes `lower=partition` and `upper=partition` in
   `default_legacy_config_encoder`.
+- Observation: after `1d6093c`, the region-bound mismatch is no longer the
+  active product target.
+  Evidence: the interval fix is integrated on `main`, the focused interval
+  test passes, and the fast large-object public loop still reports
+  `Left ClientGarbage`.
 
 ## Decision Log
 
@@ -150,6 +160,7 @@ interval math.
   contiguous partition hash intervals. This workstream can now pause until the
   product fix lands or another packed-config mismatch needs source-backed
   narrowing.
-- The third bounded step should not broaden back out to generic comparison. Its
-  only job is to turn the original HyperDex partition contract into exact
-  expected intervals and packed bytes for the live `profiles` primary subspace.
+- The third bounded step did its job once the region-interval fix landed. The
+  next read-only pass should stay equally narrow, but it now needs to identify
+  the next exact packed-config mismatch after the interval correction rather
+  than restating the interval contract.

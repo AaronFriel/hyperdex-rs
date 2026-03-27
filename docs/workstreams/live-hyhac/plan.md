@@ -172,28 +172,35 @@ stronger live probe before returning control.
 - [x] (2026-03-27 20:20Z) Reframed `hyh-035` to the exact next packed-config
   fix: replace singleton primary-subspace region bounds with the original
   contiguous `hyperdex::partition(...)` hash intervals.
-- [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
+- [x] (2026-03-27 20:28Z) Reconciled `1d6093c` (`Use HyperDex partition
+  intervals in legacy config`), verified the focused interval test, and
+  confirmed that the fast large-object public loop still reproduces
+  `Left ClientGarbage`.
+- [ ] Rerun the bounded live `hyhac` probe after the next packed-config/body
+  mismatch is fixed.
 
 ## Current Hypothesis
 
 The request core, session core, packed-space decoder hardening, same-port
 startup, binary config encoding, daemon join, and coordinator bootstrap/admin
-compatibility are now on `main`. The focused large-object failure is still the
-right public loop, but it no longer points at the daemon request decoder: the
-daemon never sees `REQ_ATOMIC` for this path, and the harness now shows the
-first captured exchange is still on the coordinator connection. The next
-concrete gap is now exact: inside the packed `hyperdex::configuration` /
-`hyperdex::space` body, Rust still emits singleton primary-subspace region
-bounds where the original HyperDex builder emits contiguous
-`hyperdex::partition(...)` hash intervals.
+compatibility are now on `main`. `1d6093c` also fixes the first concrete
+packed-config mismatch by replacing singleton primary-subspace region bounds
+with HyperDex partition intervals. The focused large-object failure is still
+the right public loop, but it still does not point at the daemon request
+decoder: the daemon never sees `REQ_ATOMIC` for this path, and the harness
+still shows the first captured exchange on the coordinator connection. The
+next concrete gap is therefore the next remaining mismatch deeper inside the
+packed `hyperdex::configuration` / `hyperdex::space` body after region
+interval correction.
 
 ## Next Bounded Step
 
-Own the primary-subspace region-bounds fix inside the packed
-`hyperdex::configuration` / `hyperdex::space` body for the full `profiles`
-schema through the focused large-object `ClientGarbage` repro until that path
-clears or yields the next exact coordinator-side mismatch. Only widen back to
-broader pooled operations after this focused path moves forward.
+Own the next packed `hyperdex::configuration` / `hyperdex::space` body fix for
+the full `profiles` schema through the focused large-object `ClientGarbage`
+repro now that region intervals are corrected. Stay on the fast public loop
+until that path either clears or yields the next exact coordinator-side
+mismatch, and only widen back to broader pooled operations after this focused
+path moves forward.
 
 ## Surprises & Discoveries
 
@@ -257,6 +264,11 @@ broader pooled operations after this focused path moves forward.
   `lower=partition`, `upper=partition`, while the original HyperDex builder
   emits contiguous `hyperdex::partition(...)` intervals such as
   `upper=0x03ffffffffffffff` for the first primary region.
+- Observation: correcting the primary-subspace region bounds is necessary but
+  not sufficient for the focused large-object path.
+  Evidence: `1d6093c` replaces the singleton bounds with HyperDex partition
+  intervals, `legacy_partition_regions_cover_full_u64_space_for_single_dimension`
+  passes, and the fast public loop still reports `Left ClientGarbage`.
 - Observation: even after splitting writes into "codec" and "server
   integration", the workers still did not start editing.
   Evidence: both dedicated worktrees stayed clean at `801d20f` until the
@@ -384,7 +396,17 @@ broader pooled operations after this focused path moves forward.
   edits are committed, and there is no need to wait for another file rewrite to
   make that possible.
   Date/Author: 2026-03-27 / root
+- Decision: relaunch the next product-owned step from a new clean worktree.
+  Rationale: the old `live-hyhac-data-plane` worktree still carries an
+  unrelated uncommitted harness edit, and the next fork should own a clean
+  write surface while keeping the same fast validator.
+  Date/Author: 2026-03-27 / root
 
 ## Outcomes & Retrospective
 
-- Pending.
+- `be0cb38` and `1d6093c` advanced the packed coordinator-config contract in
+  two concrete steps: first by fixing string-slice and datatype encoding, then
+  by fixing primary-region interval encoding. The public `ClientGarbage`
+  failure is now narrower than before, but the next product step should stay
+  on the packed `configuration` / `space` body rather than returning to the
+  daemon request path.

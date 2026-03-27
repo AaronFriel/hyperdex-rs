@@ -1551,6 +1551,69 @@
     packet or source evidence
   - a shorter branch-local loop than the broader selected `hyhac` command
 
+### Entry `hyh-035` - Outcome
+
+- Timestamp: `2026-03-27 20:28Z`
+- Kind: `outcome`
+- End commit: `1d6093c`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+- Evidence summary:
+  - `1d6093c` replaces singleton primary-region bounds with the original
+    HyperDex partition intervals in the legacy config encoder
+  - `cargo test -p server legacy_partition_regions_cover_full_u64_space_for_single_dimension -- --nocapture`
+    passed
+  - `cargo test -p server coordinator_admin_legacy_service_space_add_triggers_follow_update -- --nocapture`
+    passed
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
+    still reproduces `Left ClientGarbage`
+- Conclusion: the primary-region interval mismatch was real and is now fixed
+  on `main`, but it was not the last mismatch inside the packed
+  `hyperdex::configuration` / `hyperdex::space` body for the focused
+  large-object path.
+- Disposition: `advance`
+- Next move: preregister the next product-owned step on a clean worktree and
+  keep the same fast public loop while identifying and fixing the next
+  coordinator-side packed-config/body mismatch.
+
+### Entry `hyh-036` - Preregistration
+
+- Timestamp: `2026-03-27 20:28Z`
+- Kind: `preregister`
+- Hypothesis: a forked worker that owns the next packed
+  `hyperdex::configuration` / `hyperdex::space` body mismatch after the region
+  fix can move the focused large-object path past the remaining pre-daemon
+  `ClientGarbage` failure, or return the next exact coordinator-side mismatch
+  with code and validators.
+- Owner: next forked worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-config-body`
+- Start commit: `1d6093c`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-config-body` on
+    `live-hyhac-config-body`
+- Mutable surface:
+  - `crates/legacy-protocol/**`
+  - `crates/legacy-frontend/**`
+  - `crates/hyperdex-admin-protocol/**`
+  - `crates/hyperdex-client-protocol/**`
+  - `crates/server/**`
+  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if launcher wiring is
+    strictly necessary for the focused probe
+- Validator:
+  - fastest useful check:
+    - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
+  - strong checks:
+    - `cargo test -p server legacy_partition_regions_cover_full_u64_space_for_single_dimension -- --nocapture`
+    - `cargo test -p server`
+    - `cargo test --workspace`
+    - focused manual cluster probe for `*Can store a large object*`
+- Expected artifacts:
+  - code and tests that move the focused large-object path past the next
+    remaining packed-config/body mismatch after region intervals
+  - or a tighter coordinator-side mismatch tied to concrete packet or source
+    evidence
+  - a shorter branch-local loop than the broader selected `hyhac` command
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`
