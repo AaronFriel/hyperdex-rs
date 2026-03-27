@@ -89,10 +89,11 @@ One bounded design-or-implementation step with validation and a recorded verdict
 ## Current Hypothesis
 
 The runtime now preserves logical single-key and multi-record read correctness
-through one-daemon loss when surviving replicas already cover the data. The
-next limiting gap is process-level degraded read proof, because the current
-failure coverage for `Search` and `Count` is still at the multi-runtime gRPC
-layer rather than the real coordinator-plus-daemons harness.
+through one-daemon loss in both the multi-runtime gRPC harness and the real
+coordinator-plus-daemons harness. The next limiting gap is deterministic
+failure exploration, because degraded-read behavior is still covered by fixed
+integration tests rather than a simulation that can vary event order and node
+loss more systematically.
 
 ## Milestones
 
@@ -192,18 +193,18 @@ layer rather than the real coordinator-plus-daemons harness.
 - Done: distributed delete-group now converges across replicas too, with a
   focused proof that matching records disappear from every replica while
   non-matching records survive.
-- Known gap: degraded multi-record read behavior is not yet proven through the
-  real multiprocess harness with coordinator-managed daemons.
+- Known gap: degraded-read behavior is not yet exercised in deterministic
+  simulation where node loss timing and request order can be varied cheaply.
 - Active: dedicated worktrees are now producing distributed control-plane,
   distributed data-plane, and multiprocess validation changes in parallel.
-- Next: carry degraded `Search` and `Count` proof into the real daemon-process
-  harness, then broaden simulation around degraded read behavior.
+- Next: add deterministic simulation coverage for degraded `Get`, `Search`, and
+  `Count`, then continue broadening failure-oriented proof work.
 
 ## Next Bounded Iteration
 
-Prove degraded `Search` and `Count` through the coordinator-plus-daemons
-harness by shutting down one daemon after replicated writes and verifying the
-surviving daemon still returns the correct logical search result set and count.
+Add a deterministic simulation that exercises replica-backed degraded reads
+after one node becomes unavailable, then prove `Get`, `Search`, and `Count`
+still return the correct logical results under that simulated failure.
 
 ## Loop Ledger
 
@@ -247,3 +248,4 @@ surviving daemon still returns the correct logical search result set and count.
 | 36 | After distributed search convergence, the most immediate remaining healthy-cluster read bug is `Count`, because it still reads only local state and therefore undercounts across primaries while any naive fanout would also risk double-counting replicas. | Reframe the next bounded step from primary-failure `Get` fallback to logical distributed `Count`, implement `Count` as a thin wrapper over the existing distributed search fanout and dedupe path, add a focused three-runtime proof in `transport-grpc`, correct the multiprocess harness to use real gRPC internode transport for multi-process distributed reads, and revalidate the transport tests, `server`, and the full workspace. | A scout review showed `ClientRequest::Count` still used only `self.data_plane.count(...)` while distributed search was already logical and deduped; `cargo test -p transport-grpc --test public_frontend` passes with `distributed_count_returns_logical_matches_from_any_runtime`; `cargo test -p server --test dist_multiprocess_harness coordinator_space_add_reaches_multiple_daemon_processes -- --nocapture` passes after switching that harness to `--transport=grpc`; `cargo test -p server` passes; `cargo test --workspace` passes. | Confirmed. | reframe | Return to replica-serving `Get` fallback and prove a replica can satisfy a key lookup when the primary is unavailable. |
 | 37 | After logical distributed `Count`, the next missing single-key availability property is primary-failure `Get` behavior, because a replicated record should remain readable from another daemon when the primary transport is down. | Add ordered replica fallback for `ClientRequest::Get` using the existing internode `Get` path, keep the primary-first behavior when healthy, add a focused public gRPC proof that shuts down the primary runtime and reads the replicated record through the surviving daemon, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `distributed_get_falls_back_to_local_replica_when_primary_grpc_is_down`; `cargo test -p server` passes; `cargo test --workspace` passes, proving a public `Get` can still return the replicated record after the primary daemon's gRPC service is shut down. | Confirmed. | advance | Make distributed `Search` and `Count` tolerate one unavailable daemon while preserving logical results across surviving replicas. |
 | 38 | After degraded `Get` fallback, the next missing read-availability property is degraded multi-record reads, because `Search` and `Count` still aborted on one unreachable daemon even when replica coverage meant the logical answer was available from survivors. | Teach distributed `Search` to skip remote unavailability while still failing on real protocol errors or total replica loss, let `Count` inherit that behavior through the existing distributed search path, add a focused degraded-read proof in `transport-grpc` that shuts down one daemon and verifies the surviving runtime still returns the correct logical search results and count, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `distributed_search_and_count_survive_one_daemon_shutdown`; `cargo test -p server` passes; `cargo test --workspace` passes, proving logical search results and logical counts now survive one daemon shutdown when replica coverage remains. | Confirmed. | advance | Carry degraded `Search` and `Count` proof into the real coordinator-plus-daemons harness. |
+| 39 | After degraded multi-record reads work in the gRPC runtime harness, the next missing proof is the real coordinator-plus-daemons process surface, because the user asked for a real distributed system rather than only in-process correctness. | Add a coordinator-plus-daemons harness test that writes replicated data, shuts down one daemon process, and verifies the surviving daemon still returns the expected logical legacy search results and total count, then revalidate `server` and the full workspace. | `cargo test -p server --test dist_multiprocess_harness degraded_search_and_count_survive_one_daemon_process_shutdown -- --nocapture` passes; `cargo test -p server` passes; `cargo test --workspace` passes, proving degraded search and count through the real daemon-process harness. | Confirmed. | advance | Add deterministic simulation coverage for degraded `Get`, `Search`, and `Count`. |
