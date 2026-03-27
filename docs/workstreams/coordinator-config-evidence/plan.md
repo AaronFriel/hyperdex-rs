@@ -110,17 +110,17 @@ first atomic write.
 
 The sender-id mismatch and the repeated-identify mismatch are both fixed, and
 the corrected BusyBee proxy now shows the focused large-object path advancing
-into coordinator `CondWait` traffic. This workstream no longer owns the active
-blocker. It should stay read-only and ready for the next exact comparison once
-the post-follow path needs another source-backed reduction.
+into coordinator `CondWait` traffic plus `ClientResponse` completions. The next
+source-backed reduction belongs here again: the first post-follow mismatch on
+the corrected baseline still needs to be named before product work broadens out
+to the daemon path.
 
 ## Next Bounded Step
 
-Keep this workstream read-only and parked until the post-follow path needs
-another exact comparison. The next bounded step, when reopened, is to compare
-the original HyperDex/Replicant behavior against the corrected coordinator
-baseline after the first non-bootstrap `CondWait` traffic, not to revisit
-bootstrap acceptance again.
+Keep this workstream read-only. The next bounded step is to compare the
+original HyperDex/Replicant post-bootstrap `CondWait` / `ClientResponse` phase
+against the corrected Rust coordinator baseline and name the first exact
+post-follow mismatch that still blocks the direct Hyhac loop.
 
 ## Surprises & Discoveries
 

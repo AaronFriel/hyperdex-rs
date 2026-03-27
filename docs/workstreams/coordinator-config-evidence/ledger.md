@@ -709,3 +709,26 @@
 - Disposition: `advance`
 - Next move: park this workstream until the corrected post-follow baseline
   needs another read-only comparison.
+
+### Entry `cce-014` - Preregistration
+
+- Timestamp: `2026-03-27 22:17Z`
+- Kind: `preregister`
+- Hypothesis: now that the corrected BusyBee probe shows post-bootstrap
+  `CondWait` and `ClientResponse` traffic, a new read-only pass can identify
+  the first exact post-follow mismatch that still keeps the direct Hyhac loop
+  from reaching or succeeding on the daemon path.
+- Owner: next forked read-only worker
+- Start commit: `2b4104b`
+- Worktree / branch:
+  - none required; read-only evidence gathering only
+- Mutable surface:
+  - none
+- Validator:
+  - source-backed explanation of the first exact mismatch after the corrected
+    coordinator `CondWait` / `ClientResponse` phase
+  - concrete producer/consumer pointers in the original HyperDex/Replicant
+    path and the current Rust path
+- Expected artifacts:
+  - the next exact post-follow mismatch on the corrected baseline
+  - concrete pointers for the next product change
