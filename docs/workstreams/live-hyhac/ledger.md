@@ -652,3 +652,48 @@
   - initial config-follow handling
   - `space_add` and `wait_until_stable` completion frames
   - one bounded commit ready for reconciliation
+
+### Entry `hyh-015` - Outcome
+
+- Timestamp: `2026-03-27 05:21Z`
+- Kind: `outcome`
+- End commit: `175ed25`
+- Artifact location:
+  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Evidence summary:
+  - the corrected-transport worker still produced no diff
+  - it returned a precise blocker report matching the reviewer: the current
+    server has no coordinator-side legacy admin listener, no BusyBee/Replicant
+    transport boundary, no nonce allocator, and no pending-completion store
+  - the current JSON coordinator control helpers in `crates/server/src/lib.rs`
+    are fundamentally incompatible with the landed codec
+- Conclusion: the target is correct, but the next implementation step should be
+  phrased around the coordinator service core in `crates/server/src/lib.rs`
+  instead of the whole end-to-end listener/wiring stack at once.
+- Disposition: `retry`
+- Next move: preregister a substantial service-core implementation step in
+  `crates/server/src/lib.rs`, then wire startup/tests on top of it.
+
+### Entry `hyh-016` - Preregistration
+
+- Timestamp: `2026-03-27 05:21Z`
+- Kind: `preregister`
+- Hypothesis: a worker focused on the coordinator BusyBee/Replicant service
+  core in `crates/server/src/lib.rs` can land the transport/session machinery
+  once the end-to-end framing is no longer bundled with startup wiring.
+- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Start commit: `175ed25`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Mutable surface:
+  - `crates/server/src/lib.rs`
+  - `crates/hyperdex-admin-protocol/**` only for small integration glue if
+    strictly necessary
+- Validator:
+  - focused server tests for the service core if added
+  - `cargo test -p server`
+- Expected artifacts:
+  - coordinator BusyBee/Replicant service core
+  - per-connection session state with nonce allocation and pending completions
+  - config-follow, `space_add`, and `wait_until_stable` frame handling
+  - one bounded commit ready for reconciliation

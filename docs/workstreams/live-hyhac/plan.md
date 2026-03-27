@@ -97,20 +97,23 @@ surface.
   forked implementation worker plus a read-only reviewer.
 - [x] (2026-03-27 05:17Z) Reframed the server target after the review showed
   that the coordinator still speaks the wrong transport.
+- [x] (2026-03-27 05:21Z) Retired the first corrected-transport attempt when
+  it still produced no diff, but captured a precise blocker report.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
 The first missing live contract is still the legacy coordinator admin frontend.
-The newest evidence shows the immediate target is a separate BusyBee/Replicant
-coordinator transport and session layer, because the current coordinator path
-is still JSON control and cannot interoperate with the landed codec.
+The newest evidence shows the immediate job is the coordinator
+BusyBee/Replicant service core and session state in `crates/server/src/lib.rs`;
+startup wiring and live probes come after that core exists.
 
 ## Next Bounded Step
 
-Implement a separate BusyBee/Replicant coordinator admin transport and session
-layer: listener, frame decoding, config-follow, request-id allocation, pending
-completions, `space_add`, and `wait_until_stable` loop completion.
+Implement the coordinator BusyBee/Replicant service core and session state in
+`crates/server/src/lib.rs`: frame decoding, config-follow, request-id
+allocation, pending completions, `space_add`, and `wait_until_stable`
+completion handling.
 
 ## Surprises & Discoveries
 
@@ -174,6 +177,11 @@ completions, `space_add`, and `wait_until_stable` loop completion.
   empty server retries.
   Evidence: the coordinator still binds only the JSON control service, while
   the landed codec expects BusyBee framing and Replicant-style completions.
+- Observation: the first worker on the corrected transport target still did not
+  patch the service core.
+  Evidence: the `admin-server` worktree remained clean at `175ed25`, and the
+  blocker report pointed back to the missing coordinator transport/service
+  layer in `crates/server/src/lib.rs`.
 
 ## Decision Log
 

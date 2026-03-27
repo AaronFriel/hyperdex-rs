@@ -118,7 +118,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Hold until a new real-cluster failure requires deeper harness work. | `advance` |
-| `live-hyhac` | active | None. The codec is landed and the transport mismatch is now explicit. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated admin server worktree | Implement a separate BusyBee/Replicant coordinator admin transport and session layer on top of the landed codec, then rerun the bounded live probe. | `reframe` |
+| `live-hyhac` | active | Startup wiring and live probes depend on landing the coordinator BusyBee/Replicant service core first. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated admin server worktree | Implement the coordinator BusyBee/Replicant service core and session state in `crates/server/src/lib.rs`, then wire startup/tests and rerun the bounded live probe. | `retry` |
 
 ## Progress
 
@@ -181,19 +181,21 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 05:17Z) Reframed the server target itself after the review
   showed that the current coordinator transport is JSON and incompatible with
   the landed codec.
+- [x] (2026-03-27 05:21Z) Retired the first corrected-transport attempt with a
+  precise blocker report but no diff.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
-Drive the next live-compatibility step on the correct server target. The main
-problem is no longer session-state design alone; it is that the coordinator is
-still speaking the wrong transport entirely.
+Drive the next live-compatibility step on the correct server target, but in
+the right order. The transport mismatch is explicit, so the next concrete job
+is the coordinator BusyBee/Replicant service core and session state itself.
 
 ## Next Root Move
 
-Launch one substantial implementation step for a separate BusyBee/Replicant
-coordinator admin transport and session layer, then rerun the bounded live
-probe if that listener lands.
+Launch one substantial implementation step for the coordinator
+BusyBee/Replicant service core in `crates/server/src/lib.rs`, then wire
+startup/tests on top of it and rerun the bounded live probe.
 
 ## Surprises & Discoveries
 
@@ -273,6 +275,11 @@ probe if that listener lands.
   Evidence: the reviewer showed that the coordinator still binds only the JSON
   `CoordinatorControlService`, while the landed codec expects BusyBee framing
   and Replicant-style request and completion messages.
+- Observation: even on the corrected transport target, the next worker still
+  returned only the same structural blocker and no patch.
+  Evidence: the `admin-server` worktree remained clean at `175ed25`, and the
+  worker reported that the missing piece is a new coordinator transport/service
+  layer in `main.rs` and `lib.rs`.
 
 ## Decision Log
 
