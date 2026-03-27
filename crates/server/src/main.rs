@@ -118,6 +118,12 @@ async fn serve_internode_grpc(
     Ok(())
 }
 
+fn legacy_request_needs_config_refresh(err: &anyhow::Error) -> bool {
+    let message = err.to_string();
+    message.contains("legacy request handling requires one created space")
+        || message.contains("catalog lost space definition")
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -271,10 +277,11 @@ async fn main() -> Result<()> {
                 }));
             }
 
-            let legacy_frontend = LegacyFrontend::bind(
+            let legacy_frontend = LegacyFrontend::bind_with_server_id(
                 format!("{listen_host}:{listen_port}")
                     .parse()
                     .expect("validated socket address"),
+                node_id,
             )
             .await?;
 
@@ -315,7 +322,17 @@ async fn main() -> Result<()> {
             tokio::select! {
                 result = legacy_frontend.serve_forever_with(move |header, body| {
                     let runtime = runtime.clone();
-                    async move { handle_legacy_request(runtime.as_ref(), header, &body).await }
+                    async move {
+                        match handle_legacy_request(runtime.as_ref(), header, &body).await {
+                            Ok(response) => Ok(response),
+                            Err(err) if legacy_request_needs_config_refresh(&err) => {
+                                sync_runtime_with_coordinator(runtime.as_ref(), coordinator_address)
+                                    .await?;
+                                handle_legacy_request(runtime.as_ref(), header, &body).await
+                            }
+                            Err(err) => Err(err),
+                        }
+                    }
                 }) => result?,
                 _ = tokio::signal::ctrl_c() => {}
             }

@@ -1064,12 +1064,22 @@ const LEGACY_HYPERDATATYPE_SET_GENERIC: u16 = 9344;
 const LEGACY_HYPERDATATYPE_MAP_GENERIC: u16 = 9408;
 const LEGACY_HYPERDATATYPE_TIMESTAMP_GENERIC: u16 = 9472;
 
-#[derive(Default)]
 struct LegacyConfigIds {
-    next_space_id: u64,
-    next_subspace_id: u64,
-    next_region_id: u64,
-    next_virtual_server_id: u64,
+    next_id: u64,
+}
+
+impl Default for LegacyConfigIds {
+    fn default() -> Self {
+        Self { next_id: 1 }
+    }
+}
+
+impl LegacyConfigIds {
+    fn allocate(&mut self) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        id
+    }
 }
 
 fn encode_legacy_server(out: &mut Vec<u8>, node: &ClusterNode) -> Result<()> {
@@ -1124,8 +1134,7 @@ fn encode_legacy_space(
         attrs.push((attribute.name.clone(), datatype));
     }
 
-    encode_u64_be(out, ids.next_space_id);
-    ids.next_space_id += 1;
+    encode_u64_be(out, ids.allocate());
     encode_legacy_slice(out, space.name.as_bytes())?;
     encode_u64_be(out, u64::from(space.options.fault_tolerance));
     encode_u16_be(
@@ -1188,9 +1197,10 @@ fn encode_legacy_subspace(
     ids: &mut LegacyConfigIds,
 ) -> Result<()> {
     let regions = legacy_partition_regions(attr_indexes.len(), partitions);
+    let subspace_id = ids.allocate();
+    let region_ids = regions.iter().map(|_| ids.allocate()).collect::<Vec<_>>();
 
-    encode_u64_be(out, ids.next_subspace_id);
-    ids.next_subspace_id += 1;
+    encode_u64_be(out, subspace_id);
     encode_u16_be(
         out,
         u16::try_from(attr_indexes.len()).map_err(|_| anyhow!("legacy subspace is too wide"))?,
@@ -1204,9 +1214,8 @@ fn encode_legacy_subspace(
         encode_u16_be(out, *attr_index);
     }
 
-    for (lower_coord, upper_coord) in regions {
-        encode_u64_be(out, ids.next_region_id);
-        ids.next_region_id += 1;
+    for ((lower_coord, upper_coord), region_id) in regions.into_iter().zip(region_ids) {
+        encode_u64_be(out, region_id);
         encode_u16_be(
             out,
             u16::try_from(attr_indexes.len()).map_err(|_| anyhow!("legacy region is too wide"))?,
@@ -1224,8 +1233,7 @@ fn encode_legacy_subspace(
 
         for server_id in server_ids {
             encode_u64_be(out, *server_id);
-            encode_u64_be(out, ids.next_virtual_server_id);
-            ids.next_virtual_server_id += 1;
+            encode_u64_be(out, ids.allocate());
         }
     }
 
@@ -1950,9 +1958,31 @@ pub async fn handle_legacy_request(
             let space = legacy_space(runtime)?;
             let (nonce, request_body) = legacy_decode_request_nonce(body)?;
             let request = decode_protocol_atomic_request(request_body)?;
+            if let Err(err) = legacy_validate_atomic_request(&space, &request) {
+                tracing::warn!(
+                    "rejecting legacy atomic request with bad dimension spec: {err:#}"
+                );
+                return Ok(legacy_atomic_response(
+                    header.target_virtual_server,
+                    nonce,
+                    LegacyReturnCode::BadDimensionSpec,
+                ));
+            }
             let key = request.key.clone();
             let exists = legacy_record_exists(runtime, &space.name, &key).await?;
-            let checks = legacy_checks_from_protocol(&space, &request.checks)?;
+            let checks = match legacy_checks_from_protocol(&space, &request.checks) {
+                Ok(checks) => checks,
+                Err(err) => {
+                    tracing::warn!(
+                        "rejecting legacy atomic checks with bad dimension spec: {err:#}"
+                    );
+                    return Ok(legacy_atomic_response(
+                        header.target_virtual_server,
+                        nonce,
+                        LegacyReturnCode::BadDimensionSpec,
+                    ));
+                }
+            };
 
             let status = if request.fail_if_found && exists {
                 LegacyReturnCode::CompareFailed
@@ -1960,8 +1990,22 @@ pub async fn handle_legacy_request(
                 LegacyReturnCode::NotFound
             } else if !request.erase {
                 let response = if legacy_atomic_can_use_runtime_mutations(&request.funcalls) {
-                    let mutations =
-                        legacy_mutations_from_protocol_funcalls(&space, &request.funcalls)?;
+                    let mutations = match legacy_mutations_from_protocol_funcalls(
+                        &space,
+                        &request.funcalls,
+                    ) {
+                        Ok(mutations) => mutations,
+                        Err(err) => {
+                            tracing::warn!(
+                                "rejecting legacy atomic funcalls with bad dimension spec: {err:#}"
+                            );
+                            return Ok(legacy_atomic_response(
+                                header.target_virtual_server,
+                                nonce,
+                                LegacyReturnCode::BadDimensionSpec,
+                            ));
+                        }
+                    };
                     if checks.is_empty() {
                         HyperdexClientService::handle(
                             runtime,
@@ -1985,8 +2029,21 @@ pub async fn handle_legacy_request(
                         .await?
                     }
                 } else {
-                    legacy_apply_atomic_direct(runtime, &space, request.clone(), checks.clone())
-                        .await?
+                    match legacy_apply_atomic_direct(runtime, &space, request.clone(), checks.clone())
+                        .await
+                    {
+                        Ok(response) => response,
+                        Err(err) => {
+                            tracing::warn!(
+                                "rejecting legacy atomic direct funcall with bad dimension spec: {err:#}"
+                            );
+                            return Ok(legacy_atomic_response(
+                                header.target_virtual_server,
+                                nonce,
+                                LegacyReturnCode::BadDimensionSpec,
+                            ));
+                        }
+                    }
                 };
                 legacy_atomic_status(response)?
             } else {
@@ -2004,13 +2061,10 @@ pub async fn handle_legacy_request(
                 legacy_atomic_status(response)?
             };
 
-            Ok((
-                ResponseHeader {
-                    message_type: LegacyMessageType::RespAtomic,
-                    target_virtual_server: header.target_virtual_server,
-                    nonce,
-                },
-                encode_protocol_atomic_response(status as u16).to_vec(),
+            Ok(legacy_atomic_response(
+                header.target_virtual_server,
+                nonce,
+                status,
             ))
         }
         LegacyMessageType::ReqSearchStart => {
@@ -2129,6 +2183,21 @@ pub async fn handle_legacy_request(
     }
 }
 
+fn legacy_atomic_response(
+    target_virtual_server: u64,
+    nonce: u64,
+    status: LegacyReturnCode,
+) -> (ResponseHeader, Vec<u8>) {
+    (
+        ResponseHeader {
+            message_type: LegacyMessageType::RespAtomic,
+            target_virtual_server,
+            nonce,
+        },
+        encode_protocol_atomic_response(status as u16).to_vec(),
+    )
+}
+
 fn legacy_space(runtime: &ClusterRuntime) -> Result<Space> {
     let space_name = runtime.only_space_name()?;
     runtime
@@ -2225,6 +2294,211 @@ fn legacy_atomic_status(response: ClientResponse) -> Result<LegacyReturnCode> {
         ClientResponse::ConditionFailed => Ok(LegacyReturnCode::CompareFailed),
         other => anyhow::bail!("unexpected runtime response to atomic request: {other:?}"),
     }
+}
+
+fn legacy_validate_atomic_request(space: &Space, request: &ProtocolKeyChange) -> Result<()> {
+    if request.erase && !request.funcalls.is_empty() {
+        anyhow::bail!("legacy erase requests may not carry funcalls");
+    }
+
+    for check in &request.checks {
+        let (_, attribute_kind) = legacy_non_key_attribute(space, check.attr)?;
+        let expected = legacy_hyperdatatype(attribute_kind)?;
+        if check.datatype != expected {
+            anyhow::bail!(
+                "legacy check datatype {} does not match schema datatype {} for attr {}",
+                check.datatype,
+                expected,
+                check.attr
+            );
+        }
+        let _ = legacy_protocol_predicate(check.predicate)?;
+        let _ = legacy_value_from_protocol(check.datatype, &check.value)?;
+    }
+
+    for funcall in &request.funcalls {
+        legacy_validate_protocol_funcall(space, funcall)?;
+    }
+
+    Ok(())
+}
+
+fn legacy_validate_protocol_funcall(space: &Space, funcall: &ProtocolFuncall) -> Result<()> {
+    let (_, attribute_kind) = legacy_non_key_attribute(space, funcall.attr)?;
+
+    match funcall.name {
+        FUNC_SET => {
+            let expected = legacy_hyperdatatype(attribute_kind)?;
+            if funcall.arg1_datatype != expected {
+                anyhow::bail!(
+                    "legacy set datatype {} does not match schema datatype {} for attr {}",
+                    funcall.arg1_datatype,
+                    expected,
+                    funcall.attr
+                );
+            }
+            if !funcall.arg2.is_empty() || funcall.arg2_datatype != 0 {
+                anyhow::bail!("legacy set funcalls may not carry arg2");
+            }
+            let _ = legacy_value_from_protocol(funcall.arg1_datatype, &funcall.arg1)?;
+        }
+        FUNC_NUM_ADD
+        | FUNC_NUM_SUB
+        | FUNC_NUM_MUL
+        | FUNC_NUM_DIV
+        | FUNC_NUM_MOD
+        | FUNC_NUM_AND
+        | FUNC_NUM_OR
+        | FUNC_NUM_XOR
+        | FUNC_NUM_MAX
+        | FUNC_NUM_MIN => {
+            let expected = match attribute_kind {
+                ValueKind::Int => HYPERDATATYPE_INT64,
+                ValueKind::Float => HYPERDATATYPE_FLOAT,
+                other => anyhow::bail!(
+                    "legacy numeric funcall {} targets non-numeric attr {:?}",
+                    funcall.name,
+                    other
+                ),
+            };
+            if funcall.arg1_datatype != expected {
+                anyhow::bail!(
+                    "legacy numeric datatype {} does not match schema datatype {} for attr {}",
+                    funcall.arg1_datatype,
+                    expected,
+                    funcall.attr
+                );
+            }
+            if !funcall.arg2.is_empty() || funcall.arg2_datatype != 0 {
+                anyhow::bail!("legacy numeric funcalls may not carry arg2");
+            }
+            match attribute_kind {
+                ValueKind::Int => {
+                    let _ = legacy_decode_i64(&funcall.arg1)?;
+                }
+                ValueKind::Float => {
+                    let _ = legacy_decode_f64(&funcall.arg1)?;
+                }
+                _ => unreachable!(),
+            }
+        }
+        FUNC_STRING_APPEND | FUNC_STRING_PREPEND | FUNC_STRING_LTRIM | FUNC_STRING_RTRIM => {
+            let expected = legacy_hyperdatatype(attribute_kind)?;
+            if funcall.arg1_datatype != expected {
+                anyhow::bail!(
+                    "legacy string funcall datatype {} does not match schema datatype {} for attr {}",
+                    funcall.arg1_datatype,
+                    expected,
+                    funcall.attr
+                );
+            }
+            if !funcall.arg2.is_empty() || funcall.arg2_datatype != 0 {
+                anyhow::bail!("legacy string funcalls may not carry arg2");
+            }
+            let _ = legacy_value_from_protocol(funcall.arg1_datatype, &funcall.arg1)?;
+        }
+        FUNC_LIST_LPUSH | FUNC_LIST_RPUSH => {
+            let elem_kind = match attribute_kind {
+                ValueKind::List(elem_kind) => elem_kind.as_ref(),
+                other => anyhow::bail!("legacy list funcall targets non-list attr {other:?}"),
+            };
+            let expected = legacy_hyperdatatype(elem_kind)?;
+            if funcall.arg1_datatype != expected {
+                anyhow::bail!(
+                    "legacy list funcall datatype {} does not match element datatype {} for attr {}",
+                    funcall.arg1_datatype,
+                    expected,
+                    funcall.attr
+                );
+            }
+            if !funcall.arg2.is_empty() || funcall.arg2_datatype != 0 {
+                anyhow::bail!("legacy list funcalls may not carry arg2");
+            }
+            let _ = legacy_value_from_protocol(funcall.arg1_datatype, &funcall.arg1)?;
+        }
+        FUNC_SET_ADD | FUNC_SET_REMOVE => {
+            let elem_kind = match attribute_kind {
+                ValueKind::Set(elem_kind) => elem_kind.as_ref(),
+                other => anyhow::bail!("legacy set funcall targets non-set attr {other:?}"),
+            };
+            let expected = legacy_hyperdatatype(elem_kind)?;
+            if funcall.arg1_datatype != expected {
+                anyhow::bail!(
+                    "legacy set funcall datatype {} does not match element datatype {} for attr {}",
+                    funcall.arg1_datatype,
+                    expected,
+                    funcall.attr
+                );
+            }
+            if !funcall.arg2.is_empty() || funcall.arg2_datatype != 0 {
+                anyhow::bail!("legacy set funcalls may not carry arg2");
+            }
+            let _ = legacy_value_from_protocol(funcall.arg1_datatype, &funcall.arg1)?;
+        }
+        FUNC_SET_INTERSECT | FUNC_SET_UNION => {
+            let expected = legacy_hyperdatatype(attribute_kind)?;
+            if funcall.arg1_datatype != expected {
+                anyhow::bail!(
+                    "legacy set merge datatype {} does not match schema datatype {} for attr {}",
+                    funcall.arg1_datatype,
+                    expected,
+                    funcall.attr
+                );
+            }
+            if !funcall.arg2.is_empty() || funcall.arg2_datatype != 0 {
+                anyhow::bail!("legacy set merge funcalls may not carry arg2");
+            }
+            let _ = legacy_value_from_protocol(funcall.arg1_datatype, &funcall.arg1)?;
+        }
+        FUNC_MAP_ADD => {
+            let (key_kind, value_kind) = match attribute_kind {
+                ValueKind::Map { key, value } => (key.as_ref(), value.as_ref()),
+                other => anyhow::bail!("legacy map add targets non-map attr {other:?}"),
+            };
+            let expected_key = legacy_hyperdatatype(key_kind)?;
+            let expected_value = legacy_hyperdatatype(value_kind)?;
+            if funcall.arg1_datatype != expected_value {
+                anyhow::bail!(
+                    "legacy map add value datatype {} does not match schema datatype {} for attr {}",
+                    funcall.arg1_datatype,
+                    expected_value,
+                    funcall.attr
+                );
+            }
+            if funcall.arg2_datatype != expected_key {
+                anyhow::bail!(
+                    "legacy map add key datatype {} does not match schema datatype {} for attr {}",
+                    funcall.arg2_datatype,
+                    expected_key,
+                    funcall.attr
+                );
+            }
+            let _ = legacy_value_from_protocol(funcall.arg1_datatype, &funcall.arg1)?;
+            let _ = legacy_value_from_protocol(funcall.arg2_datatype, &funcall.arg2)?;
+        }
+        FUNC_MAP_REMOVE => {
+            let key_kind = match attribute_kind {
+                ValueKind::Map { key, .. } => key.as_ref(),
+                other => anyhow::bail!("legacy map remove targets non-map attr {other:?}"),
+            };
+            let expected_key = legacy_hyperdatatype(key_kind)?;
+            if funcall.arg2_datatype != expected_key {
+                anyhow::bail!(
+                    "legacy map remove key datatype {} does not match schema datatype {} for attr {}",
+                    funcall.arg2_datatype,
+                    expected_key,
+                    funcall.attr
+                );
+            }
+            if !funcall.arg1.is_empty() || funcall.arg1_datatype != 0 {
+                anyhow::bail!("legacy map remove may not carry arg1");
+            }
+            let _ = legacy_value_from_protocol(funcall.arg2_datatype, &funcall.arg2)?;
+        }
+        other => anyhow::bail!("legacy funcall {other} is not implemented"),
+    }
+
+    Ok(())
 }
 
 fn legacy_non_key_attribute<'a>(space: &'a Space, attr: u16) -> Result<(&'a str, &'a ValueKind)> {
@@ -2687,8 +2961,8 @@ fn legacy_kind_from_protocol_datatype(datatype: u16) -> Result<ValueKind> {
         _ if datatype & !0x003f == HYPERDATATYPE_SET_GENERIC => Ok(ValueKind::Set(Box::new(
             legacy_primitive_kind(datatype & 0x003f)?,
         ))),
-        _ if datatype & !0x01ff == HYPERDATATYPE_MAP_GENERIC => Ok(ValueKind::Map {
-            key: Box::new(legacy_primitive_kind((datatype >> 3) & 0x003f)?),
+        _ if datatype & !0x003f == HYPERDATATYPE_MAP_GENERIC => Ok(ValueKind::Map {
+            key: Box::new(legacy_primitive_kind((datatype >> 3) & 0x0007)?),
             value: Box::new(legacy_primitive_kind(datatype & 0x0007)?),
         }),
         other => Err(anyhow!("legacy datatype {other} is not implemented")),
@@ -4960,6 +5234,90 @@ mod tests {
         }
     }
 
+    #[test]
+    fn legacy_config_uses_shared_nonzero_ids() {
+        let view = ConfigView {
+            version: 1,
+            stable_through: 1,
+            cluster: ClusterConfig::default(),
+            spaces: vec![parse_hyperdex_space(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first,\n\
+                    int profile_views\n\
+                 tolerate 0 failures\n",
+            )
+            .unwrap()],
+        };
+
+        let encoded = default_legacy_config_encoder(&view).unwrap();
+        let mut cursor = 0;
+        let _cluster = decode_u64(&encoded, &mut cursor);
+        let _version = decode_u64(&encoded, &mut cursor);
+        let _flags = decode_u64(&encoded, &mut cursor);
+        let servers_len = decode_u64(&encoded, &mut cursor) as usize;
+        let spaces_len = decode_u64(&encoded, &mut cursor) as usize;
+        let transfers_len = decode_u64(&encoded, &mut cursor) as usize;
+
+        assert_eq!(spaces_len, 1);
+        assert_eq!(transfers_len, 0);
+
+        for _ in 0..servers_len {
+            let _state = decode_u8(&encoded, &mut cursor);
+            let _server_id = decode_u64(&encoded, &mut cursor);
+            skip_legacy_location(&encoded, &mut cursor);
+        }
+
+        let space_id = decode_u64(&encoded, &mut cursor);
+        let _space_name = decode_varint_string(&encoded, &mut cursor);
+        let _fault_tolerance = decode_u64(&encoded, &mut cursor);
+        let attrs_len = decode_u16(&encoded, &mut cursor) as usize;
+        let subspaces_len = decode_u16(&encoded, &mut cursor) as usize;
+        let _indices_len = decode_u16(&encoded, &mut cursor) as usize;
+
+        for _ in 0..attrs_len {
+            let _attr_name = decode_varint_string(&encoded, &mut cursor);
+            let _datatype = decode_u16(&encoded, &mut cursor);
+        }
+
+        let subspace_id = decode_u64(&encoded, &mut cursor);
+        let attrs_in_subspace = decode_u16(&encoded, &mut cursor) as usize;
+        let regions_len = decode_u32(&encoded, &mut cursor) as usize;
+
+        for _ in 0..attrs_in_subspace {
+            let _attr = decode_u16(&encoded, &mut cursor);
+        }
+
+        let region_id = decode_u64(&encoded, &mut cursor);
+        let bounds_len = decode_u16(&encoded, &mut cursor) as usize;
+        let replicas_len = decode_u8(&encoded, &mut cursor) as usize;
+
+        for _ in 0..bounds_len {
+            let _lower = decode_u64(&encoded, &mut cursor);
+            let _upper = decode_u64(&encoded, &mut cursor);
+        }
+
+        let first_replica_server_id = decode_u64(&encoded, &mut cursor);
+        let first_virtual_server_id = decode_u64(&encoded, &mut cursor);
+
+        assert_eq!(subspaces_len, 1);
+        assert_eq!(regions_len, 64);
+        assert_eq!(replicas_len, 1);
+        assert_eq!(first_replica_server_id, 1);
+        assert_eq!(space_id, 1);
+        assert_eq!(subspace_id, 2);
+        assert_eq!(region_id, 3);
+        assert_eq!(first_virtual_server_id, 67);
+    }
+
+    #[test]
+    fn legacy_value_from_protocol_accepts_empty_string_map() {
+        let value = legacy_value_from_protocol(HYPERDATATYPE_MAP_GENERIC | (1_u16 << 3) | 1, &[])
+            .expect("empty map(string,string) should decode");
+        assert_eq!(value, Value::Map(BTreeMap::new()));
+    }
+
     #[tokio::test]
     async fn coordinator_admin_legacy_service_wait_until_stable_completes_after_space_add() {
         let runtime = Arc::new(bootstrap_runtime());
@@ -5418,6 +5776,110 @@ mod tests {
         assert_eq!(
             record.attributes.get("first"),
             Some(&Value::String("Ada".to_owned()))
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_atomic_returns_bad_dim_spec_for_schema_mismatched_set() {
+        let runtime = bootstrap_runtime();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    int profile_views\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        let (header, body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqAtomic,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 19,
+            },
+            &legacy_request_body(19, encode_protocol_atomic_request(&ProtocolKeyChange {
+                key: b"ada".to_vec(),
+                erase: false,
+                fail_if_not_found: false,
+                fail_if_found: false,
+                checks: Vec::new(),
+                funcalls: vec![ProtocolFuncall {
+                    attr: 1,
+                    name: FUNC_SET,
+                    arg1: b"wrong".to_vec(),
+                    arg1_datatype: HYPERDATATYPE_STRING,
+                    arg2: Vec::new(),
+                    arg2_datatype: 0,
+                }],
+            })),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(header.message_type, LegacyMessageType::RespAtomic);
+        assert_eq!(
+            decode_protocol_atomic_response(&body).unwrap(),
+            LegacyReturnCode::BadDimensionSpec as u16
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_atomic_returns_bad_dim_spec_for_erase_with_funcalls() {
+        let runtime = bootstrap_runtime();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        let (header, body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqAtomic,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 19,
+            },
+            &legacy_request_body(19, encode_protocol_atomic_request(&ProtocolKeyChange {
+                key: b"ada".to_vec(),
+                erase: true,
+                fail_if_not_found: false,
+                fail_if_found: false,
+                checks: Vec::new(),
+                funcalls: vec![ProtocolFuncall {
+                    attr: 1,
+                    name: FUNC_SET,
+                    arg1: b"Ada".to_vec(),
+                    arg1_datatype: HYPERDATATYPE_STRING,
+                    arg2: Vec::new(),
+                    arg2_datatype: 0,
+                }],
+            })),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(header.message_type, LegacyMessageType::RespAtomic);
+        assert_eq!(
+            decode_protocol_atomic_response(&body).unwrap(),
+            LegacyReturnCode::BadDimensionSpec as u16
         );
     }
 

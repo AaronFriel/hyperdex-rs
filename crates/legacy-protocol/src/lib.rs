@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 pub const BUSYBEE_HEADER_SIZE: usize = 4;
+pub const BUSYBEE_HEADER_IDENTIFY: u32 = 0x8000_0000;
 pub const LEGACY_REQUEST_HEADER_SIZE: usize = BUSYBEE_HEADER_SIZE + 1 + 1 + 8 + 8 + 8;
 pub const LEGACY_RESPONSE_HEADER_SIZE: usize = BUSYBEE_HEADER_SIZE + 1 + 8 + 8;
 pub const GET_REQUEST_PREFIX_SIZE: usize = 2;
@@ -901,6 +902,16 @@ pub fn encode_request_frame(header: RequestHeader, body: &[u8]) -> Vec<u8> {
     encode_frame(header.encode().to_vec(), body)
 }
 
+pub fn encode_identify_frame(local_server_id: u64, remote_server_id: u64) -> Vec<u8> {
+    let total_len = BUSYBEE_HEADER_SIZE + (2 * std::mem::size_of::<u64>());
+    let header = BUSYBEE_HEADER_IDENTIFY | total_len as u32;
+    let mut frame = Vec::with_capacity(total_len);
+    frame.extend_from_slice(&header.to_be_bytes());
+    frame.extend_from_slice(&local_server_id.to_be_bytes());
+    frame.extend_from_slice(&remote_server_id.to_be_bytes());
+    frame
+}
+
 pub fn encode_response_frame(header: ResponseHeader, body: &[u8]) -> Vec<u8> {
     encode_frame(header.encode().to_vec(), body)
 }
@@ -1407,6 +1418,18 @@ mod tests {
                 nonce: 29,
             }
         );
+    }
+
+    #[test]
+    fn identify_frame_uses_busybee_identify_flag() {
+        let frame = encode_identify_frame(7, 11);
+        assert_eq!(frame.len(), 20);
+        assert_eq!(
+            u32::from_be_bytes(frame[..4].try_into().unwrap()),
+            BUSYBEE_HEADER_IDENTIFY | 20
+        );
+        assert_eq!(u64::from_be_bytes(frame[4..12].try_into().unwrap()), 7);
+        assert_eq!(u64::from_be_bytes(frame[12..20].try_into().unwrap()), 11);
     }
 
     #[test]
