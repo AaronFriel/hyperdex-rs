@@ -1052,3 +1052,122 @@ async fn distributed_delete_removes_replicated_state_from_secondary_runtime() {
     grpc_shutdown1.send(()).unwrap();
     grpc_shutdown2.send(()).unwrap();
 }
+
+#[tokio::test]
+async fn distributed_delete_group_removes_matching_records_from_all_replicas() {
+    let grpc_listener1 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let grpc_addr1 = grpc_listener1.local_addr().unwrap();
+    let grpc_listener2 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let grpc_addr2 = grpc_listener2.local_addr().unwrap();
+
+    let config = ClusterConfig {
+        nodes: vec![
+            ClusterNode {
+                id: 1,
+                host: "127.0.0.1".to_owned(),
+                control_port: grpc_addr1.port(),
+                data_port: grpc_addr1.port(),
+            },
+            ClusterNode {
+                id: 2,
+                host: "127.0.0.1".to_owned(),
+                control_port: grpc_addr2.port(),
+                data_port: grpc_addr2.port(),
+            },
+        ],
+        replicas: 2,
+        internode_transport: TransportBackend::Grpc,
+        ..ClusterConfig::default()
+    };
+
+    let mut runtime1 = ClusterRuntime::for_node(config.clone(), 1).unwrap();
+    runtime1.install_cluster_transport(Arc::new(GrpcTransportAdapter), TransportRuntime::Grpc);
+    let runtime1 = Arc::new(runtime1);
+
+    let mut runtime2 = ClusterRuntime::for_node(config.clone(), 2).unwrap();
+    runtime2.install_cluster_transport(Arc::new(GrpcTransportAdapter), TransportRuntime::Grpc);
+    let runtime2 = Arc::new(runtime2);
+
+    HyperdexAdminService::handle(runtime1.as_ref(), AdminRequest::CreateSpaceDsl(profiles_schema()))
+        .await
+        .unwrap();
+    HyperdexAdminService::handle(runtime2.as_ref(), AdminRequest::CreateSpaceDsl(profiles_schema()))
+        .await
+        .unwrap();
+
+    let grpc_shutdown1 = serve_runtime(runtime1.clone(), grpc_listener1).await;
+    let grpc_shutdown2 = serve_runtime(runtime2.clone(), grpc_listener2).await;
+
+    let matching_key = b"group-match".to_vec();
+    let survivor_key = b"group-survivor".to_vec();
+
+    for (key, views) in [(&matching_key, 7_i64), (&survivor_key, 1_i64)] {
+        HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: key.clone().into(),
+                mutations: vec![Mutation::Numeric {
+                    attribute: "profile_views".to_owned(),
+                    op: data_model::NumericOp::Add,
+                    operand: views,
+                }],
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    let deleted = HyperdexClientService::handle(
+        runtime1.as_ref(),
+        ClientRequest::DeleteGroup {
+            space: "profiles".to_owned(),
+            checks: vec![Check {
+                attribute: "profile_views".to_owned(),
+                predicate: Predicate::GreaterThanOrEqual,
+                value: ModelValue::Int(5),
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(deleted, ClientResponse::Deleted(1));
+
+    for runtime in [&runtime1, &runtime2] {
+        let match_probe = InternodeRequest::encode(
+            DATA_PLANE_METHOD,
+            &DataPlaneRequest::Get {
+                space: "profiles".to_owned(),
+                key: matching_key.clone().into(),
+            },
+        )
+        .unwrap();
+        let survivor_probe = InternodeRequest::encode(
+            DATA_PLANE_METHOD,
+            &DataPlaneRequest::Get {
+                space: "profiles".to_owned(),
+                key: survivor_key.clone().into(),
+            },
+        )
+        .unwrap();
+
+        let removed: DataPlaneResponse = runtime
+            .handle_internode_request(match_probe)
+            .await
+            .unwrap()
+            .decode()
+            .unwrap();
+        let survivor: DataPlaneResponse = runtime
+            .handle_internode_request(survivor_probe)
+            .await
+            .unwrap()
+            .decode()
+            .unwrap();
+
+        assert_eq!(removed, DataPlaneResponse::Record(None));
+        assert!(matches!(survivor, DataPlaneResponse::Record(Some(_))));
+    }
+
+    grpc_shutdown1.send(()).unwrap();
+    grpc_shutdown2.send(()).unwrap();
+}

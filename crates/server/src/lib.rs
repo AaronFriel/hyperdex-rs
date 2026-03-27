@@ -251,6 +251,24 @@ impl ClusterRuntime {
         self.local_node_id
     }
 
+    fn cluster_node_ids(&self) -> Vec<u64> {
+        self.cluster_config
+            .lock()
+            .expect("cluster config poisoned")
+            .nodes
+            .iter()
+            .map(|node| node.id)
+            .collect()
+    }
+
+    fn replica_factor(&self) -> u64 {
+        self.cluster_config
+            .lock()
+            .expect("cluster config poisoned")
+            .replicas
+            .max(1) as u64
+    }
+
     pub fn route_primary(&self, key: &[u8]) -> Result<u64> {
         Ok(self.locate_key(key)?.primary)
     }
@@ -306,7 +324,9 @@ impl ClusterRuntime {
                 .await?
             {
                 DataPlaneResponse::Unit => {}
-                DataPlaneResponse::ConditionFailed | DataPlaneResponse::Record(_) => {
+                DataPlaneResponse::ConditionFailed
+                | DataPlaneResponse::Record(_)
+                | DataPlaneResponse::Deleted(_) => {
                     anyhow::bail!(
                         "unexpected response to replicated put on replica {replica}"
                     );
@@ -337,7 +357,9 @@ impl ClusterRuntime {
                 .await?
             {
                 DataPlaneResponse::Unit => {}
-                DataPlaneResponse::ConditionFailed | DataPlaneResponse::Record(_) => {
+                DataPlaneResponse::ConditionFailed
+                | DataPlaneResponse::Record(_)
+                | DataPlaneResponse::Deleted(_) => {
                     anyhow::bail!(
                         "unexpected response to replicated delete on replica {replica}"
                     );
@@ -360,6 +382,49 @@ impl ClusterRuntime {
             }
             WriteResult::ConditionFailed => Ok(DataPlaneResponse::ConditionFailed),
         }
+    }
+
+    async fn execute_distributed_delete_group(
+        &self,
+        space: String,
+        checks: Vec<Check>,
+    ) -> Result<u64> {
+        let mut deleted_total = 0u64;
+        for node_id in self.cluster_node_ids() {
+            let deleted = if node_id == self.local_node_id {
+                self.data_plane.delete_matching(&space, &checks)?
+            } else {
+                match self
+                    .forward_data_request(
+                        node_id,
+                        DataPlaneRequest::ReplicatedDeleteGroup {
+                            space: space.clone(),
+                            checks: checks.clone(),
+                        },
+                    )
+                    .await?
+                {
+                    DataPlaneResponse::Deleted(count) => count,
+                    DataPlaneResponse::Unit
+                    | DataPlaneResponse::ConditionFailed
+                    | DataPlaneResponse::Record(_) => {
+                        anyhow::bail!(
+                            "unexpected response to replicated delete-group on replica {node_id}"
+                        )
+                    }
+                }
+            };
+            deleted_total += deleted;
+        }
+
+        let replica_factor = self.replica_factor();
+        if deleted_total % replica_factor != 0 {
+            anyhow::bail!(
+                "distributed delete-group removed {deleted_total} physical records across replica factor {replica_factor}"
+            );
+        }
+
+        Ok(deleted_total / replica_factor)
     }
 
     async fn apply_primary_conditional_put(
@@ -434,6 +499,9 @@ impl ClusterRuntime {
                             WriteResult::Written | WriteResult::Missing => DataPlaneResponse::Unit,
                             WriteResult::ConditionFailed => DataPlaneResponse::ConditionFailed,
                         }
+                    }
+                    DataPlaneRequest::ReplicatedDeleteGroup { space, checks } => {
+                        DataPlaneResponse::Deleted(self.data_plane.delete_matching(&space, &checks)?)
                     }
                 };
                 InternodeResponse::encode(200, &response)
@@ -1376,7 +1444,7 @@ impl HyperdexClientService for ClusterRuntime {
                     Ok(match self.apply_primary_put(space, key, mutations).await? {
                         DataPlaneResponse::Unit => ClientResponse::Unit,
                         DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
-                        DataPlaneResponse::Record(_) => {
+                        DataPlaneResponse::Record(_) | DataPlaneResponse::Deleted(_) => {
                             anyhow::bail!("unexpected record response to local put")
                         }
                     })
@@ -1395,7 +1463,7 @@ impl HyperdexClientService for ClusterRuntime {
                         {
                             DataPlaneResponse::Unit => ClientResponse::Unit,
                             DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
-                            DataPlaneResponse::Record(_) => {
+                            DataPlaneResponse::Record(_) | DataPlaneResponse::Deleted(_) => {
                                 anyhow::bail!("unexpected record response to remote put")
                             }
                         },
@@ -1413,7 +1481,9 @@ impl HyperdexClientService for ClusterRuntime {
                             .await?
                         {
                             DataPlaneResponse::Record(record) => ClientResponse::Record(record),
-                            DataPlaneResponse::Unit | DataPlaneResponse::ConditionFailed => {
+                            DataPlaneResponse::Unit
+                            | DataPlaneResponse::ConditionFailed
+                            | DataPlaneResponse::Deleted(_) => {
                                 anyhow::bail!("unexpected write response to remote get")
                             }
                         },
@@ -1426,7 +1496,7 @@ impl HyperdexClientService for ClusterRuntime {
                     Ok(match self.apply_primary_delete(space, key).await? {
                         DataPlaneResponse::Unit => ClientResponse::Unit,
                         DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
-                        DataPlaneResponse::Record(_) => {
+                        DataPlaneResponse::Record(_) | DataPlaneResponse::Deleted(_) => {
                             anyhow::bail!("unexpected record response to local delete")
                         }
                     })
@@ -1438,7 +1508,7 @@ impl HyperdexClientService for ClusterRuntime {
                         {
                             DataPlaneResponse::Unit => ClientResponse::Unit,
                             DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
-                            DataPlaneResponse::Record(_) => {
+                            DataPlaneResponse::Record(_) | DataPlaneResponse::Deleted(_) => {
                                 anyhow::bail!("unexpected record response to remote delete")
                             }
                         },
@@ -1459,7 +1529,7 @@ impl HyperdexClientService for ClusterRuntime {
                     {
                         DataPlaneResponse::Unit => ClientResponse::Unit,
                         DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
-                        DataPlaneResponse::Record(_) => {
+                        DataPlaneResponse::Record(_) | DataPlaneResponse::Deleted(_) => {
                             anyhow::bail!("unexpected record response to local conditional put")
                         }
                     })
@@ -1479,7 +1549,7 @@ impl HyperdexClientService for ClusterRuntime {
                         {
                             DataPlaneResponse::Unit => ClientResponse::Unit,
                             DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
-                            DataPlaneResponse::Record(_) => anyhow::bail!(
+                            DataPlaneResponse::Record(_) | DataPlaneResponse::Deleted(_) => anyhow::bail!(
                                 "unexpected record response to remote conditional put"
                             ),
                         },
@@ -1493,7 +1563,7 @@ impl HyperdexClientService for ClusterRuntime {
                 self.data_plane.count(&space, &checks)?,
             )),
             ClientRequest::DeleteGroup { space, checks } => Ok(ClientResponse::Deleted(
-                self.data_plane.delete_matching(&space, &checks)?,
+                self.execute_distributed_delete_group(space, checks).await?,
             )),
         }
     }

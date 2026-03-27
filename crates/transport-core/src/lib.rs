@@ -55,12 +55,17 @@ pub enum DataPlaneRequest {
         space: String,
         key: Bytes,
     },
+    ReplicatedDeleteGroup {
+        space: String,
+        checks: Vec<Check>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DataPlaneResponse {
     Unit,
     Record(Option<Record>),
+    Deleted(u64),
     ConditionFailed,
 }
 
