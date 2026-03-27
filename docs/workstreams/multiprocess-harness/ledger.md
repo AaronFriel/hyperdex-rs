@@ -137,3 +137,33 @@
 - Disposition: `advance`
 - Next move: hold until the product worker or another real-cluster failure
   needs more harness work.
+
+### Entry `mph-004` - Preregistration
+
+- Timestamp: `2026-03-27 07:35Z`
+- Kind: `preregister`
+- Hypothesis: a focused process-level or selected-client-path reproducer for
+  the new daemon-side `ClientGarbage` failure can shorten the feedback loop
+  materially compared with the current selected `hyhac` command.
+- Owner: forked worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-probe-harness`
+- Start commit: `c087f81`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-probe-harness` on
+    `admin-probe-harness`
+- Mutable surface:
+  - `Cargo.toml`
+  - `crates/server/Cargo.toml`
+  - `crates/server/tests/**`
+  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+    is strictly necessary for the shorter repro
+- Validator:
+  - fastest useful check: focused repro target for the first `ClientGarbage`
+    path
+  - strong checks:
+    - `cargo test -p server --test dist_multiprocess_harness -- --nocapture`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - a faster reproducer for the first daemon-path `ClientGarbage` failure
+  - clear evidence about the first bad request/response pair on that path
+  - one bounded commit ready for reconciliation

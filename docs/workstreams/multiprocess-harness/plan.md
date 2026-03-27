@@ -39,17 +39,18 @@ runs can trust its failures and successes.
 
 ## Dependencies / Blockers
 
-- None for the current fast-probe step.
+- None for the current fast reproducer step.
 - This workstream should avoid product-code overlap with `live-hyhac`; it owns
-  the test and harness side of the loop, not the server/bootstrap fix itself.
+  the probe and harness side of the loop, not the daemon-path product fix
+  itself.
 
 ## Plan Of Work
 
 Keep the existing multiprocess harness trustworthy, then use it to shorten the
-feedback loop for live compatibility work. The current bounded step is to add a
-fast free-port coordinator-plus-daemon admin probe harness that captures
-whether the original C admin client progresses beyond bootstrap, so product
-changes can be judged without waiting on a full `hyhac` run.
+feedback loop for live compatibility work. The current bounded step is to turn
+the new legacy daemon `ClientGarbage` failure into a shorter, repeatable probe
+than the selected `hyhac` command, so product changes can be judged without
+waiting on the whole Haskell path every time.
 
 ## Progress
 
@@ -66,17 +67,20 @@ changes can be judged without waiting on a full `hyhac` run.
 - [x] (2026-03-27 07:20Z) Reconciled `6f061b3` (`Add legacy admin bootstrap
   probe harness`), which adds a focused process-level admin progress test to
   `dist_multiprocess_harness`.
+- [x] (2026-03-27 07:35Z) Reopened this workstream immediately again because
+  the blocker moved from coordinator bootstrap to the legacy daemon data path,
+  and the selected `hyhac` command is now the slowest useful failing check.
 
 ## Current Hypothesis
 
-The fast admin-probe harness is now on `main`, so this workstream is back in a
-good holding state. The next change here should come from a newly observed
-cluster-validation problem rather than more speculative harness growth.
+The fast admin bootstrap probe is on `main`, but the next product blocker is a
+slower daemon-path `ClientGarbage` failure. This workstream should now shorten
+that loop the same way it shortened the bootstrap loop.
 
 ## Next Bounded Step
 
-Hold until the product worker or a new real-cluster failure requires another
-harness change.
+Build a faster reproducer for the legacy daemon `ClientGarbage` path than the
+current selected `hyhac` command.
 
 ## Surprises & Discoveries
 
@@ -93,6 +97,10 @@ harness change.
   test.
   Evidence: the targeted test prints `advanced=false` and captures
   `first_server=ClientResponse` after the bootstrap exchange.
+- Observation: once bootstrap/admin compatibility landed, the next slowest
+  measurement immediately became the daemon client path through `hyhac`.
+  Evidence: the selected `hyhac` command now reaches real client operations and
+  fails with `Left ClientGarbage`.
 
 ## Decision Log
 
@@ -110,4 +118,4 @@ harness change.
 - `faa6cb6` replaced ephemeral port reuse and log-text waits with held port
   reservations plus protocol-based readiness checks.
 - `6f061b3` adds that fast live admin probe loop, and the strongest next use of
-  this workstream is to wait until another real harness gap appears.
+  this workstream is now to shorten the new `ClientGarbage` reproduction path.

@@ -1349,6 +1349,65 @@
   - a live probe that sends a second client request after bootstrap, or the
     next narrower wire mismatch
 
+### Entry `hyh-032` - Outcome
+
+- Timestamp: `2026-03-27 07:35Z`
+- Kind: `outcome`
+- End commit: `c087f81`
+- Artifact location:
+  - `crates/hyperdex-admin-protocol/src/lib.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence summary:
+  - `legacy_admin_wait_until_stable_probe_reports_bootstrap_progress` now
+    reports `advanced=true`
+  - `legacy_admin_add_space_probe_completes_after_bootstrap_and_robust_call`
+    passes
+  - direct `hyperdex-show-config`, `hyperdex-wait-until-stable`, and
+    `hyperdex-add-space` succeed against the live Rust coordinator and daemon
+  - `cargo test -p server` passed after integration on `main`
+- Conclusion: the coordinator bootstrap/admin barrier is removed. The next live
+  blocker is the legacy daemon request/response path, where `hyhac` now fails
+  with `ClientGarbage` once it reaches pooled roundtrips and richer client
+  operations.
+- Disposition: `advance`
+- Next move: preregister a larger daemon-data-path worker and a parallel fast
+  reproducer worker for the `ClientGarbage` path.
+
+### Entry `hyh-033` - Preregistration
+
+- Timestamp: `2026-03-27 07:35Z`
+- Kind: `preregister`
+- Hypothesis: a forked worker that owns the legacy daemon data-path
+  compatibility step end to end can turn the new `ClientGarbage` failures into
+  working `get`, `count`, and richer client operations, or at least return the
+  next exact wire mismatch from that path.
+- Owner: forked worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane`
+- Start commit: `c087f81`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on
+    `live-hyhac-data-plane`
+- Mutable surface:
+  - `crates/legacy-protocol/**`
+  - `crates/legacy-frontend/**`
+  - `crates/hyperdex-client-protocol/**`
+  - `crates/server/src/lib.rs`
+  - `crates/server/tests/**` only when focused daemon-path tests are part of
+    the worker's own loop
+- Validator:
+  - fastest useful check: the fastest focused client repro available on the
+    branch
+  - strong checks:
+    - `cargo test -p server`
+    - `cargo test --workspace`
+    - selected `hyhac` command covering the first pooled roundtrip path
+- Expected artifacts:
+  - code and tests that move the legacy daemon path past the first
+    `ClientGarbage` failure
+  - a shorter branch-local loop than the full selected `hyhac` command
+  - either broader passing client behavior or the next exact mismatch
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`

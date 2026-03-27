@@ -152,23 +152,28 @@ stronger live probe before returning control.
 - [x] (2026-03-27 07:20Z) The fast proxy loop is now on `main`:
   `6f061b3` adds a focused admin bootstrap-progress harness test that reports
   `advanced=false` on current `main`.
+- [x] (2026-03-27 07:35Z) Reconciled `c087f81` (`Fix legacy admin bootstrap
+  and packed space decoding`), which gets the original C admin client through
+  bootstrap, `wait_until_stable`, `show-config`, and `add-space`.
+- [x] (2026-03-27 07:35Z) The next live blocker is now in the legacy daemon
+  data path: the first pooled roundtrip and richer client operations fail with
+  `Left ClientGarbage` instead of an admin/bootstrap failure.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
 The request core, session core, packed-space decoder hardening, same-port
-startup, binary config encoding, and daemon join are now on `main`. The next
-concrete gap is the exact compatibility of the first Replicant bootstrap
-response, and the fastest useful measurement is now the focused
-`dist_multiprocess_harness` bootstrap-progress test plus server bootstrap tests
-rather than a full `hyhac` run.
+startup, binary config encoding, daemon join, and coordinator bootstrap/admin
+compatibility are now on `main`. The next concrete gap is the legacy daemon
+request/response path used by the original C client once `hyhac` starts pooled
+roundtrips and richer operations.
 
 ## Next Bounded Step
 
-Own the bootstrap-response fix through focused server tests and the bounded
-captured-wire admin probe until the client either sends a second request or the
-next exact mismatch is identified. Only then rerun the direct `hyhac` Cabal
-test if the admin probes advance.
+Own the legacy daemon data-path compatibility step through focused server tests
+and the fastest available client repro until the first pooled roundtrip stops
+returning `ClientGarbage`, then widen to the richer `hyhac` operations and the
+full selected `hyhac` command.
 
 ## Surprises & Discoveries
 
@@ -270,6 +275,11 @@ test if the admin probes advance.
   Evidence: `6f061b3` adds
   `legacy_admin_wait_until_stable_probe_reports_bootstrap_progress`, and it
   reports `advanced=false` with `first_server=ClientResponse`.
+- Observation: coordinator bootstrap/admin success does not imply daemon-path
+  compatibility yet.
+  Evidence: after `c087f81`, the admin tools succeed, but the selected `hyhac`
+  run now fails in pooled roundtrip and richer client operations with
+  `Left ClientGarbage`.
 - Observation: the service-core portion of that session layer is no longer
   hypothetical; it is on `main` and validated locally.
   Evidence: `78162d5` adds `CoordinatorAdminLegacyService`, focused server
