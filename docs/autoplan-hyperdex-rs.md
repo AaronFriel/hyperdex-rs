@@ -118,7 +118,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Hold until a new real-cluster failure requires deeper harness work. | `advance` |
-| `live-hyhac` | active | Waiting on the two narrower delegated evidence steps that break down the remaining Replicant framing blocker | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout; delegated evidence workers on Replicant framing and dynamic packet capture | Finish the two evidence steps, then relaunch the coordinator-admin implementation worker with the framing details in hand. | `retry` |
+| `live-hyhac` | active | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane` for the replacement implementation step | Implement the BusyBee-framed, Replicant-compatible coordinator admin behavior for config follow, `space_add`, `wait_until_stable`, and loop completion, then rerun the bounded live probe. | `advance` |
 
 ## Progress
 
@@ -153,24 +153,22 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 04:45Z) Retired the second implementation thread cleanly when
   it again reported no file changes and a remaining blocker on concrete
   Replicant framing.
-- [ ] Finish the narrowed evidence steps for Replicant framing and dynamic
-  packet capture.
-- [ ] Relaunch the coordinator-admin implementation worker on that tighter
-  verified scope.
+- [x] (2026-03-27 04:46Z) Finished the narrowed evidence steps for Replicant
+  framing and dynamic packet capture.
+- [ ] Relaunch the coordinator-admin implementation worker on the now-complete
+  BusyBee and Replicant framing facts.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
-Convert the remaining coordinator-admin blocker from “Replicant-compatible in
-principle” into concrete framing facts that a worker can implement without
-guessing. Root should spend the next bounded move only on delegated evidence
-gathering and then immediately relaunch the implementation thread.
+Drive the next live-compatibility step on the now-complete transport facts. The
+remaining missing piece is implementation, not more protocol discovery.
 
 ## Next Root Move
 
-Launch two narrower delegated evidence steps, record their outcomes, and then
-reopen the `dist-control-plane` implementation step with the framing details
-folded into its validator and scope.
+Relaunch the `dist-control-plane` implementation step with the verified BusyBee
+size header, Replicant message layouts, and initial `config` follow behavior in
+its scope and validator.
 
 ## Surprises & Discoveries
 
@@ -211,6 +209,11 @@ folded into its validator and scope.
   transport framing.
   Evidence: the second implementation thread again reported no touched files
   and named missing concrete Replicant framing as the blocker.
+- Observation: the remaining transport ambiguity is gone.
+  Evidence: the delegated evidence steps recovered both the BusyBee size-header
+  framing and the Replicant request and response layouts, and the dynamic
+  capture confirmed that both admin tools first emit the same 25-byte `config`
+  follow request before any operation-specific traffic.
 
 ## Decision Log
 

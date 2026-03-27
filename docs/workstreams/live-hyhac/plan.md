@@ -73,26 +73,25 @@ surface.
 - [x] (2026-03-27 04:45Z) Retired the second implementation thread cleanly when
   it again reported no file changes and a remaining blocker on concrete
   Replicant framing.
-- [ ] Finish the narrowed evidence steps for Replicant framing and dynamic
-  packet capture.
-- [ ] Implement the verified Replicant-compatible legacy coordinator admin
-  behavior in the dedicated control-plane worktree.
+- [x] (2026-03-27 04:46Z) Finished the narrowed evidence steps for Replicant
+  framing and dynamic packet capture.
+- [ ] Implement the verified BusyBee-framed, Replicant-compatible legacy
+  coordinator admin behavior in the dedicated control-plane worktree.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
 The first missing live contract is still the legacy coordinator admin frontend,
-but the last unresolved blocker is now narrow: concrete Replicant transport
-framing. Once that is pinned down, the implementation target remains
-Replicant-compatible `space_add`, `wait_until_stable`, and request-id-plus-loop
-completion behavior.
+and the framing facts are now concrete enough to implement: BusyBee size
+headers, Replicant message types and field layouts, the initial `config`
+follow, and request-id-plus-loop completion behavior.
 
 ## Next Bounded Step
 
-Finish the two narrowed evidence steps for Replicant framing and dynamic packet
-capture, then relaunch the smallest legacy coordinator admin implementation
-that matches the verified control flow for `space_add`,
-`wait_until_stable`, and `hyperdex_admin_loop`.
+Implement the smallest legacy coordinator admin behavior that matches the
+verified BusyBee and Replicant framing for the initial `config` follow,
+`space_add`, `wait_until_stable`, and `hyperdex_admin_loop`, then rerun the
+bounded live probe.
 
 ## Surprises & Discoveries
 
@@ -121,6 +120,12 @@ that matches the verified control flow for `space_add`,
   framing, not the higher-level admin operation semantics.
   Evidence: the second implementation thread reported no touched files and
   named missing concrete Replicant framing as the only blocker.
+- Observation: both admin tools send the same first 25-byte packet because they
+  both start by following the coordinator `config` condition before reaching
+  operation-specific traffic.
+  Evidence: the dynamic-capture pass observed the same 25-byte first packet for
+  both tools, and the source-level pass ties that to `maintain_coord_connection`
+  issuing `replicant_client_cond_follow(..., \"hyperdex\", \"config\", ...)`.
 
 ## Decision Log
 

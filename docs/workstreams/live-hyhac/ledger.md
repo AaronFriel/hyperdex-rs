@@ -194,6 +194,29 @@
   - concrete Replicant framing facts
   - implementation implications for the Rust coordinator path
 
+### Entry `hyh-005` - Outcome
+
+- Timestamp: `2026-03-27 04:46Z`
+- Kind: `outcome`
+- End commit: `85cf798`
+- Artifact location:
+  - original BusyBee and Replicant sources under `/home/friel/HyperDex`
+  - original HyperDex admin sources under `/home/friel/c/aaronfriel/HyperDex`
+- Evidence summary:
+  - BusyBee framing uses a 4-byte big-endian size header, with an extended-size
+    path for large frames
+  - Replicant request and response bodies begin with a one-byte
+    `network_msgtype`
+  - `call`, `cond_wait`, robust-call setup, and `CLIENT_RESPONSE` body layouts
+    are now tied to concrete source paths
+  - fixed-width integers are big-endian and slice fields use `e::slice`
+    varint-length encoding
+- Conclusion: the remaining framing ambiguity is low enough to reopen the Rust
+  compatibility implementation safely.
+- Disposition: `advance`
+- Next move: combine this with the dynamic-capture result and relaunch the
+  control-plane implementation worker.
+
 ### Entry `hyh-006` - Preregistration
 
 - Timestamp: `2026-03-27 04:45Z`
@@ -214,3 +237,26 @@
 - Expected artifacts:
   - first-packet captures for the legacy admin tools
   - concrete transport facts that reduce implementation ambiguity
+
+### Entry `hyh-006` - Outcome
+
+- Timestamp: `2026-03-27 04:46Z`
+- Kind: `outcome`
+- End commit: `85cf798`
+- Artifact location:
+  - dynamic packet captures from the original HyperDex admin tools
+- Evidence summary:
+  - both `hyperdex-add-space` and `hyperdex-wait-until-stable` send the same
+    first 25-byte packet before any server response:
+    `80 00 00 14 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 05 1c`
+  - both tools block after that first packet until a valid response arrives or
+    the outer timeout kills them
+  - neither tool waits for a server banner before sending
+  - the source path explains the identical first packet: both operations first
+    follow coordinator `config`
+- Conclusion: the replacement frontend must satisfy the initial `config`
+  follow before it can ever see operation-specific `space_add` or
+  `wait_until_stable` traffic.
+- Disposition: `advance`
+- Next move: relaunch the implementation worker with this initial handshake
+  fact included explicitly in scope.
