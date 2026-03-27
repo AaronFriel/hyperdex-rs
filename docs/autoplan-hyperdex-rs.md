@@ -121,7 +121,7 @@ split, sequencing, or validator set needs to change.
 | Workstream | Status | Owner | Dependencies / Blockers | Plan | Ledger | Worktree / Branch | Fastest Useful Check | Next Step | Latest Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
-| `multiprocess-harness` | active | next forked harness worker on `clientgarbage-wire` | None; `5879fab` cleaned up the multiprocess `early eof` noise, so this workstream can return to harness-owned evidence on the remaining large-object failure without overlapping product files. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` | Expose or decode the first bad client-visible response or wire edge for the cleaned large-object repro without touching product code. | `advance` |
+| `multiprocess-harness` | active | forked harness worker in `clientgarbage-wire` | None; `5879fab` cleaned up the multiprocess `early eof` noise, so this workstream can return to harness-owned evidence on the remaining large-object failure without overlapping product files. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` | Expose or decode the first bad client-visible response or wire edge for the cleaned large-object repro without touching product code. | `advance` |
 | `live-hyhac` | active | forked product worker in `live-hyhac-large-object` | `5879fab` removed the multiprocess `early eof` failures, so the active blocker is again the focused large-object `ClientGarbage` failure on a cleaner live-cluster baseline. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object` on `live-hyhac-large-object` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` | Move the focused large-object path past `Left ClientGarbage` or isolate the next exact mismatch on the cleaner baseline. | `advance` |
 | `coordinator-config-evidence` | active | forked read-only worker | None; the process-level baseline is clean again, so this workstream can keep narrowing the remaining large-object failure if product work needs exact source-backed guidance. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` | Name the next exact large-object mismatch on the cleaner live-cluster baseline. | `advance` |
 
@@ -331,6 +331,10 @@ split, sequencing, or validator set needs to change.
   parallel workstream on the cleaned large-object baseline so product,
   read-only evidence, and harness-owned reproduction work can all advance at
   once.
+- [x] (2026-03-27 21:31Z) Launched the new harness owner on
+  `clientgarbage-wire`, so the remaining large-object failure is now being
+  driven in parallel by product, read-only comparison, and harness-owned
+  reproduction work.
 - [ ] Rerun the bounded live `hyhac` probe after the remaining large-object
   mismatch is fixed.
 
@@ -345,10 +349,8 @@ baseline noise.
 
 ## Next Root Move
 
-Keep the three active workstreams running with the same short large-object
-validator, use long waits instead of short watchdog-driven polling, and
-reconcile the first substantive result that moves or narrows the focused
-public loop.
+Use long waits on the three active workers and reconcile the first substantive
+result that moves or narrows the focused large-object public loop.
 
 ## Surprises & Discoveries
 

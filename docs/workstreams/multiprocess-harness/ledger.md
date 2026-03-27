@@ -249,7 +249,7 @@
 - Hypothesis: repeating the same large-object wire-capture goal on a fresh
   clean worktree will produce bounded harness evidence without polluting
   product files outside the harness-owned surface.
-- Owner: next forked worker in
+- Owner: forked worker in
   `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire`
 - Start commit: `d12c23c`
 - Worktree / branch:
