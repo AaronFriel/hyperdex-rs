@@ -704,7 +704,7 @@ mod tests {
             let runtime = tokio::runtime::Runtime::new().unwrap();
             runtime.block_on(async move {
                 let runtime = single_node_runtime().await;
-                let mut model = BTreeMap::<String, String>::new();
+                let mut model = BTreeMap::<String, i64>::new();
 
                 for (kind, key_id, value_id) in ops {
                     let key = format!("k{key_id}");
@@ -712,15 +712,15 @@ mod tests {
 
                     match kind {
                         0 => {
-                            let value = format!("v{value_id}");
+                            let value = i64::from(value_id);
                             let response = HyperdexClientService::handle(
                                 runtime.as_ref(),
                                 ClientRequest::Put {
                                     space: "profiles".to_owned(),
                                     key: key_bytes.clone(),
                                     mutations: vec![Mutation::Set(Attribute {
-                                        name: "name".to_owned(),
-                                        value: Value::String(value.clone()),
+                                        name: "profile_views".to_owned(),
+                                        value: Value::Int(value),
                                     })],
                                 },
                             )
@@ -755,8 +755,8 @@ mod tests {
                             let expected = model.get(&key).cloned();
                             match response {
                                 ClientResponse::Record(Some(record)) => {
-                                    let actual = match record.attributes.get("name") {
-                                        Some(Value::String(value)) => Some(value.clone()),
+                                    let actual = match record.attributes.get("profile_views") {
+                                        Some(Value::Int(value)) => Some(*value),
                                         _ => None,
                                     };
                                     assert_eq!(actual, expected);
