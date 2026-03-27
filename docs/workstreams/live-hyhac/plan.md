@@ -78,23 +78,27 @@ surface.
 - [x] (2026-03-27 04:56Z) Retired the third implementation thread cleanly when
   it again reported no file changes and broad implementation design as the
   blocker.
-- [ ] Launch the split implementation steps with disjoint write ownership:
-  admin codec first and server integration second.
-- [ ] Reconcile those two implementation results onto `main`.
+- [x] (2026-03-27 05:00Z) Retired the split admin-codec and admin-server
+  workers cleanly when both dedicated worktrees still had no file changes.
+- [ ] Launch a pure codec worker limited to `hyperdex-admin-protocol` and a
+  separate server-mapping worker that names the exact listener and session
+  hooks to wire once that codec exists.
+- [ ] Reconcile those two artifacts onto `main` and use them to relaunch the
+  server implementation step.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
 The first missing live contract is still the legacy coordinator admin frontend,
-and the framing facts are concrete enough. The remaining risk is implementation
-scope: one worker keeps stalling when asked to do codec and server behavior at
-once, so the next attempt must split those writes.
+and the framing facts are concrete enough. The remaining risk is that workers
+stall when they still have to invent the server-side shape themselves, so the
+next attempt must force one pure codec diff and one explicit server wiring map.
 
 ## Next Bounded Step
 
-Implement the legacy coordinator admin path in two narrower steps:
-BusyBee/Replicant codec first, then server-side listener and loop completion,
-then rerun the bounded live probe.
+Implement the BusyBee and Replicant admin codec in isolation, produce a
+concrete server wiring map against that codec, then reopen the coordinator-side
+listener and loop-completion implementation on that narrower target.
 
 ## Surprises & Discoveries
 
@@ -133,6 +137,10 @@ then rerun the bounded live probe.
   implementation worker to start editing.
   Evidence: the third implementation thread again reported no touched files and
   named broad implementation design as the blocker.
+- Observation: even after splitting writes into "codec" and "server
+  integration", the workers still did not start editing.
+  Evidence: both dedicated worktrees stayed clean at `801d20f` until the
+  workers were interrupted.
 
 ## Decision Log
 

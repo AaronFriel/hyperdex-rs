@@ -118,7 +118,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Hold until a new real-cluster failure requires deeper harness work. | `advance` |
-| `live-hyhac` | active | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus new dedicated worktrees for admin codec and server integration | Build the legacy coordinator admin path in two narrower delegated steps: BusyBee/Replicant codec first, then server-side listener and loop completion, then rerun the bounded live probe. | `retry` |
+| `live-hyhac` | active | Server integration depends on the codec surface landing cleanly first. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated worktrees for admin codec and server mapping | Land a pure admin codec with tests, map the exact coordinator session insertion points against that codec, then relaunch server integration and rerun the bounded live probe. | `retry` |
 
 ## Progress
 
@@ -158,21 +158,26 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 04:56Z) Retired the third implementation thread cleanly when
   it again reported no file changes and identified broad implementation design
   as the blocker.
-- [ ] Launch the split implementation steps with disjoint write ownership:
-  admin codec first and server integration second.
+- [x] (2026-03-27 05:00Z) Retired the split admin-codec and admin-server
+  workers cleanly when they still produced no file changes in their dedicated
+  worktrees.
+- [ ] Relaunch the live-compatibility implementation as two tighter delegated
+  steps: a pure codec implementation and a server-integration map that names
+  the exact listener and session hooks to wire once the codec exists.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
-Drive the next live-compatibility step with narrower delegated write scopes.
-The missing piece is implementation, but one broad worker keeps stalling, so
-root must split the work into codec and server pieces and let workers own them
-separately.
+Drive the next live-compatibility step with even tighter delegated scopes.
+The previous split still left too much design work inside each worker, so root
+must force one worker to own only the pure codec and another to produce the
+exact server wiring map against that codec.
 
 ## Next Root Move
 
-Create dedicated worktrees for the admin codec and server integration, record
-those steps in `live-hyhac`, and launch both workers with disjoint write sets.
+Record the failed split explicitly, relaunch a codec-only worker, relaunch a
+server-mapping worker that names concrete insertion points, and keep root out
+of implementation until one of those returns a real artifact.
 
 ## Surprises & Discoveries
 
@@ -222,6 +227,10 @@ those steps in `live-hyhac`, and launch both workers with disjoint write sets.
   not start code changes.
   Evidence: the third implementation thread reported no touched files and named
   broad implementation design as the blocker.
+- Observation: splitting the work into "codec" and "server integration" was
+  still not specific enough to force either worker into a concrete diff.
+  Evidence: both dedicated worktrees stayed clean at `801d20f` until the
+  workers were interrupted.
 
 ## Decision Log
 

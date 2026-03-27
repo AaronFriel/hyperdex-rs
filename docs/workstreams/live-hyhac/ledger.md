@@ -345,3 +345,82 @@
   - coordinator-side admin session state machine
   - loop-completion behavior
   - one bounded commit ready for reconciliation
+
+### Entry `hyh-008` - Outcome
+
+- Timestamp: `2026-03-27 05:00Z`
+- Kind: `outcome`
+- End commit: `f2da7e5`
+- Artifact location:
+  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-codec`
+- Evidence summary:
+  - the dedicated admin-codec worker was interrupted after the worktree stayed
+    clean at `801d20f`
+  - there was no salvageable diff in `crates/hyperdex-admin-protocol/**`
+- Conclusion: the codec task still needs a tighter contract than "implement
+  the codec" before a worker will produce code.
+- Disposition: `retry`
+- Next move: preregister a pure-codec step with explicit message shapes,
+  helper names, and required tests.
+
+### Entry `hyh-009` - Outcome
+
+- Timestamp: `2026-03-27 05:00Z`
+- Kind: `outcome`
+- End commit: `f2da7e5`
+- Artifact location:
+  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Evidence summary:
+  - the dedicated server worker was interrupted after the worktree stayed clean
+    at `801d20f`
+  - there was no salvageable diff in `crates/server/**`
+- Conclusion: the server step should not be phrased as broad integration until
+  the exact listener and session hooks are named against a concrete codec
+  surface.
+- Disposition: `retry`
+- Next move: preregister a read-only server-mapping step that names those hooks
+  explicitly, then reopen implementation on that narrower target.
+
+### Entry `hyh-010` - Preregistration
+
+- Timestamp: `2026-03-27 05:00Z`
+- Kind: `preregister`
+- Hypothesis: a worker with an explicit codec contract can land the pure
+  BusyBee and Replicant admin frame types, varint slice helpers, and unit tests
+  inside `hyperdex-admin-protocol` without depending on server behavior.
+- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-codec`
+- Start commit: `f2da7e5`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-codec`
+- Mutable surface:
+  - `crates/hyperdex-admin-protocol/**`
+- Validator:
+  - targeted codec tests for BusyBee framing, varint slice encoding, and
+    Replicant message round-trips
+  - `cargo test -p hyperdex-admin-protocol`
+- Expected artifacts:
+  - concrete request and response enums for the legacy admin path
+  - BusyBee frame reader/writer helpers
+  - `e::slice`-style varint helpers
+  - one bounded commit ready for reconciliation
+
+### Entry `hyh-011` - Preregistration
+
+- Timestamp: `2026-03-27 05:00Z`
+- Kind: `preregister`
+- Hypothesis: a read-only server-mapping pass can name the exact functions,
+  types, and tests that must change in `crates/server/**` once the codec lands,
+  so the next integration worker no longer has to invent that shape.
+- Owner: delegated read-only worker
+- Start commit: `f2da7e5`
+- Worktree / branch:
+  - root checkout on `main`
+  - no code edits for this pass
+- Mutable surface:
+  - none; read-only mapping only
+- Validator:
+  - concrete path and function list for coordinator listener, session state,
+    completion loop, and live-tool probes
+- Expected artifacts:
+  - exact server insertion points and test hooks
+  - one narrower implementation target for the follow-up server worker
