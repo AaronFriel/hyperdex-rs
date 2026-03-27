@@ -88,11 +88,11 @@ One bounded design-or-implementation step with validation and a recorded verdict
 
 ## Current Hypothesis
 
-The runtime now replicates committed writes beyond the primary, so the next
-limiting gap is state convergence for non-write mutations and replica-serving
-behavior. The next useful step is to replicate delete semantics across the
-same replica set, because that closes the most obvious divergence between the
-primary and secondaries without yet taking on full failover reads.
+The runtime now converges single-key writes and deletes across the replica set,
+so the next limiting gap is multi-record mutation and replica-serving reads.
+The next useful step is to bring delete-group into the same convergence model,
+because it extends existing delete semantics without yet forcing a larger read
+selection policy.
 
 ## Milestones
 
@@ -186,9 +186,11 @@ primary and secondaries without yet taking on full failover reads.
   placement replica set over internode gRPC, and the transport-grpc harness
   proves a secondary runtime stores replicated state after a public legacy
   atomic write.
-- Known gap: delete, delete-group, and search semantics still do not converge
-  replicas, and reads still depend on the primary instead of serving from a
-  replica set.
+- Done: committed delete now fans out to the placement replica set as well, and
+  the transport-grpc harness proves a replicated record disappears from both
+  runtimes after a distributed delete.
+- Known gap: delete-group and search semantics still do not converge replicas,
+  and reads still depend on the primary instead of serving from a replica set.
 - Active: dedicated worktrees are now producing distributed control-plane,
   distributed data-plane, and multiprocess validation changes in parallel.
 - Next: broaden the distributed data path so more of the legacy request surface
@@ -196,9 +198,9 @@ primary and secondaries without yet taking on full failover reads.
 
 ## Next Bounded Iteration
 
-Extend the replica-fanout path to delete so a committed delete removes state
-from secondaries as well as the primary, then prove that a previously
-replicated record disappears from both runtimes after a public delete.
+Extend replica convergence to delete-group so a committed group delete removes
+matching state from every replica that previously stored it, then prove the
+result with a focused distributed test.
 
 ## Loop Ledger
 
@@ -236,3 +238,4 @@ replicated record disappears from both runtimes after a public delete.
 | 30 | After the numeric mutation proof, the next useful check is to drive that same distributed mutation path through the public legacy atomic request surface instead of only the typed internal API. | Add a focused legacy-TCP proof in the gRPC transport test that sends `REQ_ATOMIC` to one runtime, forwards the write to the remote primary over real gRPC internode transport, verifies the result with `REQ_GET` on the remote runtime, remove the overreaching process-level test that assumed daemon gRPC hosting already existed, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `legacy_atomic_public_path_forwards_to_remote_primary_runtime`; `cargo test -p server` passes after removing the invalid process-level test; `cargo test --workspace` passes, proving the legacy public mutation path across real networked runtimes while also showing that daemon process startup still lacks internode gRPC hosting. | Confirmed, with a narrower boundary than first attempted. | advance | Make daemon startup host and use the internode gRPC service so the same legacy atomic proof can move from the multi-runtime harness into the real multiprocess daemon harness. |
 | 31 | The next limiting gap after the multi-runtime legacy proof is daemon-process internode hosting, because without it the same distributed mutation path cannot be proven across the real coordinator-plus-daemons harness. | Add a server-local tonic/prost build path for the internode RPC, make daemon startup install a gRPC transport adapter and host the internode service on `control_port` when `--transport=grpc` is selected, route remote gRPC dials to `control_port`, restore the multiprocess legacy atomic test, and revalidate `server` plus the full workspace. | `cargo test -p server --test dist_multiprocess_harness -- --nocapture` passes with `legacy_atomic_routes_numeric_update_to_remote_primary_process`; `cargo test -p server` passes; `cargo test --workspace` passes, proving a legacy `REQ_ATOMIC` can now cross real daemon processes through the coordinator-published cluster layout and the daemon-hosted internode gRPC service. | Confirmed. | advance | Add first real replication fanout beyond the primary and prove a secondary daemon stores replicated state after a distributed write. |
 | 32 | Once daemon-process forwarding works, the next missing distributed-system property is replica fanout, because a primary-only write still leaves secondaries stale even though placement already computes a replica set. | Add an explicit replica-apply internode request, make successful primary `Put` and `ConditionalPut` operations fan out to the placement replicas, add a focused public-path test in `transport-grpc` with `replicas = 2`, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `legacy_atomic_replicates_to_secondary_runtime`; `cargo test -p server` passes; `cargo test --workspace` passes, proving a public legacy atomic write now leaves both the primary and the secondary runtime with stored state. | Confirmed. | advance | Extend the same replica-fanout path to delete and prove replicated records disappear from both runtimes after a distributed delete. |
+| 33 | After replica fanout for writes, delete is the next missing convergence property because a secondary that keeps a deleted record is an immediate correctness bug. | Add an explicit replicated-delete internode request, make successful primary delete fan out to the placement replicas, add a focused distributed delete proof in `transport-grpc`, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `distributed_delete_removes_replicated_state_from_secondary_runtime`; `cargo test -p server` passes; `cargo test --workspace` passes, proving a distributed delete now removes replicated state from both the primary and the secondary runtime. | Confirmed. | advance | Extend replica convergence to delete-group and prove matching records disappear from all replicas after a distributed group delete. |
