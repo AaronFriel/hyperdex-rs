@@ -697,3 +697,80 @@
   - per-connection session state with nonce allocation and pending completions
   - config-follow, `space_add`, and `wait_until_stable` frame handling
   - one bounded commit ready for reconciliation
+
+### Entry `hyh-016` - Outcome
+
+- Timestamp: `2026-03-27 05:24Z`
+- Kind: `outcome`
+- End commit: `51002a7`
+- Artifact location:
+  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Evidence summary:
+  - the service-core worker still produced no diff
+  - it returned a precise blocker report: the server has no Rust decoder for
+    the original packed `hyperdex::space` payload carried by
+    `ReplicantAdminRequestMessage::space_add`
+  - `crates/server/src/lib.rs` can only consume `CoordinatorAdminRequest::SpaceAdd(Space)`
+    or `LegacyAdminRequest::SpaceAddDsl(String)`
+  - `crates/data-model/src/lib.rs` only exposes `parse_hyperdex_space(&str)`,
+    not a binary unpacker
+- Conclusion: the immediate missing capability is the packed `space_add`
+  payload decoder, not the rest of the transport/service stack.
+- Disposition: `retry`
+- Next move: preregister a substantial decoder implementation step and then
+  reconnect it to the coordinator service core.
+
+### Entry `hyh-017` - Preregistration
+
+- Timestamp: `2026-03-27 05:24Z`
+- Kind: `preregister`
+- Hypothesis: implementing the packed `space_add` payload decoder and the
+  matching service-core consumption path will unblock the coordinator
+  BusyBee/Replicant service work.
+- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Start commit: `51002a7`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Mutable surface:
+  - `crates/server/src/lib.rs`
+  - `crates/hyperdex-admin-protocol/**` only for small integration glue if
+    strictly necessary
+  - `crates/data-model/**` only if a decoder helper must live there
+- Validator:
+  - focused server tests for `space_add` request decoding if added
+  - `cargo test -p server`
+- Expected artifacts:
+  - packed `space_add` payload decoder
+  - service-core path that turns decoded bytes into `Space`
+  - one bounded commit ready for reconciliation
+
+### Entry `hyh-018` - Preregistration
+
+- Timestamp: `2026-03-27 05:24Z`
+- Kind: `preregister`
+- Hypothesis: two implementation workers with disjoint write scopes can land
+  the missing protocol pieces faster than another single broad attempt.
+- Owner: root-coordinated pair
+- Start commit: `51002a7`
+- Worktree / branch:
+  - decoder: dedicated worktree for protocol/data-model decoding work
+  - service core: `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Mutable surface:
+  - decoder worker:
+    - `crates/hyperdex-admin-protocol/**`
+    - `crates/data-model/**` if the decoder belongs there
+  - service-core worker:
+    - `crates/server/src/lib.rs`
+    - `crates/hyperdex-admin-protocol/**` only for small integration glue if
+      strictly necessary
+- Validator:
+  - decoder worker:
+    - focused decoder tests
+    - `cargo test -p hyperdex-admin-protocol`
+  - service-core worker:
+    - focused server tests
+    - `cargo test -p server`
+- Expected artifacts:
+  - packed `space_add` payload decoder from the original HyperDex format
+  - coordinator BusyBee/Replicant service core that consumes decoded `Space`
+  - two bounded commits ready for reconciliation

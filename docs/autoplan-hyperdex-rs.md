@@ -95,6 +95,10 @@ split, sequencing, or validator set needs to change.
 - Keep public compatibility, distributed runtime behavior, and proof coverage
   separate in the workstream structure so one thread does not obscure the state
   of the others.
+- For the active `live-hyhac` path, blocker-only outcomes are no longer
+  acceptable when the missing capability is implementable from repository-local
+  HyperDex sources. The next delegated steps must produce code, not only
+  blocker reports.
 
 ## Stop Conditions
 
@@ -118,7 +122,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Hold until a new real-cluster failure requires deeper harness work. | `advance` |
-| `live-hyhac` | active | Startup wiring and live probes depend on landing the coordinator BusyBee/Replicant service core first. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated admin server worktree | Implement the coordinator BusyBee/Replicant service core and session state in `crates/server/src/lib.rs`, then wire startup/tests and rerun the bounded live probe. | `retry` |
+| `live-hyhac` | active | The coordinator service core is blocked on one missing decoder: the original packed `space_add` payload format. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated admin server worktree | Implement the packed `space_add` payload decoder and the matching service-core consumption path, then return to startup wiring and probes. | `retry` |
 
 ## Progress
 
@@ -183,19 +187,27 @@ split, sequencing, or validator set needs to change.
   the landed codec.
 - [x] (2026-03-27 05:21Z) Retired the first corrected-transport attempt with a
   precise blocker report but no diff.
+- [x] (2026-03-27 05:24Z) Retired the first service-core attempt with a more
+  precise blocker report: the original packed `space_add` payload still has no
+  Rust decoder.
+- [x] (2026-03-27 05:24Z) Raised the execution bar for `live-hyhac`: no more
+  blocker-only iterations when the protocol can be implemented from the local
+  HyperDex sources.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
-Drive the next live-compatibility step on the correct server target, but in
-the right order. The transport mismatch is explicit, so the next concrete job
-is the coordinator BusyBee/Replicant service core and session state itself.
+Drive the next live-compatibility step as parallel implementation, not blocker
+triage. The immediate missing capabilities are now explicit enough to code:
+the packed `space_add` decoder and the coordinator BusyBee/Replicant service
+core that consumes it.
 
 ## Next Root Move
 
-Launch one substantial implementation step for the coordinator
-BusyBee/Replicant service core in `crates/server/src/lib.rs`, then wire
-startup/tests on top of it and rerun the bounded live probe.
+Launch two substantial implementation steps in parallel:
+1. packed `space_add` decoder from the original HyperDex format
+2. coordinator BusyBee/Replicant service core using that decoder
+Then reconcile both and continue to startup wiring and live probes.
 
 ## Surprises & Discoveries
 
@@ -280,6 +292,10 @@ startup/tests on top of it and rerun the bounded live probe.
   Evidence: the `admin-server` worktree remained clean at `175ed25`, and the
   worker reported that the missing piece is a new coordinator transport/service
   layer in `main.rs` and `lib.rs`.
+- Observation: the service-core target exposed an even smaller concrete blocker.
+  Evidence: the latest worker reported that `ReplicantAdminRequestMessage::space_add`
+  carries opaque bytes and the server has no Rust decoder for the original
+  packed `hyperdex::space` payload format.
 
 ## Decision Log
 

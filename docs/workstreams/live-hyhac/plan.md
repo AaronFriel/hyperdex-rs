@@ -42,6 +42,8 @@ until the suite passes.
 
 - None. The proof and multiprocess-harness fixes that this workstream was
   waiting on are now on `main`.
+- Blocker-only outcomes are no longer acceptable here when the missing
+  capability is implementable from the local HyperDex sources.
 
 ## Plan Of Work
 
@@ -99,21 +101,26 @@ surface.
   that the coordinator still speaks the wrong transport.
 - [x] (2026-03-27 05:21Z) Retired the first corrected-transport attempt when
   it still produced no diff, but captured a precise blocker report.
+- [x] (2026-03-27 05:24Z) Retired the first service-core attempt when it
+  exposed a smaller concrete blocker: no Rust decoder for the packed
+  `space_add` payload.
+- [x] (2026-03-27 05:24Z) Raised the execution bar: the next delegated steps
+  must implement the protocol rather than report more blockers.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
 The first missing live contract is still the legacy coordinator admin frontend.
-The newest evidence shows the immediate job is the coordinator
-BusyBee/Replicant service core and session state in `crates/server/src/lib.rs`;
-startup wiring and live probes come after that core exists.
+The missing capabilities are now specific enough to implement directly:
+the packed `space_add` decoder and the coordinator BusyBee/Replicant service
+core that consumes it.
 
 ## Next Bounded Step
 
-Implement the coordinator BusyBee/Replicant service core and session state in
-`crates/server/src/lib.rs`: frame decoding, config-follow, request-id
-allocation, pending completions, `space_add`, and `wait_until_stable`
-completion handling.
+Implement two concrete pieces in parallel:
+1. the packed `space_add` payload decoder
+2. the BusyBee/Replicant coordinator service core in `crates/server/src/lib.rs`
+Then reconnect them and continue to startup wiring and live probes.
 
 ## Surprises & Discoveries
 
@@ -182,6 +189,11 @@ completion handling.
   Evidence: the `admin-server` worktree remained clean at `175ed25`, and the
   blocker report pointed back to the missing coordinator transport/service
   layer in `crates/server/src/lib.rs`.
+- Observation: the next service-core attempt exposed one concrete missing
+  capability beneath that broader blocker.
+  Evidence: `ReplicantAdminRequestMessage::space_add` still carries opaque
+  bytes, and the server has no decoder for the original packed
+  `hyperdex::space` format.
 
 ## Decision Log
 
