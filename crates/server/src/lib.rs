@@ -491,9 +491,12 @@ impl ClusterRuntime {
         checks: Vec<Check>,
     ) -> Result<Vec<Record>> {
         let mut records_by_key = BTreeMap::new();
+        let mut successful_replicas = 0usize;
+        let mut skipped_replicas = Vec::new();
 
         for node_id in self.cluster_node_ids() {
             let records = if node_id == self.local_node_id {
+                successful_replicas += 1;
                 self.data_plane.search(&space, &checks)?
             } else {
                 match self
@@ -504,23 +507,40 @@ impl ClusterRuntime {
                             checks: checks.clone(),
                         },
                     )
-                    .await?
+                    .await
                 {
-                    DataPlaneResponse::SearchResult(records) => records,
-                    DataPlaneResponse::Unit
-                    | DataPlaneResponse::ConditionFailed
-                    | DataPlaneResponse::Record(_)
-                    | DataPlaneResponse::Deleted(_) => {
+                    Ok(DataPlaneResponse::SearchResult(records)) => {
+                        successful_replicas += 1;
+                        records
+                    }
+                    Ok(
+                        DataPlaneResponse::Unit
+                        | DataPlaneResponse::ConditionFailed
+                        | DataPlaneResponse::Record(_)
+                        | DataPlaneResponse::Deleted(_),
+                    ) => {
                         anyhow::bail!(
                             "unexpected response to distributed search on replica {node_id}"
                         )
                     }
+                    Err(err) if should_skip_unavailable_read(&err) => {
+                        skipped_replicas.push(node_id);
+                        continue;
+                    }
+                    Err(err) => return Err(err),
                 }
             };
 
             for record in records {
                 records_by_key.entry(record.key.clone()).or_insert(record);
             }
+        }
+
+        if successful_replicas == 0 {
+            anyhow::bail!(
+                "distributed search had no reachable replicas for space `{space}`; skipped replicas: {:?}",
+                skipped_replicas
+            );
         }
 
         Ok(records_by_key.into_values().collect())
@@ -1676,6 +1696,17 @@ impl HyperdexClientService for ClusterRuntime {
             )),
         }
     }
+}
+
+fn should_skip_unavailable_read(err: &anyhow::Error) -> bool {
+    let msg = err.to_string().to_ascii_lowercase();
+    msg.contains("connection refused")
+        || msg.contains("connection reset")
+        || msg.contains("broken pipe")
+        || msg.contains("transport error")
+        || msg.contains("tcp connect error")
+        || msg.contains("channel closed")
+        || msg.contains("deadline has elapsed")
 }
 
 pub fn bootstrap_runtime() -> ClusterRuntime {

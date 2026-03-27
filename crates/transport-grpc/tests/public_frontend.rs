@@ -1531,3 +1531,122 @@ async fn distributed_get_falls_back_to_local_replica_when_primary_grpc_is_down()
 
     grpc_shutdown1.send(()).unwrap();
 }
+
+#[tokio::test]
+async fn distributed_search_and_count_survive_one_daemon_shutdown() {
+    let grpc_listener1 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let grpc_addr1 = grpc_listener1.local_addr().unwrap();
+    let grpc_listener2 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let grpc_addr2 = grpc_listener2.local_addr().unwrap();
+
+    let config = ClusterConfig {
+        nodes: vec![
+            ClusterNode {
+                id: 1,
+                host: "127.0.0.1".to_owned(),
+                control_port: grpc_addr1.port(),
+                data_port: grpc_addr1.port(),
+            },
+            ClusterNode {
+                id: 2,
+                host: "127.0.0.1".to_owned(),
+                control_port: grpc_addr2.port(),
+                data_port: grpc_addr2.port(),
+            },
+        ],
+        replicas: 2,
+        internode_transport: TransportBackend::Grpc,
+        ..ClusterConfig::default()
+    };
+
+    let mut runtime1 = ClusterRuntime::for_node(config.clone(), 1).unwrap();
+    runtime1.install_cluster_transport(Arc::new(GrpcTransportAdapter), TransportRuntime::Grpc);
+    let runtime1 = Arc::new(runtime1);
+
+    let mut runtime2 = ClusterRuntime::for_node(config.clone(), 2).unwrap();
+    runtime2.install_cluster_transport(Arc::new(GrpcTransportAdapter), TransportRuntime::Grpc);
+    let runtime2 = Arc::new(runtime2);
+
+    HyperdexAdminService::handle(
+        runtime1.as_ref(),
+        AdminRequest::CreateSpaceDsl(profiles_schema()),
+    )
+    .await
+    .unwrap();
+    HyperdexAdminService::handle(
+        runtime2.as_ref(),
+        AdminRequest::CreateSpaceDsl(profiles_schema()),
+    )
+    .await
+    .unwrap();
+
+    let grpc_shutdown1 = serve_runtime(runtime1.clone(), grpc_listener1).await;
+    let grpc_shutdown2 = serve_runtime(runtime2.clone(), grpc_listener2).await;
+
+    let matching_keys = [b"degraded-search-a".to_vec(), b"degraded-search-b".to_vec()];
+    let survivor_key = b"degraded-search-survivor".to_vec();
+
+    for (key, views) in matching_keys
+        .iter()
+        .map(|key| (key, 6_i64))
+        .chain(std::iter::once((&survivor_key, 1_i64)))
+    {
+        HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: key.clone().into(),
+                mutations: vec![Mutation::Numeric {
+                    attribute: "profile_views".to_owned(),
+                    op: data_model::NumericOp::Add,
+                    operand: views,
+                }],
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    grpc_shutdown2.send(()).unwrap();
+    sleep(Duration::from_millis(100)).await;
+
+    let search = HyperdexClientService::handle(
+        runtime1.as_ref(),
+        ClientRequest::Search {
+            space: "profiles".to_owned(),
+            checks: vec![Check {
+                attribute: "profile_views".to_owned(),
+                predicate: Predicate::GreaterThanOrEqual,
+                value: ModelValue::Int(5),
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let ClientResponse::SearchResult(records) = search else {
+        panic!("expected search result response");
+    };
+    let mut keys: Vec<Vec<u8>> = records
+        .into_iter()
+        .map(|record| record.key.to_vec())
+        .collect();
+    keys.sort();
+    assert_eq!(keys, matching_keys);
+
+    let count = HyperdexClientService::handle(
+        runtime1.as_ref(),
+        ClientRequest::Count {
+            space: "profiles".to_owned(),
+            checks: vec![Check {
+                attribute: "profile_views".to_owned(),
+                predicate: Predicate::GreaterThanOrEqual,
+                value: ModelValue::Int(5),
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(count, ClientResponse::Count(2));
+
+    grpc_shutdown1.send(()).unwrap();
+}
