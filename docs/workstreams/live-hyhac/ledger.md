@@ -109,3 +109,50 @@
 - Expected artifacts:
   - verified transport and completion facts for the original admin client path
   - a tighter implementation target for the replacement legacy-admin worker
+
+### Entry `hyh-003` - Outcome
+
+- Timestamp: `2026-03-27 04:41Z`
+- Kind: `outcome`
+- End commit: `cd0d58c`
+- Artifact location:
+  - original HyperDex admin/client sources under `/home/friel/c/aaronfriel/HyperDex`
+- Evidence summary:
+  - `space_add` is issued through `replicant_client_call(..., "hyperdex", "space_add", packed_space, ...)`
+  - `wait_until_stable` is issued through `replicant_client_cond_wait(..., "hyperdex", "stable", m_config.version(), ...)`
+  - `coord_rpc_generic` maps a two-byte coordinator return-code body for
+    function calls, while condition waits can succeed without such a body
+  - `hyperdex_admin_loop` is the completion path that returns the same request
+    id originally returned by `add_space` / `wait_until_stable`
+- Conclusion: the next implementation step can be bounded safely around a
+  Replicant-compatible coordinator admin path for `space_add`,
+  `wait_until_stable`, and loop completion.
+- Disposition: `advance`
+- Next move: preregister and launch the replacement implementation worker on
+  that verified scope.
+
+### Entry `hyh-004` - Preregistration
+
+- Timestamp: `2026-03-27 04:41Z`
+- Kind: `preregister`
+- Hypothesis: implementing the verified Replicant-compatible coordinator admin
+  behavior for `space_add`, `wait_until_stable`, and request-id-plus-loop
+  completion will unblock the original C admin tools and the first live `hyhac`
+  admin test.
+- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+- Start commit: `cd0d58c`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+- Mutable surface:
+  - `crates/server/**`
+  - `crates/hyperdex-admin-protocol/**`
+  - any small adjacent support code strictly needed for the legacy admin path
+- Validator:
+  - `cargo test -p server coordinator_control_service_ -- --nocapture`
+  - `cargo test --workspace`
+  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
+- Expected artifacts:
+  - live legacy admin endpoint that no longer times out on `add_space`
+  - live legacy admin endpoint that no longer times out on `wait_until_stable`
+  - one bounded commit ready for reconciliation

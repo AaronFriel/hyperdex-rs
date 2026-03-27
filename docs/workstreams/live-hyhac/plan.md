@@ -67,25 +67,25 @@ surface.
 - [x] (2026-03-27 04:39Z) Retired the first implementation thread cleanly when
   it reported no file changes and an explicit blocker on missing verified wire
   detail for the original admin protocol.
-- [ ] Finish the read-only protocol evidence pass for the original HyperDex
-  admin path.
-- [ ] Reopen the legacy coordinator admin frontend implementation with that
-  evidence in hand.
+- [x] (2026-03-27 04:41Z) Finished the read-only protocol evidence pass for the
+  original HyperDex admin path and recovered the concrete control-flow facts
+  needed to reopen implementation.
+- [ ] Implement the verified Replicant-compatible legacy coordinator admin
+  behavior in the dedicated control-plane worktree.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
 The first missing live contract is still the legacy coordinator admin frontend,
-but the immediate blocker on implementation is protocol certainty: the original
-admin path is Replicant-backed, and the Rust repo still needs a verified,
-minimal description of the wire framing and completion flow for
-`add_space` / `wait_until_stable`.
+and the verified protocol facts now make the next step concrete: implement
+Replicant-compatible `space_add`, `wait_until_stable`, and request-id-plus-loop
+completion behavior closely enough for the original C admin client path.
 
 ## Next Bounded Step
 
-Finish the read-only protocol evidence pass on the original HyperDex admin
-path, then reopen the smallest legacy coordinator admin implementation step
-that unblocks `hyperdex-add-space` and `hyperdex-wait-until-stable`.
+Implement the smallest legacy coordinator admin behavior that matches the
+verified Replicant control flow for `space_add`, `wait_until_stable`, and
+`hyperdex_admin_loop`, then rerun the bounded live probe.
 
 ## Surprises & Discoveries
 
@@ -103,6 +103,13 @@ that unblocks `hyperdex-add-space` and `hyperdex-wait-until-stable`.
   concrete enough to implement safely.
   Evidence: the retired worker reported no touched files and named the missing
   verified wire detail as the exact blocker.
+- Observation: the verified protocol pass shows that the immediate target is a
+  Replicant-compatible coordinator path, not the BusyBee admin header or the
+  JSON control listener.
+  Evidence: the original sources route `space_add` through
+  `replicant_client_call`, route `wait_until_stable` through
+  `replicant_client_cond_wait`, and complete both through
+  `hyperdex_admin_loop`.
 
 ## Decision Log
 
