@@ -1145,6 +1145,52 @@
   - daemon registration that works through the public coordinator port
   - the next concrete live admin result
 
+### Entry `hyh-028` - Outcome
+
+- Timestamp: `2026-03-27 06:24Z`
+- Kind: `outcome`
+- End commit: `0664ade`
+- Artifact location:
+  - live probe output from worker `019d2df3-86d2-7100-8406-ac46491c1be8`
+- Evidence summary:
+  - `cargo test -p server` passed
+  - `cargo test --workspace` passed
+  - free-port coordinator startup on `19830` succeeded
+  - free-port daemon startup on `20120` / `30120` also succeeded
+  - `hyperdex-add-space` timed out with exit `124`
+  - `hyperdex-wait-until-stable` timed out with exit `124`
+- Conclusion: daemon registration through the public coordinator port is not
+  the stable blocker on clean `main`. The next blocker is again the original
+  admin tools timing out after the cluster is fully up.
+- Disposition: `reframe`
+- Next move: preregister a bounded admin-timeout investigation on the live
+  free-port cluster.
+
+### Entry `hyh-029` - Preregistration
+
+- Timestamp: `2026-03-27 06:24Z`
+- Kind: `preregister`
+- Hypothesis: with the live cluster now confirmed up on free ports, the next
+  missing contract can be isolated by running the original admin tools against
+  that cluster and capturing the first concrete timeout surface or missing
+  response path in the coordinator logs and protocol behavior.
+- Owner: delegated implementation/probe worker to be launched from `main`
+- Start commit: `0664ade`
+- Worktree / branch:
+  - delegated worker branch from `main`
+- Mutable surface:
+  - probe-only by default
+  - `crates/server/**` only if a tiny logging or compatibility fix becomes
+    necessary from observed evidence
+- Validator:
+  - free-port coordinator+daemon startup
+  - bounded `hyperdex-add-space` probe
+  - bounded `hyperdex-wait-until-stable` probe
+  - direct `hyhac` Cabal test if those probes advance
+- Expected artifacts:
+  - exact first failing admin-tool surface after successful daemon join
+  - the next bounded compatibility target
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`

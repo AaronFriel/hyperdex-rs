@@ -135,21 +135,22 @@ surface.
 - [x] (2026-03-27 06:19Z) Ran the next live probe far enough to isolate the
   next concrete runtime failure: daemon startup against the public coordinator
   port exits with `Error: early eof` before any admin tool runs.
+- [x] (2026-03-27 06:24Z) Rechecked that runtime failure on clean `main` and
+  found it was not stable: daemon join succeeded on a free-port cluster, but
+  both original admin tools still timed out afterward.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
 The request core, session core, packed-space decoder hardening, same-port
-startup, and binary config encoding are now on `main`. The next concrete gap
-is runtime-facing again: the daemon must be able to register through the same
-public coordinator port that now also serves legacy admin and JSON control
-traffic.
+startup, binary config encoding, and daemon join are now on `main`. The next
+concrete gap is back on the original admin tools: they still time out after
+the cluster is fully up.
 
 ## Next Bounded Step
 
-Fix daemon registration against the public coordinator port, then rerun the
-bounded `hyperdex-add-space` and `hyperdex-wait-until-stable` probes, followed
-by the direct `hyhac` Cabal test if those probes advance.
+Narrow the original admin-tool timeout on a live free-port cluster, then rerun
+the direct `hyhac` Cabal test if that advances.
 
 ## Surprises & Discoveries
 
@@ -273,6 +274,11 @@ by the direct `hyhac` Cabal test if those probes advance.
   Evidence: the fresh free-port probe reached a listening coordinator on
   `19830`, but the daemon exited during registration with `Error: early eof`,
   so the admin tools were never able to run in that cluster instance.
+- Observation: that daemon-registration failure was not stable enough to stay
+  the active blocker.
+  Evidence: a fresh clean-main rerun reached a live coordinator and a live
+  daemon on free ports, but both `hyperdex-add-space` and
+  `hyperdex-wait-until-stable` still timed out afterward.
 
 ## Decision Log
 
