@@ -1173,6 +1173,107 @@ mod tests {
         .run();
     }
 
+    #[test]
+    fn hegel_distributed_runtime_routes_numeric_mutation() {
+        let _guard = HEGEL_ENV_LOCK.lock().unwrap();
+        let hegel_server_command = ensure_hegel_server_command();
+        unsafe {
+            std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
+        }
+
+        hegel::Hegel::new(|tc: hegel::TestCase| {
+            let key_suffix: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(4095));
+            let initial_value_id: u16 =
+                tc.draw(hegel::generators::integers::<u16>().max_value(99));
+            let operand_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
+
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            runtime.block_on(async move {
+                let (runtime1, runtime2) = distributed_runtime_pair().await;
+                let routed_key = (0..65536)
+                    .map(|i| format!("numeric-{key_suffix}-{i}"))
+                    .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
+                    .expect("expected a key routed to node 2");
+                let initial_value = i64::from(initial_value_id);
+                let operand = i64::from(operand_id) + 1;
+                let expected_value = initial_value + operand;
+
+                let put = HyperdexClientService::handle(
+                    runtime1.as_ref(),
+                    ClientRequest::Put {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(routed_key.clone().into_bytes()),
+                        mutations: vec![Mutation::Set(Attribute {
+                            name: "profile_views".to_owned(),
+                            value: Value::Int(initial_value),
+                        })],
+                    },
+                )
+                .await
+                .unwrap();
+                assert_eq!(put, ClientResponse::Unit);
+
+                let numeric = HyperdexClientService::handle(
+                    runtime1.as_ref(),
+                    ClientRequest::Put {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(routed_key.clone().into_bytes()),
+                        mutations: vec![Mutation::Numeric {
+                            attribute: "profile_views".to_owned(),
+                            op: data_model::NumericOp::Add,
+                            operand,
+                        }],
+                    },
+                )
+                .await
+                .unwrap();
+                assert_eq!(numeric, ClientResponse::Unit);
+
+                let routed_get = HyperdexClientService::handle(
+                    runtime1.as_ref(),
+                    ClientRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(routed_key.clone().into_bytes()),
+                    },
+                )
+                .await
+                .unwrap();
+                match routed_get {
+                    ClientResponse::Record(Some(record)) => {
+                        let actual = match record.attributes.get("profile_views") {
+                            Some(Value::Int(value)) => *value,
+                            other => panic!("unexpected record attribute: {other:?}"),
+                        };
+                        assert_eq!(actual, expected_value);
+                    }
+                    other => panic!("unexpected routed get response: {other:?}"),
+                }
+
+                let primary_get = HyperdexClientService::handle(
+                    runtime2.as_ref(),
+                    ClientRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(routed_key.into_bytes()),
+                    },
+                )
+                .await
+                .unwrap();
+                match primary_get {
+                    ClientResponse::Record(Some(record)) => {
+                        let actual = match record.attributes.get("profile_views") {
+                            Some(Value::Int(value)) => *value,
+                            other => panic!("unexpected record attribute: {other:?}"),
+                        };
+                        assert_eq!(actual, expected_value);
+                    }
+                    other => panic!("unexpected primary get response: {other:?}"),
+                }
+            });
+        })
+        .settings(hegel::Settings::new().test_cases(15))
+        .run();
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig {
             cases: 64,
