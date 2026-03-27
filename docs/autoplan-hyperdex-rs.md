@@ -122,7 +122,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | root | None; `69d5918` already proved the fast Hyhac failure loops only through coordinator identify/bootstrap traffic on the cleaned baseline, so this workstream can pause again until another harness change is justified. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence -- --nocapture` | Hold until product or read-only comparison work needs another harness change. | `advance` |
-| `live-hyhac` | active | `019d3180-ba84-7443-9a62-8de2faaeb9c1` (`Parfit`) plus `019d3180-bc6b-7800-aa9e-552c9c2c1853` (`Laplace`) | `hyh-041` is reconciled on `main` and proves the failing large-object Hyhac path still produces no daemon legacy traffic after startup. `cce-015` now points the next product step at the client-side handle/completion contract that Hyhac exercises before any daemon request is emitted. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow` on `live-hyhac-post-follow` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_no_daemon_traffic_after_startup -- --nocapture` | Run the native-client-versus-Hyhac differential in parallel as one product pass and one read-only handle-map pass. | `advance` |
+| `live-hyhac` | active | root-coordinated pair for `hyh-044` and `hyh-045` | `hyh-042` and `hyh-043` prove the previous fast large-object validator was skipping schema setup: both Hyhac and a native C client return immediate `UnknownSpace`, and Hyhac then masks `NonePending` as `ClientGarbage`. The next product step is to build a schema-created fast path and capture the real later failure. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow` on `live-hyhac-post-follow` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_immediate_unknownspace_before_deferred_loop -- --nocapture` | Replace the flawed fast validator with a schema-created baseline and capture the next real failure after `profiles` exists. | `reframe` |
 | `coordinator-config-evidence` | ready | root | `cce-015` is finished. The stronger no-daemon-traffic proof and the source comparison move the remaining question out of coordinator follow/config behavior and toward the client-handle/completion contract that Hyhac wraps. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_no_daemon_traffic_after_startup -- --nocapture` | Hold until the next product pass needs another exact source comparison. | `advance` |
 
 ## Progress
@@ -378,25 +378,27 @@ split, sequencing, or validator set needs to change.
   daemon request is emitted.
 - [x] (2026-03-27 23:49Z) Relaunched the next differential in parallel with
   `Parfit` on `hyh-042` and `Laplace` on `hyh-043`.
+- [x] (2026-03-27 23:58Z) Reconciled `eb6d093` (`Trace hyhac immediate client
+  handles`) and `hyh-043`, which together prove the old fast large-object
+  validator was failing on immediate `UnknownSpace` before any daemon request,
+  not on the later product bug we actually need to fix.
 - [ ] Rerun the bounded live `hyhac` probe after the remaining large-object
   mismatch is fixed.
 
 ## Current Root Focus
 
-Drive the remaining focused large-object `ClientGarbage` failure on the
-corrected post-bootstrap baseline by moving from coordinator follow theory to
-the client-handle contract Hyhac actually wraps. The coordinator no longer
-stops at bootstrap, and the integrated no-daemon-traffic proof means the next
-exact reduction is now the handle/completion path before the first daemon
-request, not another daemon or follow/config guess.
+Drive the remaining focused large-object `ClientGarbage` failure on a corrected
+schema-created baseline. The old fast large-object path was missing `profiles`
+entirely, so it only proved immediate `UnknownSpace` plus Hyhac’s masking of
+`NonePending`. The next useful reduction must preserve the space-creation
+prerequisite and then capture the real later failure.
 
 ## Next Root Move
 
-Use the no-daemon-traffic harness as the short public check and relaunch the
-next differential in parallel: one product pass plus one read-only handle-map
-pass on native HyperDex client path versus Hyhac deferred handle path on the
-same live Rust cluster. The next root action after this pass is to launch both
-owners and then wait on them with a long timeout.
+Replace the flawed fast validator with a schema-created fast path. The next
+root action after this pass is to launch one product worker that preserves the
+`profiles` setup and captures the next real failure, plus one read-only worker
+that pins down the smallest Hyhac setup sequence needed for that probe.
 
 ## Surprises & Discoveries
 

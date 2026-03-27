@@ -1975,6 +1975,30 @@
     deferred-handle path against the same live Rust cluster
   - a commit that fixes the remaining public contract or one exact blocker
 
+### Entry `hyh-042` - Outcome
+
+- Timestamp: `2026-03-27 23:58Z`
+- Kind: `outcome`
+- End commit: `eb6d093`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence summary:
+  - `eb6d093` adds a tighter differential probe that captures the immediate
+    `hyperdex_client_put` handle and status from both Hyhac and a native C
+    client against the same live Rust cluster
+  - both paths report the same immediate failure on the old fast validator:
+    `put handle=-1 status=8512`, followed by `loop handle=-1 status=8523`
+  - the new probe shows the old fast path was missing the `profiles` space
+    prerequisite, so it was proving `UnknownSpace` rather than the later bug
+  - `legacy_hyhac_large_object_probe_reports_immediate_unknownspace_before_deferred_loop`,
+    `legacy_hyhac_large_object_probe_reports_no_daemon_traffic_after_startup`,
+    and `cargo test -p server` all pass on integrated `main`
+- Conclusion: the old fast large-object validator is flawed. The next product
+  step must preserve schema setup and then capture the real later failure.
+- Disposition: `reframe`
+- Next move: launch a schema-created fast path and a matching read-only setup
+  map under the same live-hyhac workstream.
+
 ### Entry `hyh-043` - Preregistration
 
 - Timestamp: `2026-03-27 23:49Z`
@@ -1997,6 +2021,82 @@
 - Expected artifacts:
   - a precise handle/completion map for native client versus Hyhac
   - a tighter next target for `hyh-042`
+
+### Entry `hyh-043` - Outcome
+
+- Timestamp: `2026-03-27 23:58Z`
+- Kind: `outcome`
+- End commit: `eb6d093`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/HyperDex/client/c.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
+  - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Ffi/Client.chs`
+  - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Core.hs`
+  - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Handle.hs`
+- Evidence summary:
+  - the original HyperDex client returns a negative immediate handle when
+    `hyperdex_client_put` fails before queueing any request
+  - Hyhac stores that negative handle as deferred work and later rewrites the
+    resulting `NonePending` loop result into `ClientGarbage`
+  - this exactly matches the integrated no-daemon-traffic probe once the new
+    immediate-handle differential is added
+- Conclusion: the first exact point where Hyhac can surface `ClientGarbage`
+  before any daemon request is a negative immediate handle, not a later daemon
+  reply. The old fast validator hit that path because `profiles` had never
+  been created there.
+- Disposition: `advance`
+- Next move: use a schema-created baseline for the next live-hyhac product
+  pass and keep the focus on the later failure after setup.
+
+### Entry `hyh-044` - Preregistration
+
+- Timestamp: `2026-03-27 23:58Z`
+- Kind: `preregister`
+- Hypothesis: a new product pass that preserves the `profiles` space setup
+  before running the focused large-object subset will expose the real later
+  failure and replace the flawed old fast validator.
+- Owner: next delegated product worker
+- Start commit: `eb6d093`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
+    on `live-hyhac-post-follow`
+- Mutable surface:
+  - `crates/server/**`
+  - `crates/server/tests/**`
+  - `/home/friel/c/aaronfriel/hyhac/**` only if a tiny focused probe helper is
+    strictly necessary and does not change Hyhac semantics
+- Validator:
+  - current flaw proof:
+    `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_immediate_unknownspace_before_deferred_loop -- --nocapture`
+  - target replacement:
+    a new schema-created focused probe on the same large-object subset
+  - strong check:
+    `cargo test -p server`
+- Expected artifacts:
+  - a schema-created focused large-object probe that reaches the real later
+    failure
+  - a commit that moves the live-hyhac path forward on that corrected baseline
+
+### Entry `hyh-045` - Preregistration
+
+- Timestamp: `2026-03-27 23:58Z`
+- Kind: `preregister`
+- Hypothesis: a parallel read-only pass over `hyhac` test ordering and setup
+  code can pin down the smallest prerequisite sequence needed to make the
+  focused large-object probe honest before the product worker rewires it.
+- Owner: next delegated read-only worker
+- Start commit: `eb6d093`
+- Worktree / branch:
+  - none required; read-only evidence gathering only
+- Mutable surface:
+  - none
+- Validator:
+  - exact source-backed description of the minimal `profiles` setup required
+    before the large-object subset is meaningful
+  - concrete file/function pointers in `hyhac` test code for that setup path
+- Expected artifacts:
+  - the smallest honest setup sequence for the focused large-object probe
+  - concrete guidance for `hyh-044`
 
 ### Entry `hyh-025` - Preregistration
 
