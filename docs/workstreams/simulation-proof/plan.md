@@ -53,19 +53,22 @@ undeclared `name` attribute.
 
 - [x] (2026-03-27 04:19Z) Imported this workstream from the old root-only file
   and recorded its current mutable surface, validator, and next bounded step.
-- [ ] Reconcile the in-flight routed numeric-mutation property into `main`.
+- [x] (2026-03-27 04:22Z) Reconciled the in-flight routed numeric-mutation
+  property into `6d55620` (`Add Hegel routed numeric mutation coverage`).
 - [ ] Tighten the remaining schema-permissive single-node Hegel sequence test.
 
 ## Current Hypothesis
 
-The next missing generated distributed mutation shape is routed numeric add,
-and landing it cleanly will leave the single-node schema-permissive sequence
-model as the most obvious remaining proof weakness.
+The routed numeric-mutation path is now covered. The most obvious remaining
+proof weakness is the single-node Hegel sequence model still using an undeclared
+attribute, and fixing that should strengthen generated coverage without
+changing distributed behavior.
 
 ## Next Bounded Step
 
-Land the routed numeric-mutation Hegel property, validate `simulation-harness`
-and the full workspace, and record the outcome in this workstream ledger.
+Make the single-node Hegel sequence model schema-correct, validate
+`simulation-harness` and the full workspace again, and record the outcome in
+this workstream ledger.
 
 ## Surprises & Discoveries
 
@@ -86,5 +89,5 @@ and the full workspace, and record the outcome in this workstream ledger.
 
 ## Outcomes & Retrospective
 
-- Pending.
-
+- `6d55620` landed the routed numeric-mutation property cleanly with no
+  additional surface beyond `crates/simulation-harness/src/lib.rs`.

@@ -51,21 +51,23 @@ parts one at a time: ephemeral port reuse, then log-text waits.
 
 - [x] (2026-03-27 04:19Z) Imported this workstream from the old root-only file
   and recorded the in-flight harness stabilization step.
-- [ ] Reconcile the `serial_test` containment fix into `main`.
+- [x] (2026-03-27 04:22Z) Reconciled the `serial_test` containment fix into
+  `98def36` (`Stabilize multiprocess harness concurrency`).
 - [ ] Replace ephemeral port reuse and log-text waits with protocol-based
   readiness once the containment fix is merged.
 
 ## Current Hypothesis
 
-The current workspace failure mode is a real same-process harness problem, not a
-product bug. Serializing the three process-spawning tests is the smallest
-correct containment step, and it should restore trustworthy workspace runs while
-leaving the deeper readiness cleanup for the next bounded pass.
+The current workspace false failure is contained. The next real harness weakness
+is startup and port-selection brittleness inside individual tests, and the next
+bounded pass should remove that with protocol-based readiness rather than more
+blanket serialization.
 
 ## Next Bounded Step
 
-Land the `serial_test` containment fix, validate the multiprocess harness plus
-the full workspace, and record the outcome in this workstream ledger.
+Replace ephemeral port reuse and log-text waits with protocol-based readiness,
+validate the multiprocess harness plus the full workspace, and record the
+outcome in this workstream ledger.
 
 ## Surprises & Discoveries
 
@@ -85,5 +87,5 @@ the full workspace, and record the outcome in this workstream ledger.
 
 ## Outcomes & Retrospective
 
-- Pending.
-
+- `98def36` restored stable workspace runs by serializing the three
+  process-spawning multiprocess tests without touching product code.

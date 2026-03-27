@@ -116,9 +116,9 @@ split, sequencing, or validator set needs to change.
 
 | Workstream | Status | Dependencies / Blockers | Plan | Ledger | Worktree / Branch | Next Step | Latest Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `simulation-proof` | active | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric`; root checkout also has in-flight proof edits | Reconcile routed numeric-mutation Hegel coverage, then tighten the remaining schema-permissive single-node sequence test. | `advance` |
-| `multiprocess-harness` | active | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness`; root checkout also has in-flight harness edits | Reconcile the serial-test harness fix, then replace log-text waits and ephemeral port reuse with protocol-based readiness. | `advance` |
-| `live-hyhac` | ready | Benefits from the two proof/harness fixes landing first, but not hard-blocked after that | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout | Run the live `hyhac` harness against current `main`, capture the next failing admin or client path, and narrow the next compatibility step to that evidence. | `advance` |
+| `simulation-proof` | active | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Tighten the remaining schema-permissive single-node Hegel sequence test in the dedicated worktree while root advances live compatibility. | `advance` |
+| `multiprocess-harness` | active | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Replace ephemeral port reuse and log-text waits with protocol-based readiness in the dedicated worktree while root advances live compatibility. | `advance` |
+| `live-hyhac` | active | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout | Run the live `hyhac` harness against current `main`, capture the next failing admin or client path, and narrow the next compatibility step to that evidence. | `advance` |
 
 ## Progress
 
@@ -131,24 +131,33 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 04:19Z) Replaced the old single-file control document with
   the new root pair plus workstream files and preregistered the active
   in-flight work.
-- [ ] Reconcile the in-flight `simulation-proof` and `multiprocess-harness`
-  edits into bounded validated commits.
+- [x] (2026-03-27 04:22Z) Reconciled the in-flight `simulation-proof` edit
+  into `6d55620` (`Add Hegel routed numeric mutation coverage`) with green
+  targeted, package, and workspace validators.
+- [x] (2026-03-27 04:22Z) Reconciled the in-flight `multiprocess-harness` edit
+  into `98def36` (`Stabilize multiprocess harness concurrency`) with green
+  harness and workspace validators.
+- [ ] Launch the next three unblocked steps in parallel:
+  `live-hyhac` on `main`, the single-node Hegel cleanup in
+  `worktrees/sim-coverage`, and the multiprocess readiness cleanup in
+  `worktrees/dist-multiprocess-harness`.
 - [ ] Advance `live-hyhac` by rerunning the Haskell harness against the updated
   cluster and narrowing the next compatibility gap from observed failures.
 
 ## Current Root Focus
 
-Reconcile the current proof and multiprocess-harness edits into bounded commits
-without losing the new root/workstream structure. Once those two workstreams
-are landed and their ledgers record outcomes, the root should pivot directly to
-the live `hyhac` run instead of adding more speculative coverage first.
+Use the now-clean `main` branch to push three independent steps at once: root
+should run the first live `hyhac` probe, while the existing worktrees take the
+next bounded proof cleanup and the next bounded multiprocess readiness cleanup.
+The immediate aim is to convert the current clean state into new evidence rather
+than add another round of preparatory edits on `main`.
 
 ## Next Root Move
 
-Commit the root AutoPlan package, land the preregistered `simulation-proof`
-result, land the preregistered `multiprocess-harness` result, then launch the
-first post-restructure live `hyhac` probe and record its outcome in the
-`live-hyhac` ledger.
+Preregister the next bounded steps for all three active workstreams, launch the
+two worktree-backed implementation threads, run the first post-restructure live
+`hyhac` probe on `main`, and record each result in the relevant ledger before
+choosing the next compatibility change.
 
 ## Surprises & Discoveries
 
@@ -163,6 +172,11 @@ first post-restructure live `hyhac` probe and record its outcome in the
   Evidence: `git status --short` showed edits in `Cargo.toml`,
   `crates/server/Cargo.toml`, `crates/server/tests/dist_multiprocess_harness.rs`,
   and `crates/simulation-harness/src/lib.rs`.
+- Observation: the repository is back to a clean code state after the two
+  bounded integrations, so the next useful root action is a live compatibility
+  probe rather than more local cleanup.
+  Evidence: `6d55620` and `98def36` are now on `main`, and `cargo test --workspace`
+  passed after both landed.
 
 ## Decision Log
 

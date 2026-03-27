@@ -40,40 +40,49 @@ until the suite passes.
 
 ## Dependencies / Blockers
 
-- The workstream benefits from the current proof and multiprocess harness fixes
-  landing first so the next observed `hyhac` failure is trustworthy.
+- None. The proof and multiprocess-harness fixes that this workstream was
+  waiting on are now on `main`.
 
 ## Plan Of Work
 
-Once the current proof and harness steps are reconciled, run the live `hyhac`
-suite against `main`, record the first failing operation or return-code
-mismatch, and narrow the next compatibility change to that observed surface.
+Start a live `hyperdex-rs` coordinator and daemon directly from the Rust
+binary, run `hyhac` through `scripts/cabal.sh test ...` instead of the checked-in
+`scripts/test-with-hyperdex.sh` wrapper, record the first failing operation or
+return-code mismatch, and narrow the next compatibility change to that observed
+surface.
 
 ## Progress
 
 - [x] (2026-03-27 04:19Z) Created the workstream package and recorded its
   mutable surface and validator boundary.
+- [x] (2026-03-27 04:22Z) Confirmed that `hyhac`'s checked-in launcher still
+  hardwires the original C++ `hyperdex` binary, so the live probe must use a
+  manual `hyperdex-rs` cluster plus the direct Cabal test command.
 - [ ] Run the live `hyhac` harness against the updated `main`.
 - [ ] Record the next failing operation in the workstream ledger.
 - [ ] Narrow the next compatibility change to that observed failure.
 
 ## Current Hypothesis
 
-The next missing compatibility step is more likely to be an observed admin or
-client behavior mismatch than a missing distributed-runtime primitive, because
-the runtime and proof surface are already broad enough that the remaining gaps
-should now show up as `hyhac`-visible behavior.
+The first live failure is likely to be admin `create space` or
+`waitUntilStable`, because `hyhac` starts there before it reaches client
+traffic, and the checked-in compatibility notes already identify that part of
+the public surface as the first live contract.
 
 ## Next Bounded Step
 
-After the current proof and harness edits land, run the live `hyhac` harness
-against `main`, capture the first failing operation, and preregister the
-follow-up implementation step in this ledger.
+Start one `hyperdex-rs` coordinator and one daemon, run the direct Cabal test
+command with `HYPERDEX_COORD_HOST` and `HYPERDEX_COORD_PORT` pointed at that
+cluster, capture the first failing operation, and preregister the follow-up
+implementation step in this ledger.
 
 ## Surprises & Discoveries
 
-- None yet in the new workstream package. The next discovery should come from a
-  real `hyhac` run, not from speculation.
+- Observation: `scripts/test-with-hyperdex.sh` cannot drive `hyperdex-rs`
+  directly because it shells through `start-hyperdex.sh`, which requires the
+  original `hyperdex` and `hyperdex-show-config` executables.
+  Evidence: `hyhac/scripts/test-with-hyperdex.sh` execs `start-hyperdex.sh`,
+  and `hyhac/scripts/start-hyperdex.sh` exits unless those two binaries exist.
 
 ## Decision Log
 
@@ -86,4 +95,3 @@ follow-up implementation step in this ledger.
 ## Outcomes & Retrospective
 
 - Pending.
-
