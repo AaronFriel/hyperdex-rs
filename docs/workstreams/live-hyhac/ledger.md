@@ -1518,8 +1518,10 @@
 - Hypothesis: a follow-up worker on the same `live-hyhac-data-plane` worktree
   can use the now-correct string-slice and datatype encoding as a base to find
   and fix the next mismatch inside the packed `hyperdex::configuration` /
-  `hyperdex::space` body for the full `profiles` schema, moving the focused
-  large-object path forward again.
+  `hyperdex::space` body for the full `profiles` schema. That next mismatch is
+  now concrete: replace singleton primary-subspace region bounds with the
+  original contiguous `hyperdex::partition(...)` hash intervals so the client
+  can route ordinary keys before it prepares the first atomic write.
 - Owner: resumed forked worker in
   `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane`
 - Start commit: `be0cb38`
@@ -1543,8 +1545,8 @@
     - `cargo test --workspace`
     - focused manual cluster probe for `*Can store a large object*`
 - Expected artifacts:
-  - code and tests that move the focused large-object path past the next packed
-    config mismatch
+  - code and tests that move the focused large-object path past the
+    primary-subspace region-bounds mismatch
   - or a tighter `configuration` / `space` body mismatch tied to concrete
     packet or source evidence
   - a shorter branch-local loop than the broader selected `hyhac` command

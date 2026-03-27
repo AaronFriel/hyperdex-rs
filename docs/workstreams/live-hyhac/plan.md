@@ -169,6 +169,9 @@ stronger live probe before returning control.
   daemon protocol encoding`), which fixes string-slice encoding for the packed
   config path and restores the correct legacy datatype codes across the full
   `profiles` schema.
+- [x] (2026-03-27 20:20Z) Reframed `hyh-035` to the exact next packed-config
+  fix: replace singleton primary-subspace region bounds with the original
+  contiguous `hyperdex::partition(...)` hash intervals.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
@@ -179,17 +182,18 @@ compatibility are now on `main`. The focused large-object failure is still the
 right public loop, but it no longer points at the daemon request decoder: the
 daemon never sees `REQ_ATOMIC` for this path, and the harness now shows the
 first captured exchange is still on the coordinator connection. The next
-concrete gap is deeper inside the packed `hyperdex::configuration` /
-`hyperdex::space` body for the full `profiles` schema, after string-slice
-encoding and legacy datatype codes were corrected.
+concrete gap is now exact: inside the packed `hyperdex::configuration` /
+`hyperdex::space` body, Rust still emits singleton primary-subspace region
+bounds where the original HyperDex builder emits contiguous
+`hyperdex::partition(...)` hash intervals.
 
 ## Next Bounded Step
 
-Own the remaining packed `hyperdex::configuration` / `hyperdex::space` body
-mismatch for the full `profiles` schema through the focused large-object
-`ClientGarbage` repro until that path clears or yields the next exact
-coordinator-side mismatch. Only widen back to broader pooled operations after
-this focused path moves forward.
+Own the primary-subspace region-bounds fix inside the packed
+`hyperdex::configuration` / `hyperdex::space` body for the full `profiles`
+schema through the focused large-object `ClientGarbage` repro until that path
+clears or yields the next exact coordinator-side mismatch. Only widen back to
+broader pooled operations after this focused path moves forward.
 
 ## Surprises & Discoveries
 
@@ -247,6 +251,12 @@ this focused path moves forward.
   Evidence: `be0cb38` now preserves the expected legacy datatype codes across
   the full `profiles` schema and keeps focused config tests green, while the
   shared fast large-object repro still fails.
+- Observation: the first remaining packed-config mismatch is specifically the
+  primary-subspace region bounds.
+  Evidence: the completed `cce-002` comparison shows Rust emits
+  `lower=partition`, `upper=partition`, while the original HyperDex builder
+  emits contiguous `hyperdex::partition(...)` intervals such as
+  `upper=0x03ffffffffffffff` for the first primary region.
 - Observation: even after splitting writes into "codec" and "server
   integration", the workers still did not start editing.
   Evidence: both dedicated worktrees stayed clean at `801d20f` until the
