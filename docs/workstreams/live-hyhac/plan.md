@@ -89,19 +89,23 @@ surface.
   passing.
 - [x] (2026-03-27 05:07Z) Launched one substantial server implementation step
   on top of the landed codec and the completed server map.
+- [x] (2026-03-27 05:11Z) Retired that server implementation attempt when the
+  admin-server worktree still had no file changes after interruption.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
 The first missing live contract is still the legacy coordinator admin frontend.
-The codec and the server-side shape now both exist, so the remaining work is
-to implement the coordinator-side session and loop behavior itself.
+The codec and the server-side shape now both exist, so the remaining problem is
+execution: the worker must patch the identified listener and session functions
+directly instead of continuing to explore.
 
 ## Next Bounded Step
 
 Implement the coordinator-side legacy admin listener, session state, request-id
 allocation, config-follow, `space_add`, and `wait_until_stable` loop
-completion on top of the landed codec.
+completion by patching the concrete `main.rs` coordinator branch and the
+identified admin/session helpers in `crates/server/src/lib.rs`.
 
 ## Surprises & Discoveries
 
@@ -154,6 +158,10 @@ completion on top of the landed codec.
   Evidence: `489de25` adds BusyBee frame helpers, Replicant request and
   response codecs, varint slice helpers, and exact protocol tests in
   `crates/hyperdex-admin-protocol/src/lib.rs`.
+- Observation: the first full server implementation attempt still produced no
+  code.
+  Evidence: the `admin-server` worktree remained clean at `928130e` until the
+  worker was interrupted.
 
 ## Decision Log
 
