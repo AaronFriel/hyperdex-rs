@@ -134,6 +134,56 @@ mod tests {
         runtime
     }
 
+    async fn distributed_runtime_pair() -> (Arc<ClusterRuntime>, Arc<ClusterRuntime>) {
+        let config = ClusterConfig {
+            nodes: vec![
+                ClusterNode {
+                    id: 1,
+                    host: "node1".to_owned(),
+                    control_port: 1001,
+                    data_port: 2001,
+                },
+                ClusterNode {
+                    id: 2,
+                    host: "node2".to_owned(),
+                    control_port: 1002,
+                    data_port: 2002,
+                },
+            ],
+            replicas: 2,
+            internode_transport: TransportBackend::Grpc,
+            ..ClusterConfig::default()
+        };
+
+        let transport = Arc::new(SimTransport::default());
+
+        let mut runtime1 = ClusterRuntime::for_node(config.clone(), 1).unwrap();
+        runtime1.install_cluster_transport(transport.clone(), TransportRuntime::Grpc);
+        let runtime1 = Arc::new(runtime1);
+
+        let mut runtime2 = ClusterRuntime::for_node(config, 2).unwrap();
+        runtime2.install_cluster_transport(transport.clone(), TransportRuntime::Grpc);
+        let runtime2 = Arc::new(runtime2);
+
+        transport.register(1, runtime1.clone()).await;
+        transport.register(2, runtime2.clone()).await;
+
+        HyperdexAdminService::handle(
+            runtime1.as_ref(),
+            AdminRequest::CreateSpaceDsl(profiles_schema()),
+        )
+        .await
+        .unwrap();
+        HyperdexAdminService::handle(
+            runtime2.as_ref(),
+            AdminRequest::CreateSpaceDsl(profiles_schema()),
+        )
+        .await
+        .unwrap();
+
+        (runtime1, runtime2)
+    }
+
     impl SimTransport {
         async fn register(&self, node_id: u64, runtime: Arc<ClusterRuntime>) {
             self.runtimes.lock().await.insert(node_id, runtime);
@@ -724,6 +774,78 @@ mod tests {
             });
         })
         .settings(hegel::Settings::new().test_cases(20))
+        .run();
+    }
+
+    #[test]
+    fn hegel_distributed_runtime_routes_put_and_get() {
+        let _guard = HEGEL_ENV_LOCK.lock().unwrap();
+        let hegel_server_command = ensure_hegel_server_command();
+        unsafe {
+            std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
+        }
+
+        hegel::Hegel::new(|tc: hegel::TestCase| {
+            let key_suffix: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(4095));
+            let value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
+
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            runtime.block_on(async move {
+                let (runtime1, runtime2) = distributed_runtime_pair().await;
+                let routed_key = (0..65536)
+                    .map(|i| format!("dist-{key_suffix}-{i}"))
+                    .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
+                    .expect("expected a key routed to node 2");
+                let expected_value = format!("v{value_id}");
+
+                let put = HyperdexClientService::handle(
+                    runtime1.as_ref(),
+                    ClientRequest::Put {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(routed_key.clone().into_bytes()),
+                        mutations: vec![Mutation::Set(Attribute {
+                            name: "name".to_owned(),
+                            value: Value::String(expected_value.clone()),
+                        })],
+                    },
+                )
+                .await
+                .unwrap();
+                assert_eq!(put, ClientResponse::Unit);
+
+                let get = HyperdexClientService::handle(
+                    runtime1.as_ref(),
+                    ClientRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(routed_key.clone().into_bytes()),
+                    },
+                )
+                .await
+                .unwrap();
+                match get {
+                    ClientResponse::Record(Some(record)) => {
+                        let actual = match record.attributes.get("name") {
+                            Some(Value::String(value)) => value.clone(),
+                            other => panic!("unexpected record attribute: {other:?}"),
+                        };
+                        assert_eq!(actual, expected_value);
+                    }
+                    other => panic!("unexpected get response: {other:?}"),
+                }
+
+                let primary_view = HyperdexClientService::handle(
+                    runtime2.as_ref(),
+                    ClientRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(routed_key.into_bytes()),
+                    },
+                )
+                .await
+                .unwrap();
+                assert!(matches!(primary_view, ClientResponse::Record(Some(_))));
+            });
+        })
+        .settings(hegel::Settings::new().test_cases(15))
         .run();
     }
 
