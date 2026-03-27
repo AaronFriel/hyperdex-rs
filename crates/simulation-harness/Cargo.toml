@@ -19,4 +19,10 @@ tokio.workspace = true
 turmoil.workspace = true
 
 [dev-dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+hyperdex-admin-protocol = { path = "../hyperdex-admin-protocol" }
+hyperdex-client-protocol = { path = "../hyperdex-client-protocol" }
 proptest.workspace = true
+server = { path = "../server" }
+transport-core = { path = "../transport-core" }
