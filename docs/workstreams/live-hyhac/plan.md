@@ -129,19 +129,21 @@ surface.
 - [x] (2026-03-27 06:02Z) Reconciled `99d3922` (`Serve coordinator legacy
   admin on the public port`), which proves same-port public-port dispatch but
   still leaves the original admin tools timing out.
+- [x] (2026-03-27 06:08Z) Reconciled `0d8d566` (`Pack legacy coordinator
+  config follow payload`), which puts the original binary config payload
+  format on `main`.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
-The request core, session core, packed-space decoder hardening, and same-port
-startup are now on `main`. The remaining live contract is down to one
-implementation job: the `config` follow payload still needs the original
-binary format.
+The request core, session core, packed-space decoder hardening, same-port
+startup, and binary config encoding are now on `main`. The next step is no
+longer implementation-by-default; it is a live probe against the full current
+stack to capture the next concrete failing surface, if any.
 
 ## Next Bounded Step
 
-Reconcile the binary `config` follow payload encoder, then rerun the bounded
-`hyperdex-add-space` and
+Run the bounded `hyperdex-add-space` and
 `hyperdex-wait-until-stable` probes, followed by the direct `hyhac` Cabal
 test if those probes advance.
 
@@ -258,6 +260,11 @@ test if those probes advance.
   downstream of accept/dispatch.
   Evidence: bounded `hyperdex-add-space` and `hyperdex-wait-until-stable`
   probes still timed out against the live listener after `99d3922`.
+- Observation: the binary `config` follow payload path is no longer only a
+  hypothesis; it is implemented on `main`.
+  Evidence: `0d8d566` packs `hyperdex::configuration` bytes in
+  `default_legacy_config_encoder`, and the worker reported green `server` and
+  workspace tests after that change.
 
 ## Decision Log
 

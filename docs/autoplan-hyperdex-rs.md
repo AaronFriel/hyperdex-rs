@@ -122,7 +122,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Hold until a new real-cluster failure requires deeper harness work. | `advance` |
-| `live-hyhac` | active | The request core, service core, decoder hardening, and same-port startup are now on `main`, but the live coordinator still needs original-format config-condition payloads before the C admin client can complete a real probe. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus one active config-encoder worker | Finish binary config payload encoding, then rerun the admin probes. | `advance` |
+| `live-hyhac` | active | The request core, service core, decoder hardening, same-port startup, and binary config payload encoding are now on `main`, but the original admin tools have not yet been rerun successfully against that full stack. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus one active live-probe worker | Rerun the original admin tools against the full current stack, then run the direct `hyhac` probe if they advance. | `advance` |
 
 ## Progress
 
@@ -212,19 +212,23 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 06:02Z) Reconciled `99d3922` (`Serve coordinator legacy
   admin on the public port`), which proves same-port coordinator dispatch but
   also proves the original admin tools still time out afterward.
+- [x] (2026-03-27 06:08Z) Reconciled `0d8d566` (`Pack legacy coordinator
+  config follow payload`), which replaces the JSON config-follow payload with
+  the packed `hyperdex::configuration` binary layout and keeps the test suite
+  green.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
 Drive the remaining live coordinator compatibility gap now that the request
-core, service core, decoder hardening, and same-port startup are on `main`.
-The one active implementation job is binary config payload encoding. The next
-integration should turn that into a real admin-tool probe result.
+core, service core, decoder hardening, same-port startup, and binary config
+payload encoding are on `main`. The one active job is now empirical: rerun the
+original admin tools and then rerun the direct `hyhac` probe if they advance.
 
 ## Next Root Move
 
-Reconcile the binary `config` condition payload encoder, then rerun
-`hyperdex-add-space` and `hyperdex-wait-until-stable`.
+Reconcile the active live-probe worker, then use its result to choose either
+the next compatibility fix or the direct `hyhac` probe.
 
 ## Surprises & Discoveries
 
@@ -349,6 +353,11 @@ Reconcile the binary `config` condition payload encoder, then rerun
   and legacy admin traffic, its tests pass, and bounded `hyperdex-add-space`
   plus `hyperdex-wait-until-stable` probes still timed out against the live
   listener afterward.
+- Observation: the binary `config` follow payload encoder is now also on
+  `main`.
+  Evidence: `0d8d566` replaces `default_legacy_config_encoder` with packed
+  `hyperdex::configuration` encoding, and the worker reported both
+  `cargo test -p server` and `cargo test --workspace` passing.
 
 ## Decision Log
 

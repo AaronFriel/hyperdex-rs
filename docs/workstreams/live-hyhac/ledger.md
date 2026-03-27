@@ -1057,6 +1057,49 @@
   - updated focused server tests
   - the next concrete live admin result
 
+### Entry `hyh-026` - Outcome
+
+- Timestamp: `2026-03-27 06:08Z`
+- Kind: `outcome`
+- End commit: `0d8d566`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+- Evidence summary:
+  - `0d8d566` replaces the JSON `config` follow payload with packed
+    `hyperdex::configuration` bytes in `default_legacy_config_encoder`
+  - focused server tests were updated for the binary payload shape
+  - `cargo test -p server` passed
+  - `cargo test --workspace` passed
+  - the worker could not complete a bounded live probe on `127.0.0.1:1982`
+    because the port was already in use
+- Conclusion: the code-side `config` payload gap is closed. The next useful
+  move is a fresh live probe on free ports against the full current stack.
+- Disposition: `advance`
+- Next move: preregister a probe-only worker against free local ports.
+
+### Entry `hyh-027` - Preregistration
+
+- Timestamp: `2026-03-27 06:08Z`
+- Kind: `preregister`
+- Hypothesis: with the request core, service core, same-port startup, and
+  binary `config` payload now all on `main`, a fresh live probe on free ports
+  will either unblock the original admin tools or expose the next concrete
+  failing surface for `hyhac`.
+- Owner: delegated worker `019d2de8-b84d-75c0-a12f-7d638e84e239`
+- Start commit: `0d8d566`
+- Worktree / branch:
+  - delegated worker branch from `main`
+- Mutable surface:
+  - none by default; probe-only unless a tiny helper becomes strictly
+    necessary
+- Validator:
+  - bounded `hyperdex-add-space` probe on free local ports
+  - bounded `hyperdex-wait-until-stable` probe on free local ports
+  - direct `hyhac` Cabal test if those probes advance
+- Expected artifacts:
+  - exact probe commands and outcomes
+  - the next concrete failing surface, if any
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`
