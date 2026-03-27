@@ -1899,7 +1899,7 @@
   requires either repo work or one precise blocker will move the corrected
   post-follow large-object failure forward on the clean `live-hyhac-post-follow`
   worktree.
-- Owner: next delegated product worker
+- Owner: delegated worker `019d316f-5ffb-7f62-885c-e7eddcc6345f` (`Confucius`)
 - Start commit: `2fb432c`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
