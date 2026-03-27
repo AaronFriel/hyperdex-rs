@@ -122,8 +122,8 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` | Hold until the product worker needs another harness change. | `advance` |
-| `live-hyhac` | active | next forked product worker on a clean compatibility worktree | `1d6093c` fixed primary-region interval encoding but the focused large-object path still fails, so the next product target is the next mismatch deeper inside the packed `hyperdex::configuration` / `hyperdex::space` body for the full `profiles` schema after region intervals. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-config-body` on `live-hyhac-config-body` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused manual cluster probes | Own the next packed `configuration` / `space` body mismatch until the focused large-object path clears or yields the next exact coordinator-side mismatch. | `advance` |
-| `coordinator-config-evidence` | active | delegated read-only worker | None; `1d6093c` already landed the primary-region interval fix, so this active read-only step now needs to name the next exact packed-config mismatch if one remains. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required for the bounded step | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` plus source-backed packing comparison | Turn the post-interval large-object failure into the next exact packed-config or schema-contract mismatch. | `advance` |
+| `live-hyhac` | active | running forked product worker on a clean compatibility worktree | `1d6093c` fixed primary-region interval encoding, and `cce-004` shows the next proven mismatch is zero-based ID allocation in the packed config body, especially `virtual_server_id=0`. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-config-body` on `live-hyhac-config-body` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused manual cluster probes | Own the ID-allocation fix inside the packed `configuration` / `space` body and keep the fast public loop green or narrower. | `advance` |
+| `coordinator-config-evidence` | active | next delegated read-only worker | None; `cce-004` already identified the ID-allocation mismatch, so this active read-only step now needs to tie that mismatch directly to the failing `"large"` key path or name the next field after IDs. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required for the bounded step | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus source-backed route comparison | Turn the post-interval, post-ID large-object failure into the narrowest remaining coordinator-side contract statement. | `advance` |
 
 ## Progress
 
@@ -298,6 +298,10 @@ split, sequencing, or validator set needs to change.
   interval table and packed-byte fixtures for the live `profiles` primary
   subspace and confirmed that the landed encoder change matches the original
   HyperDex partition contract.
+- [x] (2026-03-27 20:31Z) Finished `cce-004`, which identified the next exact
+  packed-config mismatch after region intervals: zero-based ID allocation,
+  with `virtual_server_id=0` as a likely route-preparation blocker before any
+  `REQ_ATOMIC` can be sent.
 - [ ] Rerun the bounded live `hyhac` probe after the next packed-config/body
   mismatch is fixed.
 
@@ -305,16 +309,16 @@ split, sequencing, or validator set needs to change.
 
 Drive the next live compatibility step around the remaining packed
 `hyperdex::configuration` / `hyperdex::space` mismatch after the region-interval
-fix that landed in `1d6093c`. The next product worker should own the next
-coordinator-side compatibility increment end to end on a clean worktree, while
-the parallel read-only worker turns the still-failing large-object path into
-the next exact packing or schema-contract target.
+fix that landed in `1d6093c`. The next exact target is now the ID-allocation
+contract in the packed config body, starting with `virtual_server_id`, while a
+parallel read-only worker ties that mismatch directly to the failing `"large"`
+key path or names the next field after IDs.
 
 ## Next Root Move
 
-Refresh the root package, rearm supervision cleanly, launch the next larger
-product-owned compatibility pass on a clean worktree, and reconcile whichever
-parallel result returns the next substantive packed-config finding first.
+Send the ID-allocation mismatch directly into the running product fork, relaunch
+the read-only evidence thread on the `"large"` key tie-off question, and
+reconcile the first substantive result that moves the fast public loop.
 
 ## Surprises & Discoveries
 

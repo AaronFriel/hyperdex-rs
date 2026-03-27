@@ -176,6 +176,10 @@ stronger live probe before returning control.
   intervals in legacy config`), verified the focused interval test, and
   confirmed that the fast large-object public loop still reproduces
   `Left ClientGarbage`.
+- [x] (2026-03-27 20:31Z) The next read-only comparison identified the next
+  exact packed-config mismatch after region intervals: zero-based ID
+  allocation, especially `virtual_server_id=0`, where the original
+  coordinator uses nonzero IDs from a shared counter.
 - [ ] Rerun the bounded live `hyhac` probe after the next packed-config/body
   mismatch is fixed.
 
@@ -189,18 +193,22 @@ with HyperDex partition intervals. The focused large-object failure is still
 the right public loop, but it still does not point at the daemon request
 decoder: the daemon never sees `REQ_ATOMIC` for this path, and the harness
 still shows the first captured exchange on the coordinator connection. The
-next concrete gap is therefore the next remaining mismatch deeper inside the
-packed `hyperdex::configuration` / `hyperdex::space` body after region
-interval correction.
+next concrete gap is therefore deeper inside the packed
+`hyperdex::configuration` / `hyperdex::space` body after region interval
+correction. The next proven bad field is now the ID-allocation contract:
+Rust emits zero-based `space_id`, `subspace_id`, `region_id`, and especially
+`virtual_server_id=0`, while the original coordinator allocates those IDs from
+one shared counter seeded at `1`.
 
 ## Next Bounded Step
 
 Own the next packed `hyperdex::configuration` / `hyperdex::space` body fix for
 the full `profiles` schema through the focused large-object `ClientGarbage`
-repro now that region intervals are corrected. Stay on the fast public loop
-until that path either clears or yields the next exact coordinator-side
-mismatch, and only widen back to broader pooled operations after this focused
-path moves forward.
+repro now that region intervals are corrected. The next exact target is the
+ID-allocation contract, starting with `virtual_server_id`. Stay on the fast
+public loop until that path either clears or yields the next exact
+coordinator-side mismatch, and only widen back to broader pooled operations
+after this focused path moves forward.
 
 ## Surprises & Discoveries
 

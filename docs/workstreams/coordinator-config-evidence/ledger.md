@@ -203,3 +203,59 @@
   - the next exact coordinator-side contract mismatch after region intervals
   - concise explanation of how that mismatch prevents the client from preparing
     the first atomic write
+
+### Entry `cce-004` - Outcome
+
+- Timestamp: `2026-03-27 20:31Z`
+- Kind: `outcome`
+- End commit: `1c18705`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `/home/friel/c/aaronfriel/HyperDex/coordinator/coordinator.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/common/configuration.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/common/ids.h`
+- Evidence summary:
+  - Rust still emits zero-based `space_id`, `subspace_id`, `region_id`, and
+    `virtual_server_id` values from defaulted counters in
+    `crates/server/src/lib.rs`
+  - the original coordinator seeds one shared counter at `1` and assigns
+    `space`, `subspace`, `region`, and then replica `virtual_server_id` values
+    from that same counter
+  - for a one-space, one-subspace, 64-region layout, the first replica tuple
+    should be `server_id=1, virtual_server_id=67`, while Rust currently emits
+    `server_id=1, virtual_server_id=0`
+  - the original client treats `virtual_server_id()` as the null sentinel and
+    refuses to send when routing returns that default value
+  - the focused public validator still reproduces `Left ClientGarbage`
+- Conclusion: the next exact packed-config mismatch after region intervals is
+  the ID-allocation contract, with `virtual_server_id=0` as a plausible route-
+  preparation blocker before any `REQ_ATOMIC` can be sent.
+- Disposition: `advance`
+- Next move: hand the ID-allocation mismatch to the active product worker and
+  reopen this workstream for one narrower tie-off pass on the failing
+  large-object key.
+
+### Entry `cce-005` - Preregistration
+
+- Timestamp: `2026-03-27 20:31Z`
+- Kind: `preregister`
+- Hypothesis: a final narrow read-only pass can tie the zero-based
+  ID-allocation mismatch directly to the focused failing key `"large"`, or
+  prove that the next packed-config field after ID allocation is the active
+  blocker for that key.
+- Owner: next delegated read-only worker
+- Start commit: `1c18705`
+- Worktree / branch:
+  - none required; read-only evidence gathering only
+- Mutable surface:
+  - none
+- Validator:
+  - source-backed explanation of whether the failing key `"large"` maps to a
+    route that depends on the first replica `virtual_server_id`
+  - or the next exact packed-config field after ID allocation if the key-path
+    blocker lies one field deeper
+- Expected artifacts:
+  - direct tie-off between the `"large"` key path and the ID-allocation
+    mismatch, or a tighter next mismatch beyond IDs
+  - concrete file/function pointers for the original producer and consumer

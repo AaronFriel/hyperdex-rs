@@ -70,6 +70,10 @@ first atomic write.
 - [x] (2026-03-27 20:28Z) Kept this workstream active after `1d6093c` landed,
   because the region-interval fix was necessary but not sufficient and the
   next read-only job is now to name the next exact packed-config mismatch.
+- [x] (2026-03-27 20:31Z) Finished `cce-004` and identified the next concrete
+  packed-config mismatch: zero-based ID allocation, especially
+  `virtual_server_id=0`, where the original coordinator uses nonzero IDs from
+  a shared counter.
 - [x] (2026-03-27 20:14Z) Reopened this workstream for a second read-only step
   that compares the Rust `default_legacy_config_encoder` output against the
   original HyperDex `configuration` / `space` packing rules on a live
@@ -79,20 +83,21 @@ first atomic write.
 
 The focused large-object path is still blocked by the coordinator-side packed
 `hyperdex::configuration` body that the HyperDex client consumes after
-`replicant_client_cond_follow("hyperdex", "config", ...)`. `1d6093c` has now
-corrected the first known mismatch by replacing singleton primary-subspace
-region bounds with the original `hyperdex::partition(...)` hash intervals, but
-the fast large-object path still fails. This workstream should therefore use
-the same evidence sources to name the next exact packed-config mismatch after
-the region fix rather than re-proving the interval math.
+`replicant_client_cond_follow("hyperdex", "config", ...)`. `1d6093c` corrected
+the first known mismatch by replacing singleton primary-subspace region bounds
+with the original `hyperdex::partition(...)` hash intervals, and `cce-004`
+now identifies the next one: Rust still emits zero-based `space_id`,
+`subspace_id`, `region_id`, and especially `virtual_server_id=0`, while the
+original coordinator allocates all of those IDs from a shared counter seeded
+at `1`.
 
 ## Next Bounded Step
 
 Keep this workstream read-only. The next bounded step is now narrower than
-general comparison: use the interval-corrected Rust config body, the harness
-capture, and the original HyperDex sources to identify the next exact packed
-config or schema-contract mismatch that still prevents the focused large-object
-path from reaching `REQ_ATOMIC`.
+general comparison: tie the zero-based ID-allocation mismatch to the specific
+failing large-object key path, or identify the next packed-config field after
+ID allocation if the key `"large"` still would not route correctly once IDs
+are fixed.
 
 ## Surprises & Discoveries
 
@@ -123,6 +128,13 @@ path from reaching `REQ_ATOMIC`.
   Evidence: the interval fix is integrated on `main`, the focused interval
   test passes, and the fast large-object public loop still reports
   `Left ClientGarbage`.
+- Observation: the next concrete packed-config mismatch is the ID-allocation
+  contract, especially `virtual_server_id`.
+  Evidence: Rust starts all packed IDs at `0`, while the original coordinator
+  allocates `space`, `subspace`, `region`, and `virtual_server` IDs from one
+  shared counter seeded at `1`; the original client treats
+  `virtual_server_id()` as the null sentinel and refuses to send if the chosen
+  replica returns that default value.
 
 ## Decision Log
 
@@ -144,6 +156,12 @@ path from reaching `REQ_ATOMIC`.
   interval-and-bytes fixture can materially shorten the next code pass instead
   of leaving the worker to reconstruct the original partition contract alone.
   Date/Author: 2026-03-27 / root
+- Decision: keep the workstream active for one more read-only pass after
+  `cce-004`.
+  Rationale: the ID-allocation mismatch is the next proven divergence, but the
+  focused public failure is still keyed to `"large"`, so one more tie-off pass
+  is useful while the product worker patches IDs.
+  Date/Author: 2026-03-27 / root
 
 ## Outcomes & Retrospective
 
@@ -164,3 +182,8 @@ path from reaching `REQ_ATOMIC`.
   next read-only pass should stay equally narrow, but it now needs to identify
   the next exact packed-config mismatch after the interval correction rather
   than restating the interval contract.
+- The fourth bounded step identified that next exact mismatch: zero-based ID
+  allocation in the packed config body, with `virtual_server_id=0` as the most
+  likely route-preparation blocker. The next read-only pass should not repeat
+  general comparison; it should tie that mismatch directly to the failing
+  large-object key or move one field deeper if needed.
