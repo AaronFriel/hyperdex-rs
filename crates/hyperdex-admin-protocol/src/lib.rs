@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use cluster_config::{ClusterConfig, ClusterNode};
 use data_model::{SchemaFormat, Space, SpaceName, SpaceOptions, Subspace, ValueKind};
 use serde::{Deserialize, Serialize};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 pub const BUSYBEE_HEADER_SIZE: usize = 4;
 pub const BUSYBEE_HEADER_IDENTIFY: u32 = 0x8000_0000;
@@ -137,6 +138,9 @@ pub enum ReplicantReturnCode {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ReplicantAdminRequestMessage {
+    GetRobustParams {
+        nonce: u64,
+    },
     CondWait {
         nonce: u64,
         object: Vec<u8>,
@@ -179,6 +183,26 @@ pub struct ReplicantRobustParams {
     pub nonce: u64,
     pub command_nonce: u64,
     pub min_slot: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReplicantBootstrapServer {
+    pub id: u64,
+    pub address: SocketAddr,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReplicantBootstrapConfiguration {
+    pub cluster_id: u64,
+    pub version: u64,
+    pub first_slot: u64,
+    pub servers: Vec<ReplicantBootstrapServer>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReplicantBootstrapResponse {
+    pub server: ReplicantBootstrapServer,
+    pub configuration: ReplicantBootstrapConfiguration,
 }
 
 #[async_trait]
@@ -414,6 +438,10 @@ impl ReplicantAdminRequestMessage {
         }
     }
 
+    pub fn get_robust_params(nonce: u64) -> Self {
+        Self::GetRobustParams { nonce }
+    }
+
     pub fn space_add(nonce: u64, encoded_space: Vec<u8>) -> Self {
         Self::Call {
             nonce,
@@ -438,6 +466,10 @@ impl ReplicantAdminRequestMessage {
         let mut out = Vec::new();
 
         match self {
+            Self::GetRobustParams { nonce } => {
+                out.push(ReplicantNetworkMsgtype::GetRobustParams.encode());
+                out.extend_from_slice(&nonce.to_be_bytes());
+            }
             Self::CondWait {
                 nonce,
                 object,
@@ -492,6 +524,12 @@ impl ReplicantAdminRequestMessage {
         let mut cursor = 1;
 
         match msgtype {
+            ReplicantNetworkMsgtype::GetRobustParams => {
+                let nonce = decode_u64_be(bytes, &mut cursor)?;
+                expect_consumed(bytes, cursor, "replicant get_robust_params request")?;
+
+                Ok(Self::GetRobustParams { nonce })
+            }
             ReplicantNetworkMsgtype::CondWait => {
                 let nonce = decode_u64_be(bytes, &mut cursor)?;
                 let object = decode_varint_slice_at(bytes, &mut cursor)?;
@@ -544,7 +582,8 @@ impl ReplicantAdminRequestMessage {
 
     pub fn nonce(&self) -> u64 {
         match self {
-            Self::CondWait { nonce, .. }
+            Self::GetRobustParams { nonce }
+            | Self::CondWait { nonce, .. }
             | Self::Call { nonce, .. }
             | Self::CallRobust { nonce, .. } => *nonce,
         }
@@ -552,6 +591,9 @@ impl ReplicantAdminRequestMessage {
 
     pub fn into_coordinator_request(self) -> Result<CoordinatorAdminRequest> {
         match self {
+            Self::GetRobustParams { .. } => Err(anyhow!(
+                "get_robust_params is transport machinery, not a coordinator admin request"
+            )),
             Self::CondWait {
                 object,
                 condition,
@@ -718,6 +760,92 @@ impl ReplicantRobustParams {
     }
 }
 
+impl ReplicantBootstrapServer {
+    fn encode(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&self.id.to_be_bytes());
+        encode_socket_addr(out, self.address);
+    }
+
+    fn decode(bytes: &[u8], cursor: &mut usize) -> Result<Self> {
+        Ok(Self {
+            id: decode_u64_be(bytes, cursor)?,
+            address: decode_socket_addr(bytes, cursor)?,
+        })
+    }
+}
+
+impl ReplicantBootstrapConfiguration {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        self.encode_into(&mut out);
+        out
+    }
+
+    fn encode_into(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&self.cluster_id.to_be_bytes());
+        out.extend_from_slice(&self.version.to_be_bytes());
+        out.extend_from_slice(&self.first_slot.to_be_bytes());
+        out.extend_from_slice(&encode_varint_u64(self.servers.len() as u64));
+
+        for server in &self.servers {
+            server.encode(out);
+        }
+    }
+
+    fn decode(bytes: &[u8], cursor: &mut usize) -> Result<Self> {
+        let cluster_id = decode_u64_be(bytes, cursor)?;
+        let version = decode_u64_be(bytes, cursor)?;
+        let first_slot = decode_u64_be(bytes, cursor)?;
+        let servers_len = decode_varint_u64_at(bytes, cursor)?;
+        let servers_len = usize::try_from(servers_len)
+            .map_err(|_| anyhow!("bootstrap server list length does not fit usize"))?;
+        let mut servers = Vec::with_capacity(servers_len);
+
+        for _ in 0..servers_len {
+            servers.push(ReplicantBootstrapServer::decode(bytes, cursor)?);
+        }
+
+        Ok(Self {
+            cluster_id,
+            version,
+            first_slot,
+            servers,
+        })
+    }
+}
+
+impl ReplicantBootstrapResponse {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.push(ReplicantNetworkMsgtype::Bootstrap.encode());
+        self.server.encode(&mut out);
+        self.configuration.encode_into(&mut out);
+        out
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self> {
+        if bytes.is_empty() {
+            bail!("replicant bootstrap response is empty");
+        }
+
+        let msgtype = ReplicantNetworkMsgtype::decode(bytes[0])?;
+
+        if msgtype != ReplicantNetworkMsgtype::Bootstrap {
+            bail!("replicant bootstrap response must start with BOOTSTRAP");
+        }
+
+        let mut cursor = 1;
+        let server = ReplicantBootstrapServer::decode(bytes, &mut cursor)?;
+        let configuration = ReplicantBootstrapConfiguration::decode(bytes, &mut cursor)?;
+        expect_consumed(bytes, cursor, "replicant bootstrap response")?;
+
+        Ok(Self {
+            server,
+            configuration,
+        })
+    }
+}
+
 pub fn encode_varint_u64(mut value: u64) -> Vec<u8> {
     let mut out = Vec::new();
 
@@ -790,6 +918,69 @@ fn decode_u64_be(bytes: &[u8], cursor: &mut usize) -> Result<u64> {
     let value = u64::from_be_bytes(bytes[*cursor..end].try_into().unwrap());
     *cursor = end;
     Ok(value)
+}
+
+fn decode_varint_u64_at(bytes: &[u8], cursor: &mut usize) -> Result<u64> {
+    let (value, consumed) = decode_varint_u64(&bytes[*cursor..])?;
+    *cursor = cursor
+        .checked_add(consumed)
+        .ok_or_else(|| anyhow!("varint cursor overflow"))?;
+    Ok(value)
+}
+
+fn encode_socket_addr(out: &mut Vec<u8>, address: SocketAddr) {
+    match address {
+        SocketAddr::V4(address) => {
+            out.push(4);
+            out.extend_from_slice(&address.ip().octets());
+            out.extend_from_slice(&address.port().to_be_bytes());
+        }
+        SocketAddr::V6(address) => {
+            out.push(6);
+            out.extend_from_slice(&address.ip().octets());
+            out.extend_from_slice(&address.port().to_be_bytes());
+        }
+    }
+}
+
+fn decode_socket_addr(bytes: &[u8], cursor: &mut usize) -> Result<SocketAddr> {
+    if bytes.len() <= *cursor {
+        bail!("buffer too short for a socket address family");
+    }
+
+    let family = bytes[*cursor];
+    *cursor += 1;
+
+    match family {
+        4 => {
+            let end = cursor
+                .checked_add(4)
+                .ok_or_else(|| anyhow!("ipv4 cursor overflow"))?;
+            if bytes.len() < end + 2 {
+                bail!("buffer too short for an ipv4 socket address");
+            }
+            let address = Ipv4Addr::from(<[u8; 4]>::try_from(&bytes[*cursor..end]).unwrap());
+            *cursor = end;
+            let port = u16::from_be_bytes(bytes[*cursor..*cursor + 2].try_into().unwrap());
+            *cursor += 2;
+            Ok(SocketAddr::new(IpAddr::V4(address), port))
+        }
+        6 => {
+            let end = cursor
+                .checked_add(16)
+                .ok_or_else(|| anyhow!("ipv6 cursor overflow"))?;
+            if bytes.len() < end + 2 {
+                bail!("buffer too short for an ipv6 socket address");
+            }
+            let address = Ipv6Addr::from(<[u8; 16]>::try_from(&bytes[*cursor..end]).unwrap());
+            *cursor = end;
+            let port = u16::from_be_bytes(bytes[*cursor..*cursor + 2].try_into().unwrap());
+            *cursor += 2;
+            Ok(SocketAddr::new(IpAddr::V6(address), port))
+        }
+        0 => bail!("unspecified bootstrap socket addresses are not supported"),
+        other => bail!("unknown bootstrap socket address family {other}"),
+    }
 }
 
 pub fn decode_packed_hyperdex_space(bytes: &[u8]) -> Result<Space> {
@@ -985,7 +1176,7 @@ impl<'a> PackedSpaceDecoder<'a> {
     }
 
     fn read_slice(&mut self, label: &str) -> Result<&'a [u8]> {
-        let len = self.read_u32(label)? as usize;
+        let len = self.read_varint(label)?;
         self.read_exact(len, label)
     }
 
@@ -994,6 +1185,12 @@ impl<'a> PackedSpaceDecoder<'a> {
         let text = std::str::from_utf8(slice)
             .map_err(|_| anyhow!("{label} is not valid UTF-8 in packed hyperdex::space"))?;
         Ok(text.to_owned())
+    }
+
+    fn read_varint(&mut self, label: &str) -> Result<usize> {
+        let len = decode_varint_u64_at(self.bytes, &mut self.cursor)
+            .map_err(|err| anyhow!("{label} length varint is invalid in packed hyperdex::space: {err}"))?;
+        usize::try_from(len).map_err(|_| anyhow!("{label} length does not fit usize in packed hyperdex::space"))
     }
 
     fn read_exact(&mut self, len: usize, label: &str) -> Result<&'a [u8]> {
@@ -1210,6 +1407,15 @@ mod tests {
     #[test]
     fn wait_until_stable_message_round_trip() {
         let message = ReplicantAdminRequestMessage::wait_until_stable(7, 11);
+        let encoded = message.encode().unwrap();
+        let decoded = ReplicantAdminRequestMessage::decode(&encoded).unwrap();
+
+        assert_eq!(decoded, message);
+    }
+
+    #[test]
+    fn get_robust_params_message_round_trip() {
+        let message = ReplicantAdminRequestMessage::get_robust_params(13);
         let encoded = message.encode().unwrap();
         let decoded = ReplicantAdminRequestMessage::decode(&encoded).unwrap();
 
@@ -1483,6 +1689,28 @@ mod tests {
     }
 
     #[test]
+    fn bootstrap_response_round_trips() {
+        let response = ReplicantBootstrapResponse {
+            server: ReplicantBootstrapServer {
+                id: 1,
+                address: "127.0.0.1:1982".parse().unwrap(),
+            },
+            configuration: ReplicantBootstrapConfiguration {
+                cluster_id: 1,
+                version: 1,
+                first_slot: 1,
+                servers: vec![ReplicantBootstrapServer {
+                    id: 1,
+                    address: "127.0.0.1:1982".parse().unwrap(),
+                }],
+            },
+        };
+        let encoded = response.encode();
+
+        assert_eq!(ReplicantBootstrapResponse::decode(&encoded).unwrap(), response);
+    }
+
+    #[test]
     fn coordinator_return_codes_round_trip_through_wire_bytes() {
         let codes = [
             CoordinatorReturnCode::Success,
@@ -1657,14 +1885,14 @@ mod tests {
     fn pack_space(space: PackedSpace<'_>) -> Vec<u8> {
         let mut out = Vec::new();
         encode_u64(&mut out, space.id);
-        encode_slice32(&mut out, space.name.as_bytes());
+        encode_slice(&mut out, space.name.as_bytes());
         encode_u64(&mut out, space.fault_tolerance);
         encode_u16(&mut out, space.attributes.len() as u16);
         encode_u16(&mut out, space.subspaces.len() as u16);
         encode_u16(&mut out, space.indices.len() as u16);
 
         for attribute in space.attributes {
-            encode_slice32(&mut out, attribute.name.as_bytes());
+            encode_slice(&mut out, attribute.name.as_bytes());
             encode_u16(&mut out, attribute.datatype);
         }
 
@@ -1698,15 +1926,14 @@ mod tests {
             encode_u8(&mut out, index.index_type);
             encode_u64(&mut out, index.id);
             encode_u16(&mut out, index.attr);
-            encode_slice32(&mut out, index.extra);
+            encode_slice(&mut out, index.extra);
         }
 
         out
     }
 
-    fn encode_slice32(out: &mut Vec<u8>, bytes: &[u8]) {
-        encode_u32(out, bytes.len() as u32);
-        out.extend_from_slice(bytes);
+    fn encode_slice(out: &mut Vec<u8>, bytes: &[u8]) {
+        out.extend_from_slice(&encode_varint_slice(bytes));
     }
 
     fn encode_u64(out: &mut Vec<u8>, value: u64) {

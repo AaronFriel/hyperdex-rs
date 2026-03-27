@@ -17,10 +17,12 @@ use data_plane::DataPlane;
 use engine_memory::MemoryEngine;
 use engine_rocks::RocksEngine;
 use hyperdex_admin_protocol::{
-    AdminRequest, AdminResponse, BusyBeeFrame, ConfigView, CoordinatorAdminRequest,
-    CoordinatorReturnCode, HyperdexAdminService, LegacyAdminRequest, LegacyAdminReturnCode,
-    ReplicantAdminRequestMessage, ReplicantCallCompletion, ReplicantConditionCompletion,
-    ReplicantNetworkMsgtype, ReplicantReturnCode,
+    decode_packed_hyperdex_space, AdminRequest, AdminResponse, BusyBeeFrame, ConfigView,
+    CoordinatorAdminRequest, CoordinatorReturnCode, HyperdexAdminService, LegacyAdminRequest,
+    LegacyAdminReturnCode, ReplicantAdminRequestMessage, ReplicantBootstrapConfiguration,
+    ReplicantBootstrapResponse, ReplicantBootstrapServer, ReplicantCallCompletion,
+    ReplicantConditionCompletion, ReplicantNetworkMsgtype, ReplicantReturnCode,
+    ReplicantRobustParams,
 };
 use hyperdex_client_protocol::{ClientRequest, ClientResponse, HyperdexClientService};
 use legacy_protocol::{
@@ -115,15 +117,9 @@ pub struct CoordinatorControlResponse {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct PendingConfigFollow {
-    nonce: u64,
-    last_sent_version: Option<u64>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 struct CoordinatorAdminSession {
-    next_server_nonce: u64,
-    config_follow: Option<PendingConfigFollow>,
+    next_robust_nonce: u64,
+    pending_config_waits: BTreeMap<u64, u64>,
     pending_waits: BTreeMap<u64, u64>,
     pending_completions: VecDeque<BusyBeeFrame>,
 }
@@ -802,16 +798,24 @@ impl ClusterRuntime {
 impl CoordinatorAdminSession {
     fn new() -> Self {
         Self {
-            next_server_nonce: 1,
-            config_follow: None,
+            next_robust_nonce: 1,
+            pending_config_waits: BTreeMap::new(),
             pending_waits: BTreeMap::new(),
             pending_completions: VecDeque::new(),
         }
     }
 
-    fn allocate_server_nonce(&mut self) -> u64 {
-        let nonce = self.next_server_nonce;
-        self.next_server_nonce += 1;
+    fn queue_identify_response(&mut self, remote_id: u64) {
+        let mut payload = Vec::with_capacity(16);
+        encode_u64_be(&mut payload, LEGACY_COORDINATOR_SERVER_ID);
+        encode_u64_be(&mut payload, remote_id);
+        self.pending_completions
+            .push_back(BusyBeeFrame::identify(payload));
+    }
+
+    fn allocate_robust_command_nonce(&mut self) -> u64 {
+        let nonce = self.next_robust_nonce;
+        self.next_robust_nonce = self.next_robust_nonce.saturating_add(1);
         nonce
     }
 
@@ -832,6 +836,17 @@ impl CoordinatorAdminSession {
         Ok(())
     }
 
+    fn queue_robust_params(&mut self, nonce: u64, command_nonce: u64) {
+        self.pending_completions.push_back(BusyBeeFrame::new(
+            ReplicantRobustParams {
+                nonce,
+                command_nonce,
+                min_slot: 0,
+            }
+            .encode(),
+        ));
+    }
+
     fn queue_condition_completion(
         &mut self,
         nonce: u64,
@@ -850,34 +865,63 @@ impl CoordinatorAdminSession {
         ));
     }
 
-    fn queue_follow_update(
+    fn queue_bootstrap_response(&mut self, bootstrap_address: SocketAddr) {
+        self.pending_completions.push_back(BusyBeeFrame::new(
+            ReplicantBootstrapResponse {
+                server: ReplicantBootstrapServer {
+                    id: LEGACY_COORDINATOR_SERVER_ID,
+                    address: bootstrap_address,
+                },
+                configuration: legacy_bootstrap_configuration(bootstrap_address),
+            }
+            .encode(),
+        ));
+    }
+
+    fn queue_config_update(
+        &mut self,
+        runtime: &ClusterRuntime,
+        config_encoder: &(dyn Fn(&ConfigView) -> Result<Vec<u8>> + Send + Sync),
+        nonce: u64,
+    ) -> Result<()> {
+        let view = runtime.config_view()?;
+        let encoded = config_encoder(&view)?;
+        self.queue_condition_completion(
+            nonce,
+            ReplicantReturnCode::Success,
+            legacy_condition_state(view.version),
+            encoded,
+        );
+        Ok(())
+    }
+
+    fn queue_ready_config_waits(
         &mut self,
         runtime: &ClusterRuntime,
         config_encoder: &(dyn Fn(&ConfigView) -> Result<Vec<u8>> + Send + Sync),
     ) -> Result<()> {
-        let Some(follow) = self.config_follow.as_mut() else {
-            return Ok(());
-        };
-        let view = runtime.config_view()?;
+        let config_state = legacy_condition_state(runtime.config_view()?.version);
+        let ready = self
+            .pending_config_waits
+            .iter()
+            .filter_map(|(&nonce, &target_state)| (target_state <= config_state).then_some(nonce))
+            .collect::<Vec<_>>();
 
-        if follow.last_sent_version == Some(view.version) {
-            return Ok(());
+        for nonce in ready {
+            self.pending_config_waits.remove(&nonce);
+            self.queue_config_update(runtime, config_encoder, nonce)?;
         }
 
-        let encoded = config_encoder(&view)?;
-        let nonce = follow.nonce;
-        follow.last_sent_version = Some(view.version);
-        self.queue_condition_completion(nonce, ReplicantReturnCode::Success, view.version, encoded);
         Ok(())
     }
 
     fn queue_ready_waits(&mut self, runtime: &ClusterRuntime) {
-        let stable_version = runtime.stable_version();
+        let stable_version = legacy_condition_state(runtime.stable_version());
         let ready = self
             .pending_waits
             .iter()
             .filter_map(|(&nonce, &target_state)| {
-                (stable_version > target_state).then_some((nonce, target_state))
+                (target_state <= stable_version).then_some((nonce, target_state))
             })
             .collect::<Vec<_>>();
 
@@ -936,9 +980,7 @@ impl CoordinatorAdminLegacyService {
 }
 
 fn default_legacy_space_add_decoder(bytes: &[u8]) -> Result<Space> {
-    let schema = std::str::from_utf8(bytes)
-        .map_err(|_| anyhow!("legacy packed hyperdex::space decoder is not installed"))?;
-    Ok(parse_hyperdex_space(schema)?)
+    decode_packed_hyperdex_space(bytes)
 }
 
 fn default_legacy_config_encoder(view: &ConfigView) -> Result<Vec<u8>> {
@@ -951,7 +993,7 @@ fn default_legacy_config_encoder(view: &ConfigView) -> Result<Vec<u8>> {
     spaces.sort_by(|lhs, rhs| lhs.name.cmp(&rhs.name));
 
     encode_u64_be(&mut out, 0);
-    encode_u64_be(&mut out, view.version);
+    encode_u64_be(&mut out, legacy_condition_state(view.version));
     encode_u64_be(&mut out, 0);
     encode_u64_be(&mut out, nodes.len() as u64);
     encode_u64_be(&mut out, spaces.len() as u64);
@@ -968,6 +1010,37 @@ fn default_legacy_config_encoder(view: &ConfigView) -> Result<Vec<u8>> {
     }
 
     Ok(out)
+}
+
+const LEGACY_COORDINATOR_CLUSTER_ID: u64 = 1;
+const LEGACY_COORDINATOR_FIRST_SLOT: u64 = 1;
+const LEGACY_COORDINATOR_SERVER_ID: u64 = 1;
+const LEGACY_REPLICANT_TICK_STATE: u64 = 1;
+
+fn legacy_condition_state(version: u64) -> u64 {
+    version.saturating_add(1)
+}
+
+fn legacy_bootstrap_configuration(
+    bootstrap_address: SocketAddr,
+) -> ReplicantBootstrapConfiguration {
+    let bootstrap_address = effective_legacy_bootstrap_address(bootstrap_address);
+    ReplicantBootstrapConfiguration {
+        cluster_id: LEGACY_COORDINATOR_CLUSTER_ID,
+        version: legacy_condition_state(0),
+        first_slot: LEGACY_COORDINATOR_FIRST_SLOT,
+        servers: vec![ReplicantBootstrapServer {
+            id: LEGACY_COORDINATOR_SERVER_ID,
+            address: bootstrap_address,
+        }],
+    }
+}
+
+fn effective_legacy_bootstrap_address(default_address: SocketAddr) -> SocketAddr {
+    std::env::var("HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(default_address)
 }
 
 const LEGACY_SERVER_STATE_AVAILABLE: u8 = 3;
@@ -1250,11 +1323,13 @@ async fn serve_coordinator_admin_connection(
     config_encoder: LegacyConfigEncoder,
 ) -> Result<()> {
     let mut session = CoordinatorAdminSession::new();
+    let bootstrap_address = stream.local_addr()?;
 
     while let Some(frame) = read_busybee_frame_from_stream(stream).await? {
         handle_coordinator_admin_frame(
             &mut session,
             runtime,
+            bootstrap_address,
             frame,
             space_add_decoder.as_ref(),
             config_encoder.as_ref(),
@@ -1367,40 +1442,73 @@ pub async fn serve_coordinator_public_connection(
 async fn handle_coordinator_admin_frame(
     session: &mut CoordinatorAdminSession,
     runtime: &ClusterRuntime,
+    bootstrap_address: SocketAddr,
     frame: BusyBeeFrame,
     space_add_decoder: &(dyn Fn(&[u8]) -> Result<Space> + Send + Sync),
     config_encoder: &(dyn Fn(&ConfigView) -> Result<Vec<u8>> + Send + Sync),
 ) -> Result<()> {
     if frame.flags & hyperdex_admin_protocol::BUSYBEE_HEADER_IDENTIFY != 0 {
+        if frame.payload.len() != 2 * std::mem::size_of::<u64>() {
+            anyhow::bail!(
+                "legacy admin identify frame must contain exactly two u64 values"
+            );
+        }
+        let remote_id = u64::from_be_bytes(frame.payload[..8].try_into().unwrap());
+        session.queue_identify_response(remote_id);
         return Ok(());
     }
 
     if frame.payload.len() == 1
         && ReplicantNetworkMsgtype::decode(frame.payload[0])? == ReplicantNetworkMsgtype::Bootstrap
     {
-        if session.config_follow.is_none() {
-            session.config_follow = Some(PendingConfigFollow {
-                nonce: session.allocate_server_nonce(),
-                last_sent_version: None,
-            });
-        }
-        session.queue_follow_update(runtime, config_encoder)?;
+        session.queue_bootstrap_response(bootstrap_address);
         return Ok(());
     }
 
     match ReplicantAdminRequestMessage::decode(&frame.payload)? {
+        ReplicantAdminRequestMessage::GetRobustParams { nonce } => {
+            let command_nonce = session.allocate_robust_command_nonce();
+            session.queue_robust_params(nonce, command_nonce);
+        }
         ReplicantAdminRequestMessage::CondWait {
             nonce,
             object,
             condition,
             state,
         } => {
-            if object == b"hyperdex" && condition == b"stable" {
-                if runtime.stable_version() > state {
+            if object == b"replicant" && condition == b"configuration" {
+                let configuration = legacy_bootstrap_configuration(bootstrap_address);
+                if state <= configuration.version {
                     session.queue_condition_completion(
                         nonce,
                         ReplicantReturnCode::Success,
-                        runtime.stable_version(),
+                        configuration.version,
+                        configuration.encode(),
+                    );
+                }
+            } else if object == b"replicant" && condition == b"tick" {
+                if state <= LEGACY_REPLICANT_TICK_STATE {
+                    session.queue_condition_completion(
+                        nonce,
+                        ReplicantReturnCode::Success,
+                        LEGACY_REPLICANT_TICK_STATE,
+                        Vec::new(),
+                    );
+                }
+            } else if object == b"hyperdex" && condition == b"config" {
+                let config_state = legacy_condition_state(runtime.config_view()?.version);
+                if state <= config_state {
+                    session.queue_config_update(runtime, config_encoder, nonce)?;
+                } else {
+                    session.pending_config_waits.insert(nonce, state);
+                }
+            } else if object == b"hyperdex" && condition == b"stable" {
+                let stable_version = legacy_condition_state(runtime.stable_version());
+                if state <= stable_version {
+                    session.queue_condition_completion(
+                        nonce,
+                        ReplicantReturnCode::Success,
+                        stable_version,
                         Vec::new(),
                     );
                 } else {
@@ -1463,12 +1571,58 @@ async fn handle_coordinator_admin_frame(
                 )?;
             }
         }
-        ReplicantAdminRequestMessage::CallRobust { nonce, .. } => {
-            session.queue_call_completion(nonce, ReplicantReturnCode::FuncNotFound, Vec::new())?;
+        ReplicantAdminRequestMessage::CallRobust {
+            nonce,
+            object,
+            function,
+            input,
+            ..
+        } => {
+            if object != b"hyperdex" {
+                session.queue_call_completion(
+                    nonce,
+                    ReplicantReturnCode::ObjNotFound,
+                    Vec::new(),
+                )?;
+            } else if function == b"space_add" {
+                let code = match space_add_decoder(&input) {
+                    Ok(space) => {
+                        handle_coordinator_admin_request(
+                            runtime,
+                            CoordinatorAdminRequest::SpaceAdd(space),
+                        )
+                        .await?
+                    }
+                    Err(_) => CoordinatorReturnCode::Malformed,
+                };
+                session.queue_call_completion(
+                    nonce,
+                    ReplicantReturnCode::Success,
+                    code.encode().to_vec(),
+                )?;
+            } else if function == b"space_rm" {
+                let name = extract_c_string(&input)?;
+                let code = handle_coordinator_admin_request(
+                    runtime,
+                    CoordinatorAdminRequest::SpaceRm(name),
+                )
+                .await?;
+                session.queue_call_completion(
+                    nonce,
+                    ReplicantReturnCode::Success,
+                    code.encode().to_vec(),
+                )?;
+            } else {
+                session.queue_call_completion(
+                    nonce,
+                    ReplicantReturnCode::FuncNotFound,
+                    Vec::new(),
+                )?;
+            }
         }
     }
 
-    session.queue_follow_update(runtime, config_encoder)?;
+    session.queue_ready_config_waits(runtime, config_encoder)?;
     session.queue_ready_waits(runtime);
     Ok(())
 }
@@ -2272,7 +2426,7 @@ pub async fn handle_replicant_admin_request(
         CoordinatorAdminRequest::WaitUntilStable => Ok(ReplicantConditionCompletion {
             nonce,
             status: ReplicantReturnCode::Success,
-            state: runtime.stable_version(),
+            state: legacy_condition_state(runtime.stable_version()),
             data: Vec::new(),
         }
         .encode()),
@@ -2281,7 +2435,7 @@ pub async fn handle_replicant_admin_request(
             Ok(ReplicantConditionCompletion {
                 nonce,
                 status: ReplicantReturnCode::Success,
-                state: view.version,
+                state: legacy_condition_state(view.version),
                 data: default_legacy_config_encoder(&view)?,
             }
             .encode())
@@ -3267,7 +3421,7 @@ mod tests {
 
         assert_eq!(completion.nonce, 7);
         assert_eq!(completion.status, ReplicantReturnCode::Success);
-        assert_eq!(completion.state, runtime.stable_version());
+        assert_eq!(completion.state, legacy_condition_state(runtime.stable_version()));
         assert!(completion.data.is_empty());
     }
 
@@ -3290,8 +3444,8 @@ mod tests {
 
         assert_eq!(completion.nonce, 9);
         assert_eq!(completion.status, ReplicantReturnCode::Success);
-        assert_eq!(completion.state, 0);
-        assert_eq!(config.version, 0);
+        assert_eq!(completion.state, 1);
+        assert_eq!(config.version, 1);
         assert_eq!(config.server_ids, vec![1]);
         assert!(config.space_names.is_empty());
     }
@@ -3400,17 +3554,17 @@ mod tests {
     fn encode_test_space_payload() -> Vec<u8> {
         let mut out = Vec::new();
         encode_u64(&mut out, 0);
-        encode_slice32(&mut out, b"profiles");
+        encode_slice(&mut out, b"profiles");
         encode_u64(&mut out, 2);
         encode_u16(&mut out, 3);
         encode_u16(&mut out, 2);
         encode_u16(&mut out, 1);
 
-        encode_slice32(&mut out, b"username");
+        encode_slice(&mut out, b"username");
         encode_u16(&mut out, 9217);
-        encode_slice32(&mut out, b"first");
+        encode_slice(&mut out, b"first");
         encode_u16(&mut out, 9217);
-        encode_slice32(&mut out, b"profile_views");
+        encode_slice(&mut out, b"profile_views");
         encode_u16(&mut out, 9218);
 
         encode_subspace(&mut out, 0, &[0], 4);
@@ -3419,7 +3573,7 @@ mod tests {
         encode_u8(&mut out, 0);
         encode_u64(&mut out, 0);
         encode_u16(&mut out, 2);
-        encode_slice32(&mut out, b"");
+        encode_slice(&mut out, b"");
 
         out
     }
@@ -3440,9 +3594,26 @@ mod tests {
         }
     }
 
-    fn encode_slice32(out: &mut Vec<u8>, bytes: &[u8]) {
-        encode_u32(out, bytes.len() as u32);
+    fn encode_slice(out: &mut Vec<u8>, bytes: &[u8]) {
+        encode_varint(out, bytes.len() as u64);
         out.extend_from_slice(bytes);
+    }
+
+    fn encode_varint(out: &mut Vec<u8>, mut value: u64) {
+        loop {
+            let mut byte = (value & 0x7f) as u8;
+            value >>= 7;
+
+            if value != 0 {
+                byte |= 0x80;
+            }
+
+            out.push(byte);
+
+            if value == 0 {
+                break;
+            }
+        }
     }
 
     fn encode_u64(out: &mut Vec<u8>, value: u64) {
@@ -3756,15 +3927,28 @@ mod tests {
 
         let mut legacy_stream = tokio::net::TcpStream::connect(address).await.unwrap();
         legacy_stream
-            .write_all(&ReplicantAdminRequestMessage::config_follow())
+            .write_all(&BusyBeeFrame::identify(vec![0_u8; 16]).encode().unwrap())
+            .await
+            .unwrap();
+        legacy_stream.flush().await.unwrap();
+        let identify = read_admin_response_frame(&mut legacy_stream).await;
+        assert_eq!(
+            identify.flags & hyperdex_admin_protocol::BUSYBEE_HEADER_IDENTIFY,
+            hyperdex_admin_protocol::BUSYBEE_HEADER_IDENTIFY
+        );
+        let bootstrap_request = BusyBeeFrame::new(vec![ReplicantNetworkMsgtype::Bootstrap.encode()])
+            .encode()
+            .unwrap();
+        legacy_stream
+            .write_all(&bootstrap_request)
             .await
             .unwrap();
         legacy_stream.flush().await.unwrap();
 
         let initial = read_admin_response_frame(&mut legacy_stream).await;
-        let initial_follow = ReplicantConditionCompletion::decode(&initial.payload).unwrap();
-        assert_eq!(initial_follow.status, ReplicantReturnCode::Success);
-        assert_eq!(initial_follow.state, 0);
+        let bootstrap = ReplicantBootstrapResponse::decode(&initial.payload).unwrap();
+        assert_eq!(bootstrap.server.id, 1);
+        assert_eq!(bootstrap.configuration.version, 1);
 
         let response = request_coordinator_control_once(
             address,
@@ -3794,7 +3978,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn coordinator_admin_legacy_service_bootstrap_sends_initial_config_follow_update() {
+    async fn coordinator_admin_legacy_service_bootstrap_sends_bootstrap_reply() {
         let runtime = Arc::new(bootstrap_runtime());
         let service = CoordinatorAdminLegacyService::bind_with_codecs(
             "127.0.0.1:0".parse().unwrap(),
@@ -3810,21 +3994,39 @@ mod tests {
 
         let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
         stream
-            .write_all(&ReplicantAdminRequestMessage::config_follow())
+            .write_all(&BusyBeeFrame::identify(vec![0_u8; 16]).encode().unwrap())
+            .await
+            .unwrap();
+        stream.flush().await.unwrap();
+        let identify = read_admin_response_frame(&mut stream).await;
+        assert_eq!(
+            identify.flags & hyperdex_admin_protocol::BUSYBEE_HEADER_IDENTIFY,
+            hyperdex_admin_protocol::BUSYBEE_HEADER_IDENTIFY
+        );
+        let mut identify_cursor = 0;
+        assert_eq!(decode_u64(&identify.payload, &mut identify_cursor), 1);
+        assert_eq!(decode_u64(&identify.payload, &mut identify_cursor), 0);
+        assert_eq!(identify_cursor, identify.payload.len());
+        let bootstrap_request = BusyBeeFrame::new(vec![ReplicantNetworkMsgtype::Bootstrap.encode()])
+            .encode()
+            .unwrap();
+        stream
+            .write_all(&bootstrap_request)
             .await
             .unwrap();
         stream.flush().await.unwrap();
 
         let frame = read_admin_response_frame(&mut stream).await;
-        let completion = ReplicantConditionCompletion::decode(&frame.payload).unwrap();
-        let config = decode_legacy_config(&completion.data);
-
-        assert_eq!(completion.nonce, 1);
-        assert_eq!(completion.status, ReplicantReturnCode::Success);
-        assert_eq!(completion.state, 0);
-        assert_eq!(config.version, 0);
-        assert_eq!(config.server_ids, vec![1]);
-        assert!(config.space_names.is_empty());
+        let bootstrap = ReplicantBootstrapResponse::decode(&frame.payload).unwrap();
+        assert_eq!(bootstrap.server.id, 1);
+        assert_eq!(bootstrap.server.address, address);
+        assert_eq!(bootstrap.configuration.cluster_id, 1);
+        assert_eq!(bootstrap.configuration.version, 1);
+        assert_eq!(bootstrap.configuration.first_slot, 1);
+        assert_eq!(bootstrap.configuration.servers, vec![ReplicantBootstrapServer {
+            id: 1,
+            address,
+        }]);
 
         drop(stream);
         server.await.unwrap();
@@ -3847,32 +4049,96 @@ mod tests {
 
         let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
         stream
-            .write_all(&ReplicantAdminRequestMessage::config_follow())
+            .write_all(&BusyBeeFrame::identify(vec![0_u8; 16]).encode().unwrap())
             .await
             .unwrap();
         stream.flush().await.unwrap();
+        let identify = read_admin_response_frame(&mut stream).await;
+        assert_eq!(
+            identify.flags & hyperdex_admin_protocol::BUSYBEE_HEADER_IDENTIFY,
+            hyperdex_admin_protocol::BUSYBEE_HEADER_IDENTIFY
+        );
+        let bootstrap_request = BusyBeeFrame::new(vec![ReplicantNetworkMsgtype::Bootstrap.encode()])
+            .encode()
+            .unwrap();
+        stream
+            .write_all(&bootstrap_request)
+            .await
+            .unwrap();
+        stream.flush().await.unwrap();
+        let bootstrap = read_admin_response_frame(&mut stream).await;
+        let bootstrap = ReplicantBootstrapResponse::decode(&bootstrap.payload).unwrap();
+        assert_eq!(bootstrap.configuration.version, 1);
+
+        let follow_request = BusyBeeFrame::new(
+            ReplicantAdminRequestMessage::CondWait {
+                nonce: 7,
+                object: b"hyperdex".to_vec(),
+                condition: b"config".to_vec(),
+                state: 1,
+            }
+            .encode()
+            .unwrap(),
+        )
+        .encode()
+        .unwrap();
+        stream.write_all(&follow_request).await.unwrap();
+        stream.flush().await.unwrap();
+
         let initial = read_admin_response_frame(&mut stream).await;
         let initial_follow = ReplicantConditionCompletion::decode(&initial.payload).unwrap();
-        assert_eq!(initial_follow.nonce, 1);
-        assert_eq!(initial_follow.state, 0);
+        assert_eq!(initial_follow.nonce, 7);
+        assert_eq!(initial_follow.state, 1);
+
+        let robust_params_request = BusyBeeFrame::new(
+            ReplicantAdminRequestMessage::get_robust_params(10)
+                .encode()
+                .unwrap(),
+        )
+        .encode()
+        .unwrap();
+        stream.write_all(&robust_params_request).await.unwrap();
+        stream.flush().await.unwrap();
+
+        let robust_params_frame = read_admin_response_frame(&mut stream).await;
+        let robust_params = ReplicantRobustParams::decode(&robust_params_frame.payload).unwrap();
+        assert_eq!(robust_params.nonce, 10);
+        assert!(robust_params.command_nonce > 0);
 
         let request = BusyBeeFrame::new(
-            ReplicantAdminRequestMessage::space_add(
-                11,
-                b"space profiles\n\
-                  key username\n\
-                  attributes\n\
-                     string first,\n\
-                     int profile_views\n\
-                  tolerate 0 failures\n"
+            ReplicantAdminRequestMessage::CallRobust {
+                nonce: 11,
+                command_nonce: robust_params.command_nonce,
+                min_slot: robust_params.min_slot,
+                object: b"hyperdex".to_vec(),
+                function: b"space_add".to_vec(),
+                input: b"space profiles\n\
+                        key username\n\
+                        attributes\n\
+                           string first,\n\
+                           int profile_views\n\
+                        tolerate 0 failures\n"
                     .to_vec(),
-            )
+            }
             .encode()
             .unwrap(),
         )
         .encode()
         .unwrap();
         stream.write_all(&request).await.unwrap();
+        let pending_follow = BusyBeeFrame::new(
+            ReplicantAdminRequestMessage::CondWait {
+                nonce: 8,
+                object: b"hyperdex".to_vec(),
+                condition: b"config".to_vec(),
+                state: 2,
+            }
+            .encode()
+            .unwrap(),
+        )
+        .encode()
+        .unwrap();
+        stream.write_all(&pending_follow).await.unwrap();
         stream.flush().await.unwrap();
 
         let call_frame = read_admin_response_frame(&mut stream).await;
@@ -3888,9 +4154,9 @@ mod tests {
         let follow_completion =
             ReplicantConditionCompletion::decode(&follow_frame.payload).unwrap();
         let config = decode_legacy_config(&follow_completion.data);
-        assert_eq!(follow_completion.nonce, 1);
-        assert_eq!(follow_completion.state, 1);
-        assert_eq!(config.version, 1);
+        assert_eq!(follow_completion.nonce, 8);
+        assert_eq!(follow_completion.state, 2);
+        assert_eq!(config.version, 2);
         assert_eq!(config.server_ids, vec![1]);
         assert_eq!(config.space_names, vec!["profiles".to_owned()]);
 
@@ -3915,7 +4181,7 @@ mod tests {
 
         let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
         let wait_request = BusyBeeFrame::new(
-            ReplicantAdminRequestMessage::wait_until_stable(19, 0)
+            ReplicantAdminRequestMessage::wait_until_stable(19, 2)
                 .encode()
                 .unwrap(),
         )
@@ -3962,7 +4228,7 @@ mod tests {
         let wait_completion = ReplicantConditionCompletion::decode(&wait_frame.payload).unwrap();
         assert_eq!(wait_completion.nonce, 19);
         assert_eq!(wait_completion.status, ReplicantReturnCode::Success);
-        assert_eq!(wait_completion.state, 1);
+        assert_eq!(wait_completion.state, 2);
         assert!(wait_completion.data.is_empty());
 
         drop(stream);

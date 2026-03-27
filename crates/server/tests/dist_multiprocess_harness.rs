@@ -3,6 +3,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -10,8 +11,8 @@ use anyhow::{anyhow, Context, Result};
 use cluster_config::{ClusterConfig, ClusterNode, TransportBackend};
 use data_model::parse_hyperdex_space;
 use hyperdex_admin_protocol::{
-    BusyBeeFrame, ConfigView, CoordinatorAdminRequest, CoordinatorReturnCode,
-    ReplicantNetworkMsgtype,
+    decode_packed_hyperdex_space, BusyBeeFrame, ConfigView, CoordinatorAdminRequest, CoordinatorReturnCode,
+    ReplicantAdminRequestMessage, ReplicantCallCompletion, ReplicantNetworkMsgtype,
 };
 use legacy_frontend::request_once;
 use legacy_protocol::{
@@ -422,30 +423,47 @@ async fn run_busybee_proxy_capture(
     listener: tokio::net::TcpListener,
     upstream_addr: SocketAddr,
     capture: Arc<Mutex<BusyBeeCapture>>,
+    stop: Arc<AtomicBool>,
 ) -> Result<()> {
-    let (client_stream, _) = listener.accept().await?;
-    let upstream_stream = tokio::net::TcpStream::connect(upstream_addr).await?;
+    loop {
+        let accept = tokio::time::timeout(Duration::from_millis(100), listener.accept()).await;
+        let (client_stream, _) = match accept {
+            Ok(Ok(pair)) => pair,
+            Ok(Err(err)) => return Err(err.into()),
+            Err(_) if stop.load(Ordering::Relaxed) => return Ok(()),
+            Err(_) => continue,
+        };
+        let upstream_stream = tokio::net::TcpStream::connect(upstream_addr).await?;
 
-    let (client_reader, client_writer) = client_stream.into_split();
-    let (upstream_reader, upstream_writer) = upstream_stream.into_split();
+        let (client_reader, client_writer) = client_stream.into_split();
+        let (upstream_reader, upstream_writer) = upstream_stream.into_split();
 
-    let client_task = tokio::spawn(proxy_copy_and_capture(
-        client_reader,
-        upstream_writer,
-        Arc::clone(&capture),
-        true,
-    ));
-    let server_task = tokio::spawn(proxy_copy_and_capture(
-        upstream_reader,
-        client_writer,
-        Arc::clone(&capture),
-        false,
-    ));
+        let client_task = tokio::spawn(proxy_copy_and_capture(
+            client_reader,
+            upstream_writer,
+            Arc::clone(&capture),
+            true,
+        ));
+        let server_task = tokio::spawn(proxy_copy_and_capture(
+            upstream_reader,
+            client_writer,
+            Arc::clone(&capture),
+            false,
+        ));
 
-    let client_result = client_task.await.context("client proxy task join")?;
-    let server_result = server_task.await.context("server proxy task join")?;
-    client_result?;
-    server_result?;
+        let client_result = client_task.await.context("client proxy task join")?;
+        let server_result = server_task.await.context("server proxy task join")?;
+        client_result?;
+        server_result?;
+    }
+}
+
+async fn finalize_proxy_task(proxy_task: tokio::task::JoinHandle<Result<()>>, stop: Arc<AtomicBool>) -> Result<()> {
+    stop.store(true, Ordering::Relaxed);
+    tokio::time::timeout(Duration::from_secs(2), proxy_task)
+        .await
+        .context("timed out waiting for proxy task to finish")?
+        .context("proxy task join")??;
     Ok(())
 }
 
@@ -538,6 +556,117 @@ async fn run_wait_until_stable_probe_via_proxy(
     proxy_addr: SocketAddr,
     capture: Arc<Mutex<BusyBeeCapture>>,
 ) -> Result<LegacyAdminProbeResult> {
+    run_legacy_admin_probe_via_proxy(
+        proxy_addr,
+        capture,
+        "hyperdex-wait-until-stable",
+        &["-h", "127.0.0.1", "-p", &proxy_addr.port().to_string()],
+        None,
+        Duration::from_secs(3),
+        true,
+    )
+    .await
+}
+
+async fn run_add_space_probe_via_proxy(
+    proxy_addr: SocketAddr,
+    capture: Arc<Mutex<BusyBeeCapture>>,
+) -> Result<LegacyAdminProbeResult> {
+    run_legacy_admin_probe_via_proxy(
+        proxy_addr,
+        capture,
+        "hyperdex-add-space",
+        &["-h", "127.0.0.1", "-p", &proxy_addr.port().to_string()],
+        Some(
+            "space profiles\n\
+             key username\n\
+             attributes\n\
+                 string first,\n\
+                 int profile_views\n\
+             subspace first\n\
+             create 8 partitions\n\
+             tolerate 0 failures\n",
+        ),
+        Duration::from_secs(5),
+        false,
+    )
+    .await
+}
+
+async fn run_add_space_direct(address: SocketAddr) -> Result<(Option<std::process::ExitStatus>, String, String)> {
+    let stdout_path = std::env::temp_dir().join(format!(
+        "legacy-admin-add-space-stdout-{}.log",
+        std::process::id()
+    ));
+    let stderr_path = std::env::temp_dir().join(format!(
+        "legacy-admin-add-space-stderr-{}.log",
+        std::process::id()
+    ));
+    let stdout_file = File::create(&stdout_path)?;
+    let stderr_file = File::create(&stderr_path)?;
+
+    let mut child = Command::new(legacy_tool_path("hyperdex-add-space"))
+        .arg("-h")
+        .arg("127.0.0.1")
+        .arg("-p")
+        .arg(address.port().to_string())
+        .env("LD_LIBRARY_PATH", legacy_tool_library_path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file))
+        .spawn()
+        .context("failed to spawn hyperdex-add-space")?;
+
+    {
+        use std::io::Write;
+
+        child
+            .stdin
+            .as_mut()
+            .context("hyperdex-add-space stdin missing")?
+            .write_all(
+                b"space profiles\n\
+                  key username\n\
+                  attributes\n\
+                      string first,\n\
+                      int profile_views\n\
+                  subspace first\n\
+                  create 8 partitions\n\
+                  tolerate 0 failures\n",
+            )?;
+        child.stdin.take();
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let exit_status = loop {
+        if let Some(status) = child.try_wait()? {
+            break Some(status);
+        }
+
+        if Instant::now() >= deadline {
+            child.kill().ok();
+            break child.wait().ok();
+        }
+
+        sleep(Duration::from_millis(20)).await;
+    };
+
+    Ok((
+        exit_status,
+        fs::read_to_string(stdout_path).unwrap_or_default(),
+        fs::read_to_string(stderr_path).unwrap_or_default(),
+    ))
+}
+
+async fn run_legacy_admin_probe_via_proxy(
+    _proxy_addr: SocketAddr,
+    capture: Arc<Mutex<BusyBeeCapture>>,
+    tool: &str,
+    args: &[&str],
+    stdin: Option<&str>,
+    deadline_span: Duration,
+    stop_on_progress: bool,
+) -> Result<LegacyAdminProbeResult> {
     let stdout_path = std::env::temp_dir().join(format!(
         "legacy-admin-probe-stdout-{}.log",
         std::process::id()
@@ -549,20 +678,33 @@ async fn run_wait_until_stable_probe_via_proxy(
     let stdout_file = File::create(&stdout_path)?;
     let stderr_file = File::create(&stderr_path)?;
 
-    let mut child = Command::new(legacy_tool_path("hyperdex-wait-until-stable"))
-        .arg("-h")
-        .arg("127.0.0.1")
-        .arg("-p")
-        .arg(proxy_addr.port().to_string())
+    let mut child = Command::new(legacy_tool_path(tool))
+        .args(args)
         .env("LD_LIBRARY_PATH", legacy_tool_library_path())
+        .stdin(if stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::from(stdout_file))
         .stderr(Stdio::from(stderr_file))
         .spawn()
-        .context("failed to spawn hyperdex-wait-until-stable")?;
+        .with_context(|| format!("failed to spawn {tool}"))?;
 
-    let deadline = Instant::now() + Duration::from_secs(3);
+    if let Some(stdin) = stdin {
+        use std::io::Write;
+
+        child
+            .stdin
+            .as_mut()
+            .context("legacy admin tool stdin missing")?
+            .write_all(stdin.as_bytes())?;
+        child.stdin.take();
+    }
+
+    let deadline = Instant::now() + deadline_span;
     let tool_exit = loop {
-        if second_client_request_observed(&capture.lock().unwrap()) {
+        if stop_on_progress && second_client_request_observed(&capture.lock().unwrap()) {
             child.kill().ok();
             break child.wait().ok();
         }
@@ -1236,26 +1378,27 @@ async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Resu
 #[serial]
 async fn legacy_admin_wait_until_stable_probe_reports_bootstrap_progress() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
-    let cluster = spawn_single_daemon_cluster().await?;
-
     let mut proxy_port = ReservedPort::new()?;
     let proxy_address = localhost(proxy_port.port())?;
     proxy_port.release();
     let proxy_listener = tokio::net::TcpListener::bind(proxy_address).await?;
+    std::env::set_var("HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR", proxy_address.to_string());
+    let cluster = spawn_single_daemon_cluster().await?;
+    std::env::remove_var("HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR");
 
     let capture = Arc::new(Mutex::new(BusyBeeCapture::default()));
+    let stop = Arc::new(AtomicBool::new(false));
     let proxy_capture = Arc::clone(&capture);
+    let proxy_stop = Arc::clone(&stop);
     let proxy_task = tokio::spawn(run_busybee_proxy_capture(
         proxy_listener,
         cluster.coordinator_address,
         proxy_capture,
+        proxy_stop,
     ));
 
     let probe = run_wait_until_stable_probe_via_proxy(proxy_address, Arc::clone(&capture)).await?;
-    tokio::time::timeout(Duration::from_secs(2), proxy_task)
-        .await
-        .context("timed out waiting for proxy task to finish")?
-        .context("proxy task join")??;
+    finalize_proxy_task(proxy_task, stop).await?;
 
     let bootstrap_frame = probe
         .capture
@@ -1307,5 +1450,116 @@ async fn legacy_admin_wait_until_stable_probe_reports_bootstrap_progress() -> Re
         probe.tool_exit.is_some() || !probe.capture.server_frames.is_empty(),
         "probe produced no observable result"
     );
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn legacy_admin_add_space_probe_completes_after_bootstrap_and_robust_call() -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+    let mut proxy_port = ReservedPort::new()?;
+    let proxy_address = localhost(proxy_port.port())?;
+    proxy_port.release();
+    let proxy_listener = tokio::net::TcpListener::bind(proxy_address).await?;
+    std::env::set_var("HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR", proxy_address.to_string());
+    let cluster = spawn_single_daemon_cluster().await?;
+    std::env::remove_var("HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR");
+
+    let capture = Arc::new(Mutex::new(BusyBeeCapture::default()));
+    let stop = Arc::new(AtomicBool::new(false));
+    let proxy_capture = Arc::clone(&capture);
+    let proxy_stop = Arc::clone(&stop);
+    let proxy_task = tokio::spawn(run_busybee_proxy_capture(
+        proxy_listener,
+        cluster.coordinator_address,
+        proxy_capture,
+        proxy_stop,
+    ));
+
+    let probe = run_add_space_probe_via_proxy(proxy_address, Arc::clone(&capture)).await?;
+    finalize_proxy_task(proxy_task, stop).await?;
+
+    let frame_summaries = probe
+        .capture
+        .client_frames
+        .iter()
+        .map(frame_summary)
+        .collect::<Vec<_>>();
+    eprintln!(
+        "legacy add-space probe: tool_exit={:?} client_frames={:?} server_frames={:?} stdout=`{}` stderr=`{}`",
+        probe.tool_exit,
+        frame_summaries,
+        probe.capture
+            .server_frames
+            .iter()
+            .map(frame_summary)
+            .collect::<Vec<_>>(),
+        probe.stdout,
+        probe.stderr,
+    );
+
+    if let Some(call_frame) = probe.capture.client_frames.iter().find(|frame| {
+        frame.payload.first().copied().is_some_and(|byte| {
+            ReplicantNetworkMsgtype::decode(byte)
+                .is_ok_and(|msgtype| msgtype == ReplicantNetworkMsgtype::CallRobust)
+        })
+    }) {
+        let decoded = ReplicantAdminRequestMessage::decode(&call_frame.payload)?;
+        eprintln!("decoded add-space robust request: {decoded:?}");
+        if let ReplicantAdminRequestMessage::CallRobust { input, .. } = &decoded {
+            match decode_packed_hyperdex_space(input) {
+                Ok(space) => eprintln!("decoded live packed space: {space:?}"),
+                Err(err) => eprintln!("live packed space decode error: {err}"),
+            }
+        }
+    }
+    if let Some(response_frame) = probe.capture.server_frames.iter().find(|frame| {
+        ReplicantCallCompletion::decode(&frame.payload)
+            .ok()
+            .is_some_and(|completion| completion.nonce == 12)
+    }) {
+        let decoded = ReplicantCallCompletion::decode(&response_frame.payload)?;
+        eprintln!("decoded add-space robust response: {decoded:?}");
+    }
+
+    assert_eq!(
+        probe.tool_exit.map(|status| status.code()),
+        Some(Some(0)),
+        "expected hyperdex-add-space to exit successfully"
+    );
+    assert!(
+        probe.capture.client_frames.iter().any(|frame| {
+            frame.payload.first().copied().is_some_and(|byte| {
+                ReplicantNetworkMsgtype::decode(byte)
+                    .is_ok_and(|msgtype| msgtype == ReplicantNetworkMsgtype::GetRobustParams)
+            })
+        }),
+        "expected hyperdex-add-space to request robust params"
+    );
+    assert!(
+        probe.capture.client_frames.iter().any(|frame| {
+            frame.payload.first().copied().is_some_and(|byte| {
+                ReplicantNetworkMsgtype::decode(byte)
+                    .is_ok_and(|msgtype| msgtype == ReplicantNetworkMsgtype::CallRobust)
+            })
+        }),
+        "expected hyperdex-add-space to issue a robust call"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn legacy_admin_add_space_succeeds_against_live_cluster() -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+    let cluster = spawn_single_daemon_cluster().await?;
+
+    let (exit_status, stdout, stderr) = run_add_space_direct(cluster.coordinator_address).await?;
+    eprintln!(
+        "legacy add-space direct: exit_status={exit_status:?} stdout=`{stdout}` stderr=`{stderr}`"
+    );
+
+    assert_eq!(exit_status.map(|status| status.code()), Some(Some(0)));
     Ok(())
 }
