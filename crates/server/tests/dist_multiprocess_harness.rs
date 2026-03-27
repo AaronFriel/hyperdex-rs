@@ -3,13 +3,16 @@ use std::io;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
 use cluster_config::{ClusterConfig, ClusterNode, TransportBackend};
 use data_model::parse_hyperdex_space;
-use hyperdex_admin_protocol::{ConfigView, CoordinatorAdminRequest, CoordinatorReturnCode};
+use hyperdex_admin_protocol::{
+    BusyBeeFrame, ConfigView, CoordinatorAdminRequest, CoordinatorReturnCode,
+    ReplicantNetworkMsgtype,
+};
 use legacy_frontend::request_once;
 use legacy_protocol::{
     AtomicRequest, AtomicResponse, CountRequest, CountResponse, GetAttribute, GetRequest,
@@ -17,10 +20,10 @@ use legacy_protocol::{
     LegacyPredicate, LegacyReturnCode, RequestHeader, ResponseHeader, SearchContinueRequest,
     SearchDoneResponse, SearchItemResponse, SearchStartRequest, LEGACY_ATOMIC_FLAG_WRITE,
 };
+use serial_test::serial;
 use server::{
     request_coordinator_control_once, request_coordinator_control_with_body_once, ClusterRuntime,
 };
-use serial_test::serial;
 use tempfile::TempDir;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::sleep;
@@ -45,6 +48,27 @@ struct ChildProcess {
 struct ReservedPort {
     port: u16,
     listener: Option<std::net::TcpListener>,
+}
+
+struct SingleDaemonCluster {
+    _tempdir: TempDir,
+    _coordinator: ChildProcess,
+    _daemon: ChildProcess,
+    coordinator_address: SocketAddr,
+}
+
+#[derive(Clone, Debug, Default)]
+struct BusyBeeCapture {
+    client_frames: Vec<BusyBeeFrame>,
+    server_frames: Vec<BusyBeeFrame>,
+}
+
+#[derive(Clone, Debug)]
+struct LegacyAdminProbeResult {
+    capture: BusyBeeCapture,
+    tool_exit: Option<std::process::ExitStatus>,
+    stdout: String,
+    stderr: String,
 }
 
 impl ReservedPort {
@@ -313,6 +337,254 @@ fn server_binary_path() -> Result<PathBuf> {
 
 fn localhost(port: u16) -> Result<SocketAddr> {
     Ok(format!("127.0.0.1:{port}").parse()?)
+}
+
+fn legacy_hyperdex_root() -> PathBuf {
+    PathBuf::from("/home/friel/c/aaronfriel/HyperDex")
+}
+
+fn legacy_tool_path(tool: &str) -> PathBuf {
+    legacy_hyperdex_root().join(tool)
+}
+
+fn legacy_tool_library_path() -> String {
+    let mut path = legacy_hyperdex_root().join(".libs").display().to_string();
+    if let Some(existing) = std::env::var_os("LD_LIBRARY_PATH") {
+        path.push(':');
+        path.push_str(&existing.to_string_lossy());
+    }
+    path
+}
+
+fn busybee_total_len(header: [u8; 4]) -> usize {
+    (u32::from_be_bytes(header) & 0x00ff_ffff) as usize
+}
+
+fn drain_busybee_frames(buffer: &mut Vec<u8>) -> Result<Vec<BusyBeeFrame>> {
+    let mut frames = Vec::new();
+
+    loop {
+        if buffer.len() < 4 {
+            return Ok(frames);
+        }
+
+        let total_len = busybee_total_len(buffer[..4].try_into().unwrap());
+        if total_len < 4 {
+            return Err(anyhow!("busybee frame size {total_len} is too small"));
+        }
+        if buffer.len() < total_len {
+            return Ok(frames);
+        }
+
+        let frame = BusyBeeFrame::decode(&buffer[..total_len])?;
+        frames.push(frame);
+        buffer.drain(..total_len);
+    }
+}
+
+async fn proxy_copy_and_capture<R, W>(
+    mut reader: R,
+    mut writer: W,
+    capture: Arc<Mutex<BusyBeeCapture>>,
+    client_direction: bool,
+) -> Result<()>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut read_buf = [0_u8; 8192];
+    let mut frame_buf = Vec::new();
+
+    loop {
+        let n = reader.read(&mut read_buf).await?;
+        if n == 0 {
+            writer.shutdown().await?;
+            return Ok(());
+        }
+
+        writer.write_all(&read_buf[..n]).await?;
+        frame_buf.extend_from_slice(&read_buf[..n]);
+        let frames = drain_busybee_frames(&mut frame_buf)?;
+        if !frames.is_empty() {
+            let mut capture = capture.lock().unwrap();
+            if client_direction {
+                capture.client_frames.extend(frames);
+            } else {
+                capture.server_frames.extend(frames);
+            }
+        }
+    }
+}
+
+async fn run_busybee_proxy_capture(
+    listener: tokio::net::TcpListener,
+    upstream_addr: SocketAddr,
+    capture: Arc<Mutex<BusyBeeCapture>>,
+) -> Result<()> {
+    let (client_stream, _) = listener.accept().await?;
+    let upstream_stream = tokio::net::TcpStream::connect(upstream_addr).await?;
+
+    let (client_reader, client_writer) = client_stream.into_split();
+    let (upstream_reader, upstream_writer) = upstream_stream.into_split();
+
+    let client_task = tokio::spawn(proxy_copy_and_capture(
+        client_reader,
+        upstream_writer,
+        Arc::clone(&capture),
+        true,
+    ));
+    let server_task = tokio::spawn(proxy_copy_and_capture(
+        upstream_reader,
+        client_writer,
+        Arc::clone(&capture),
+        false,
+    ));
+
+    let client_result = client_task.await.context("client proxy task join")?;
+    let server_result = server_task.await.context("server proxy task join")?;
+    client_result?;
+    server_result?;
+    Ok(())
+}
+
+fn second_client_request_observed(capture: &BusyBeeCapture) -> bool {
+    capture
+        .client_frames
+        .iter()
+        .filter_map(|frame| frame.payload.first().copied())
+        .filter_map(|byte| ReplicantNetworkMsgtype::decode(byte).ok())
+        .filter(|msgtype| *msgtype != ReplicantNetworkMsgtype::Bootstrap)
+        .count()
+        > 0
+}
+
+fn frame_summary(frame: &BusyBeeFrame) -> String {
+    let msgtype = frame
+        .payload
+        .first()
+        .copied()
+        .and_then(|byte| ReplicantNetworkMsgtype::decode(byte).ok())
+        .map(|msgtype| format!("{msgtype:?}"))
+        .unwrap_or_else(|| "unknown".to_owned());
+    let prefix = frame
+        .encode()
+        .ok()
+        .map(|bytes| {
+            bytes
+                .iter()
+                .take(16)
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .unwrap_or_else(|| "<encode-failed>".to_owned());
+    format!("{msgtype} [{prefix}]")
+}
+
+async fn spawn_single_daemon_cluster() -> Result<SingleDaemonCluster> {
+    let tempdir = TempDir::new()?;
+    let mut coordinator_port = ReservedPort::new()?;
+    let mut daemon_port = ReservedPort::new()?;
+    let mut daemon_control_port = ReservedPort::new()?;
+    let coordinator_address = localhost(coordinator_port.port())?;
+    let daemon_address = localhost(daemon_port.port())?;
+
+    coordinator_port.release();
+    let mut coordinator = ChildProcess::spawn(
+        "coordinator",
+        &[
+            "coordinator".to_owned(),
+            format!("--data={}", tempdir.path().join("coordinator").display()),
+            "--listen=127.0.0.1".to_owned(),
+            format!("--listen-port={}", coordinator_port.port()),
+        ],
+        tempdir.path(),
+    )?;
+    coordinator
+        .wait_for_coordinator(coordinator_address)
+        .await?;
+
+    daemon_port.release();
+    daemon_control_port.release();
+    let mut daemon = ChildProcess::spawn(
+        "daemon",
+        &[
+            "daemon".to_owned(),
+            "--node-id=1".to_owned(),
+            "--threads=1".to_owned(),
+            format!("--data={}", tempdir.path().join("daemon").display()),
+            "--listen=127.0.0.1".to_owned(),
+            format!("--listen-port={}", daemon_port.port()),
+            format!("--control-port={}", daemon_control_port.port()),
+            "--coordinator=127.0.0.1".to_owned(),
+            format!("--coordinator-port={}", coordinator_port.port()),
+            "--transport=grpc".to_owned(),
+        ],
+        tempdir.path(),
+    )?;
+    daemon.wait_for_daemon(daemon_address).await?;
+
+    Ok(SingleDaemonCluster {
+        _tempdir: tempdir,
+        _coordinator: coordinator,
+        _daemon: daemon,
+        coordinator_address,
+    })
+}
+
+async fn run_wait_until_stable_probe_via_proxy(
+    proxy_addr: SocketAddr,
+    capture: Arc<Mutex<BusyBeeCapture>>,
+) -> Result<LegacyAdminProbeResult> {
+    let stdout_path = std::env::temp_dir().join(format!(
+        "legacy-admin-probe-stdout-{}.log",
+        std::process::id()
+    ));
+    let stderr_path = std::env::temp_dir().join(format!(
+        "legacy-admin-probe-stderr-{}.log",
+        std::process::id()
+    ));
+    let stdout_file = File::create(&stdout_path)?;
+    let stderr_file = File::create(&stderr_path)?;
+
+    let mut child = Command::new(legacy_tool_path("hyperdex-wait-until-stable"))
+        .arg("-h")
+        .arg("127.0.0.1")
+        .arg("-p")
+        .arg(proxy_addr.port().to_string())
+        .env("LD_LIBRARY_PATH", legacy_tool_library_path())
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file))
+        .spawn()
+        .context("failed to spawn hyperdex-wait-until-stable")?;
+
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let tool_exit = loop {
+        if second_client_request_observed(&capture.lock().unwrap()) {
+            child.kill().ok();
+            break child.wait().ok();
+        }
+
+        if let Some(status) = child.try_wait()? {
+            break Some(status);
+        }
+
+        if Instant::now() >= deadline {
+            child.kill().ok();
+            break child.wait().ok();
+        }
+
+        sleep(Duration::from_millis(20)).await;
+    };
+
+    Ok(LegacyAdminProbeResult {
+        capture: capture.lock().unwrap().clone(),
+        tool_exit,
+        stdout: fs::read_to_string(stdout_path).unwrap_or_default(),
+        stderr: fs::read_to_string(stderr_path).unwrap_or_default(),
+    })
 }
 
 fn count_request_header(nonce: u64) -> RequestHeader {
@@ -957,5 +1229,83 @@ async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Resu
     assert_eq!(count_header.message_type, LegacyMessageType::RespCount);
     assert_eq!(count_response.count, 3);
 
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn legacy_admin_wait_until_stable_probe_reports_bootstrap_progress() -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+    let cluster = spawn_single_daemon_cluster().await?;
+
+    let mut proxy_port = ReservedPort::new()?;
+    let proxy_address = localhost(proxy_port.port())?;
+    proxy_port.release();
+    let proxy_listener = tokio::net::TcpListener::bind(proxy_address).await?;
+
+    let capture = Arc::new(Mutex::new(BusyBeeCapture::default()));
+    let proxy_capture = Arc::clone(&capture);
+    let proxy_task = tokio::spawn(run_busybee_proxy_capture(
+        proxy_listener,
+        cluster.coordinator_address,
+        proxy_capture,
+    ));
+
+    let probe = run_wait_until_stable_probe_via_proxy(proxy_address, Arc::clone(&capture)).await?;
+    tokio::time::timeout(Duration::from_secs(2), proxy_task)
+        .await
+        .context("timed out waiting for proxy task to finish")?
+        .context("proxy task join")??;
+
+    let bootstrap_frame = probe
+        .capture
+        .client_frames
+        .iter()
+        .find(|frame| {
+            frame.payload.len() == 1
+                && ReplicantNetworkMsgtype::decode(frame.payload[0])
+                    .is_ok_and(|msgtype| msgtype == ReplicantNetworkMsgtype::Bootstrap)
+        })
+        .context("probe never captured the bootstrap frame")?;
+    assert!(
+        !probe.capture.server_frames.is_empty(),
+        "probe captured no server frames; stdout=`{}` stderr=`{}`",
+        probe.stdout,
+        probe.stderr
+    );
+
+    let advanced = second_client_request_observed(&probe.capture);
+    eprintln!(
+        "legacy admin bootstrap progress: advanced={advanced} tool_exit={:?} client_frames={} server_frames={} first_client={} first_server={}",
+        probe.tool_exit,
+        probe.capture.client_frames.len(),
+        probe.capture.server_frames.len(),
+        frame_summary(bootstrap_frame),
+        frame_summary(&probe.capture.server_frames[0]),
+    );
+
+    if std::env::var_os("HYPERDEX_EXPECT_LEGACY_ADMIN_ADVANCE").is_some() {
+        assert!(
+            advanced,
+            "expected the C admin client to advance beyond bootstrap; client_frames={:?} server_frames={:?} stdout=`{}` stderr=`{}`",
+            probe.capture
+                .client_frames
+                .iter()
+                .map(frame_summary)
+                .collect::<Vec<_>>(),
+            probe.capture
+                .server_frames
+                .iter()
+                .map(frame_summary)
+                .collect::<Vec<_>>(),
+            probe.stdout,
+            probe.stderr
+        );
+    }
+
+    assert!(
+        probe.tool_exit.is_some() || !probe.capture.server_frames.is_empty(),
+        "probe produced no observable result"
+    );
     Ok(())
 }
