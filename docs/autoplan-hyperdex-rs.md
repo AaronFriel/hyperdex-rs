@@ -259,6 +259,9 @@ split, sequencing, or validator set needs to change.
   harness owner on `clientgarbage-wire`, and confirmed the short large-object
   repro plus `cargo test -p server` both still return the expected signal on
   `main`.
+- [x] (2026-03-27 19:54Z) Retired the clean harness retry after it returned
+  only the existing baseline, then reopened the same workstream with a stricter
+  harness-only requirement to expose or decode the first bad daemon frame.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
@@ -266,14 +269,13 @@ split, sequencing, or validator set needs to change.
 Drive the legacy daemon data-path fix with the newly shortened
 `*Can store a large object*` repro as the shared short loop for both active
 owners. The product worker is responsible for clearing `ClientGarbage`, while
-the replacement harness worker should capture the first bad request/response
-pair on that same path. The admin/bootstrap layer is no longer the blocker.
+the replacement harness worker must now expose or decode the first bad daemon
+frame on that same path. The admin/bootstrap layer is no longer the blocker.
 
 ## Next Root Move
 
-Wait for the first substantial result from either active daemon-path owner,
-reconcile it onto `main`, and rerun the focused large-object repro before
-deciding whether the next pass belongs in product code or in the harness.
+Close the clean no-op harness completion, relaunch the harness owner with the
+stricter wire-evidence target, and keep the product worker running unchanged.
 
 ## Surprises & Discoveries
 
@@ -365,6 +367,11 @@ deciding whether the next pass belongs in product code or in the harness.
   Evidence: `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
   completed in about `86ms` of probe time and still reported the expected
   `Left ClientGarbage` output, while `cargo test -p server` stayed green.
+- Observation: a clean harness retry can still fail by stopping too early even
+  when the mutable surface and validator are correct.
+  Evidence: the completed `clientgarbage-wire` worker returned only baseline
+  verification against `ad458f1`, with no code changes and no new wire
+  evidence about the bad daemon frame.
 - Observation: the packed-space and request-core gap is now closed.
   Evidence: `df633ac` adds `decode_packed_hyperdex_space`,
   `ReplicantAdminRequestMessage::into_coordinator_request`, focused protocol

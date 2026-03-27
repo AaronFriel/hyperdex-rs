@@ -270,3 +270,54 @@
   - a fast repro that also reports the first bad request/response edge
   - clearer daemon-path evidence for the product worker
   - one bounded harness-only commit ready for reconciliation
+
+### Entry `mph-006` - Outcome
+
+- Timestamp: `2026-03-27 19:54Z`
+- Kind: `outcome`
+- End commit: `ad458f1`
+- Artifact location:
+  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire`
+- Evidence summary:
+  - the completed worker verified that `main` is at `ad458f1`
+  - the completed worker rechecked the fast validator and confirmed the same
+    `Left ClientGarbage` failure still reproduces
+  - `git status --short --branch` in the worktree remained clean
+  - no harness code or new daemon-path evidence was produced
+- Conclusion: the clean replacement worktree removed drift risk, but this
+  attempt still stopped at baseline verification rather than the owned wire
+  capture goal.
+- Disposition: `retry`
+- Next move: relaunch the harness workstream on the same clean worktree with a
+  stricter requirement to expose or decode the first bad daemon frame.
+
+### Entry `mph-007` - Preregistration
+
+- Timestamp: `2026-03-27 19:54Z`
+- Kind: `preregister`
+- Hypothesis: a sharper harness-only attempt that must either expose the first
+  bad daemon frame directly in test output or land a harness commit that
+  decodes it will give the product worker actionable wire evidence without
+  touching product code.
+- Owner: next forked worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire`
+- Start commit: `ad458f1`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on
+    `clientgarbage-wire`
+- Mutable surface:
+  - `Cargo.toml`
+  - `crates/server/Cargo.toml`
+  - `crates/server/tests/**`
+  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+    is strictly necessary
+- Validator:
+  - fastest useful check: `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
+  - strong checks:
+    - `cargo test -p server --test dist_multiprocess_harness -- --nocapture`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - either a harness commit that exposes or decodes the first bad daemon frame,
+    or a clean proof tied to test output that identifies the bad edge exactly
+  - clearer daemon-path evidence for the product worker
+  - one bounded harness-only commit ready for reconciliation

@@ -79,19 +79,23 @@ waiting on the whole Haskell path every time.
 - [x] (2026-03-27 19:49Z) Retired the first wire-capture retry after the
   interrupted worker left unrelated product files dirty in the old worktree,
   then moved the same goal onto a clean replacement worktree.
+- [x] (2026-03-27 19:54Z) Retired the clean replacement retry after it only
+  reverified the baseline failure without producing new wire evidence, then
+  reopened the same workstream with a stricter harness-only success condition.
 
 ## Current Hypothesis
 
 The short `ClientGarbage` repro is now on `main`, but the product worker still
 only has a smaller failing subset, not the first bad request/response pair. The
-first wire-capture retry drifted across unrelated product files, so the same
-goal is now relaunched on a clean replacement worktree. This workstream should
-capture that wire-level evidence without taking over the product fix itself.
+first retry drifted across unrelated product files, and the second retry stayed
+clean but stopped at baseline verification. This workstream now needs a stricter
+success condition: expose or decode the first bad daemon frame directly from the
+fast repro without taking over the product fix itself.
 
 ## Next Bounded Step
 
-Capture the first bad daemon-path request/response pair around the large-object
-`ClientGarbage` repro.
+Expose or decode the first bad daemon-path request/response pair around the
+large-object `ClientGarbage` repro.
 
 ## Surprises & Discoveries
 
@@ -126,6 +130,11 @@ Capture the first bad daemon-path request/response pair around the large-object
   Evidence: the interrupted `clientgarbage-probe` worktree ended with edits in
   product files outside `crates/server/tests/**`, including
   `crates/server/src/lib.rs` and several other core crates.
+- Observation: the clean replacement retry avoided drift but still did not move
+  beyond the already-known baseline.
+  Evidence: the completed worker returned only that `main` at `ad458f1` still
+  reproduces `Left ClientGarbage` and that `cargo test -p server` is green,
+  with no code changes in `clientgarbage-wire`.
 
 ## Decision Log
 
@@ -150,3 +159,6 @@ Capture the first bad daemon-path request/response pair around the large-object
 - The first wire-capture retry produced no bounded harness result because the
   worktree drifted outside its owned surface. The replacement attempt is now
   explicitly tied to a fresh worktree before any further code is trusted.
+- The clean replacement retry also produced no bounded harness result. The next
+  attempt must return either a harness commit that exposes the first bad frame
+  directly or a clean proof tied to test output that identifies the bad edge.
