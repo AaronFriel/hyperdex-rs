@@ -12,8 +12,9 @@ use hyperdex_admin_protocol::{CoordinatorAdminRequest, CoordinatorReturnCode};
 use legacy_frontend::request_once;
 use legacy_protocol::{
     AtomicRequest, AtomicResponse, CountRequest, CountResponse, GetAttribute, GetRequest,
-    GetResponse, GetValue, LegacyFuncall, LegacyFuncallName, LegacyMessageType, LegacyReturnCode,
-    RequestHeader, ResponseHeader, LEGACY_ATOMIC_FLAG_WRITE,
+    GetResponse, GetValue, LegacyCheck, LegacyFuncall, LegacyFuncallName, LegacyMessageType,
+    LegacyPredicate, LegacyReturnCode, RequestHeader, ResponseHeader, SearchContinueRequest,
+    SearchDoneResponse, SearchItemResponse, SearchStartRequest, LEGACY_ATOMIC_FLAG_WRITE,
 };
 use server::{
     request_coordinator_control_once, request_coordinator_control_with_body_once, ClusterRuntime,
@@ -172,6 +173,14 @@ impl ChildProcess {
     fn read_logs(&self) -> Result<String> {
         Ok(fs::read_to_string(&self.log_path).unwrap_or_default())
     }
+
+    fn stop(&mut self) -> Result<()> {
+        if self.child.try_wait()?.is_none() {
+            self.child.kill()?;
+            let _ = self.child.wait()?;
+        }
+        Ok(())
+    }
 }
 
 impl Drop for ChildProcess {
@@ -286,6 +295,68 @@ async fn request_atomic(
     )
     .await?;
     Ok((header, AtomicResponse::decode_body(&body)?))
+}
+
+async fn request_search_all(
+    address: SocketAddr,
+    space: &str,
+    checks: Vec<LegacyCheck>,
+    search_id: u64,
+    nonce: u64,
+) -> Result<Vec<SearchItemResponse>> {
+    let (mut header, mut body) = request_once(
+        address,
+        RequestHeader {
+            message_type: LegacyMessageType::ReqSearchStart,
+            flags: 0,
+            version: 7,
+            target_virtual_server: 0,
+            nonce,
+        },
+        &SearchStartRequest {
+            space: space.to_owned(),
+            search_id,
+            checks,
+        }
+        .encode_body(),
+    )
+    .await?;
+
+    let mut items = Vec::new();
+    loop {
+        match header.message_type {
+            LegacyMessageType::RespSearchItem => {
+                items.push(SearchItemResponse::decode_body(&body)?);
+                (header, body) = request_once(
+                    address,
+                    RequestHeader {
+                        message_type: LegacyMessageType::ReqSearchNext,
+                        flags: 0,
+                        version: 7,
+                        target_virtual_server: 0,
+                        nonce: nonce + items.len() as u64,
+                    },
+                    &SearchContinueRequest { search_id }.encode_body(),
+                )
+                .await?;
+            }
+            LegacyMessageType::RespSearchDone => {
+                let done = SearchDoneResponse::decode_body(&body)?;
+                if done.search_id != search_id {
+                    return Err(anyhow!(
+                        "search completion id mismatch: expected {search_id}, got {}",
+                        done.search_id
+                    ));
+                }
+                return Ok(items);
+            }
+            other => {
+                return Err(anyhow!(
+                    "unexpected legacy search response message type: {other:?}"
+                ));
+            }
+        }
+    }
 }
 
 fn grpc_route_runtime(
@@ -574,6 +645,159 @@ async fn legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Resu
         .any(|GetAttribute { name, value }| {
             name == "profile_views" && *value == GetValue::Int(3)
         }));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Result<()> {
+    let tempdir = TempDir::new()?;
+    let coordinator_port = reserve_port()?;
+    let daemon_one_port = reserve_port()?;
+    let daemon_two_port = reserve_port()?;
+    let daemon_one_control_port = reserve_port()?;
+    let daemon_two_control_port = reserve_port()?;
+    let coordinator_address: SocketAddr = format!("127.0.0.1:{coordinator_port}").parse()?;
+    let daemon_one_address: SocketAddr = format!("127.0.0.1:{daemon_one_port}").parse()?;
+    let daemon_two_address: SocketAddr = format!("127.0.0.1:{daemon_two_port}").parse()?;
+
+    let mut coordinator = ChildProcess::spawn(
+        "coordinator",
+        &[
+            "coordinator".to_owned(),
+            format!("--data={}", tempdir.path().join("coordinator").display()),
+            "--listen=127.0.0.1".to_owned(),
+            format!("--listen-port={coordinator_port}"),
+        ],
+        tempdir.path(),
+    )?;
+    coordinator
+        .wait_for_coordinator(coordinator_address)
+        .await?;
+
+    let mut daemon_one = ChildProcess::spawn(
+        "daemon-one",
+        &[
+            "daemon".to_owned(),
+            "--node-id=1".to_owned(),
+            "--threads=1".to_owned(),
+            format!("--data={}", tempdir.path().join("daemon-one").display()),
+            "--listen=127.0.0.1".to_owned(),
+            format!("--listen-port={daemon_one_port}"),
+            format!("--control-port={daemon_one_control_port}"),
+            "--coordinator=127.0.0.1".to_owned(),
+            format!("--coordinator-port={coordinator_port}"),
+            "--transport=grpc".to_owned(),
+        ],
+        tempdir.path(),
+    )?;
+    daemon_one.wait_for_daemon(daemon_one_address).await?;
+
+    let mut daemon_two = ChildProcess::spawn(
+        "daemon-two",
+        &[
+            "daemon".to_owned(),
+            "--node-id=2".to_owned(),
+            "--threads=1".to_owned(),
+            format!("--data={}", tempdir.path().join("daemon-two").display()),
+            "--listen=127.0.0.1".to_owned(),
+            format!("--listen-port={daemon_two_port}"),
+            format!("--control-port={daemon_two_control_port}"),
+            "--coordinator=127.0.0.1".to_owned(),
+            format!("--coordinator-port={coordinator_port}"),
+            "--transport=grpc".to_owned(),
+        ],
+        tempdir.path(),
+    )?;
+    daemon_two.wait_for_daemon(daemon_two_address).await?;
+
+    daemon_one
+        .wait_for_log("daemon internode gRPC listening")
+        .await?;
+    daemon_two
+        .wait_for_log("daemon internode gRPC listening")
+        .await?;
+
+    let space = parse_hyperdex_space(
+        r#"
+        space profiles
+        key username
+        attributes
+        int profile_views
+        "#,
+    )?;
+    let status = request_coordinator_control_once(
+        coordinator_address,
+        CoordinatorAdminRequest::SpaceAdd(space.clone()).method_name(),
+        &CoordinatorAdminRequest::SpaceAdd(space),
+    )
+    .await?;
+    assert_eq!(
+        CoordinatorReturnCode::decode(&status)?,
+        CoordinatorReturnCode::Success
+    );
+
+    daemon_one
+        .wait_for_log("daemon synchronized coordinator config")
+        .await?;
+    daemon_two
+        .wait_for_log("daemon synchronized coordinator config")
+        .await?;
+    daemon_one.wait_for_log("version=3").await?;
+    daemon_two.wait_for_log("version=3").await?;
+
+    for (nonce, key, views) in [
+        (100_u64, "degraded-search-a", 7_i64),
+        (101_u64, "degraded-search-b", 9_i64),
+        (102_u64, "degraded-search-survivor", 1_i64),
+    ] {
+        let (atomic_header, atomic_response) = request_atomic(
+            daemon_one_address,
+            &AtomicRequest {
+                flags: LEGACY_ATOMIC_FLAG_WRITE,
+                key: key.as_bytes().to_vec(),
+                checks: Vec::new(),
+                funcalls: vec![LegacyFuncall {
+                    attribute: "profile_views".to_owned(),
+                    name: LegacyFuncallName::NumAdd,
+                    arg1: GetValue::Int(views),
+                    arg2: None,
+                }],
+            },
+            nonce,
+        )
+        .await?;
+        assert_eq!(atomic_header.message_type, LegacyMessageType::RespAtomic);
+        assert_eq!(atomic_response.status, LegacyReturnCode::Success);
+    }
+
+    daemon_two.stop()?;
+    sleep(Duration::from_millis(100)).await;
+
+    let mut keys: Vec<Vec<u8>> = request_search_all(
+        daemon_one_address,
+        "profiles",
+        vec![LegacyCheck {
+            attribute: "profile_views".to_owned(),
+            predicate: LegacyPredicate::GreaterThanOrEqual,
+            value: GetValue::Int(5),
+        }],
+        77,
+        200,
+    )
+    .await?
+    .into_iter()
+    .map(|item| item.key)
+    .collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        vec![b"degraded-search-a".to_vec(), b"degraded-search-b".to_vec()]
+    );
+
+    let (count_header, count_response) = request_count(daemon_one_address, "profiles", 300).await?;
+    assert_eq!(count_header.message_type, LegacyMessageType::RespCount);
+    assert_eq!(count_response.count, 3);
 
     Ok(())
 }
