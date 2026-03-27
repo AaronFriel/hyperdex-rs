@@ -948,3 +948,107 @@ async fn legacy_atomic_replicates_to_secondary_runtime() {
     grpc_shutdown1.send(()).unwrap();
     grpc_shutdown2.send(()).unwrap();
 }
+
+#[tokio::test]
+async fn distributed_delete_removes_replicated_state_from_secondary_runtime() {
+    let grpc_listener1 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let grpc_addr1 = grpc_listener1.local_addr().unwrap();
+    let grpc_listener2 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let grpc_addr2 = grpc_listener2.local_addr().unwrap();
+
+    let config = ClusterConfig {
+        nodes: vec![
+            ClusterNode {
+                id: 1,
+                host: "127.0.0.1".to_owned(),
+                control_port: grpc_addr1.port(),
+                data_port: grpc_addr1.port(),
+            },
+            ClusterNode {
+                id: 2,
+                host: "127.0.0.1".to_owned(),
+                control_port: grpc_addr2.port(),
+                data_port: grpc_addr2.port(),
+            },
+        ],
+        replicas: 2,
+        internode_transport: TransportBackend::Grpc,
+        ..ClusterConfig::default()
+    };
+
+    let mut runtime1 = ClusterRuntime::for_node(config.clone(), 1).unwrap();
+    runtime1.install_cluster_transport(Arc::new(GrpcTransportAdapter), TransportRuntime::Grpc);
+    let runtime1 = Arc::new(runtime1);
+
+    let mut runtime2 = ClusterRuntime::for_node(config.clone(), 2).unwrap();
+    runtime2.install_cluster_transport(Arc::new(GrpcTransportAdapter), TransportRuntime::Grpc);
+    let runtime2 = Arc::new(runtime2);
+
+    HyperdexAdminService::handle(runtime1.as_ref(), AdminRequest::CreateSpaceDsl(profiles_schema()))
+        .await
+        .unwrap();
+    HyperdexAdminService::handle(runtime2.as_ref(), AdminRequest::CreateSpaceDsl(profiles_schema()))
+        .await
+        .unwrap();
+
+    let grpc_shutdown1 = serve_runtime(runtime1.clone(), grpc_listener1).await;
+    let grpc_shutdown2 = serve_runtime(runtime2.clone(), grpc_listener2).await;
+
+    let key = (0..4096)
+        .map(|i| format!("replicated-delete-{i}"))
+        .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
+        .expect("expected a key routed to node 2");
+
+    HyperdexClientService::handle(
+        runtime1.as_ref(),
+        ClientRequest::Put {
+            space: "profiles".to_owned(),
+            key: key.as_bytes().to_vec().into(),
+            mutations: vec![Mutation::Numeric {
+                attribute: "profile_views".to_owned(),
+                op: data_model::NumericOp::Add,
+                operand: 3,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+
+    let delete = HyperdexClientService::handle(
+        runtime1.as_ref(),
+        ClientRequest::Delete {
+            space: "profiles".to_owned(),
+            key: key.as_bytes().to_vec().into(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(delete, ClientResponse::Unit);
+
+    let local_probe = InternodeRequest::encode(
+        DATA_PLANE_METHOD,
+        &DataPlaneRequest::Get {
+            space: "profiles".to_owned(),
+            key: key.as_bytes().to_vec().into(),
+        },
+    )
+    .unwrap();
+    let secondary_record: DataPlaneResponse = runtime1
+        .handle_internode_request(local_probe.clone())
+        .await
+        .unwrap()
+        .decode()
+        .unwrap();
+    let primary_record: DataPlaneResponse = runtime2
+        .handle_internode_request(local_probe)
+        .await
+        .unwrap()
+        .decode()
+        .unwrap();
+
+    assert_eq!(secondary_record, DataPlaneResponse::Record(None));
+    assert_eq!(primary_record, DataPlaneResponse::Record(None));
+
+    grpc_shutdown1.send(()).unwrap();
+    grpc_shutdown2.send(()).unwrap();
+}

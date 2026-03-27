@@ -316,6 +316,37 @@ impl ClusterRuntime {
         Ok(())
     }
 
+    async fn replicate_delete_to_secondaries(
+        &self,
+        space: &str,
+        key: &bytes::Bytes,
+    ) -> Result<()> {
+        let decision = self.locate_key(key)?;
+        for replica in decision.replicas {
+            if replica == self.local_node_id {
+                continue;
+            }
+            match self
+                .forward_data_request(
+                    replica,
+                    DataPlaneRequest::ReplicatedDelete {
+                        space: space.to_owned(),
+                        key: key.clone(),
+                    },
+                )
+                .await?
+            {
+                DataPlaneResponse::Unit => {}
+                DataPlaneResponse::ConditionFailed | DataPlaneResponse::Record(_) => {
+                    anyhow::bail!(
+                        "unexpected response to replicated delete on replica {replica}"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     async fn apply_primary_put(
         &self,
         space: String,
@@ -350,6 +381,20 @@ impl ClusterRuntime {
         }
     }
 
+    async fn apply_primary_delete(
+        &self,
+        space: String,
+        key: bytes::Bytes,
+    ) -> Result<DataPlaneResponse> {
+        match self.data_plane.delete(&space, &key)? {
+            WriteResult::Written | WriteResult::Missing => {
+                self.replicate_delete_to_secondaries(&space, &key).await?;
+                Ok(DataPlaneResponse::Unit)
+            }
+            WriteResult::ConditionFailed => Ok(DataPlaneResponse::ConditionFailed),
+        }
+    }
+
     pub async fn handle_internode_request(
         &self,
         request: InternodeRequest,
@@ -366,10 +411,7 @@ impl ClusterRuntime {
                         DataPlaneResponse::Record(self.data_plane.get(&space, &key)?)
                     }
                     DataPlaneRequest::Delete { space, key } => {
-                        match self.data_plane.delete(&space, &key)? {
-                            WriteResult::Written | WriteResult::Missing => DataPlaneResponse::Unit,
-                            WriteResult::ConditionFailed => DataPlaneResponse::ConditionFailed,
-                        }
+                        self.apply_primary_delete(space, key).await?
                     }
                     DataPlaneRequest::ConditionalPut {
                         space,
@@ -387,6 +429,12 @@ impl ClusterRuntime {
                         WriteResult::Written | WriteResult::Missing => DataPlaneResponse::Unit,
                         WriteResult::ConditionFailed => DataPlaneResponse::ConditionFailed,
                     },
+                    DataPlaneRequest::ReplicatedDelete { space, key } => {
+                        match self.data_plane.delete(&space, &key)? {
+                            WriteResult::Written | WriteResult::Missing => DataPlaneResponse::Unit,
+                            WriteResult::ConditionFailed => DataPlaneResponse::ConditionFailed,
+                        }
+                    }
                 };
                 InternodeResponse::encode(200, &response)
             }
@@ -1375,9 +1423,12 @@ impl HyperdexClientService for ClusterRuntime {
             ClientRequest::Delete { space, key } => {
                 let primary = self.route_primary(&key)?;
                 if primary == self.local_node_id {
-                    Ok(match self.data_plane.delete(&space, &key)? {
-                        WriteResult::Written | WriteResult::Missing => ClientResponse::Unit,
-                        WriteResult::ConditionFailed => ClientResponse::ConditionFailed,
+                    Ok(match self.apply_primary_delete(space, key).await? {
+                        DataPlaneResponse::Unit => ClientResponse::Unit,
+                        DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
+                        DataPlaneResponse::Record(_) => {
+                            anyhow::bail!("unexpected record response to local delete")
+                        }
                     })
                 } else {
                     Ok(

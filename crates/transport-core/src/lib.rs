@@ -51,6 +51,10 @@ pub enum DataPlaneRequest {
         key: Bytes,
         mutations: Vec<Mutation>,
     },
+    ReplicatedDelete {
+        space: String,
+        key: Bytes,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
