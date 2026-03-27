@@ -88,11 +88,11 @@ One bounded design-or-implementation step with validation and a recorded verdict
 
 ## Current Hypothesis
 
-The runtime now converges writes and deletes, including group delete, across
-the replica set. The next limiting gap is distributed read behavior for
-multi-record queries, and the smallest next step is to make search results
-converge across replicas before taking on a broader replica-serving read
-policy.
+The runtime now converges multi-record search results across replicas as well
+as write and delete paths. The next limiting gap is single-key read
+availability, because `Get` still routes only to the primary even when a
+replica already holds the data, so the smallest next step is replica-serving
+read behavior for key lookups before tackling broader read-only operations.
 
 ## Milestones
 
@@ -192,18 +192,20 @@ policy.
 - Done: distributed delete-group now converges across replicas too, with a
   focused proof that matching records disappear from every replica while
   non-matching records survive.
-- Known gap: search semantics still do not converge replicas, and reads still
-  depend on the primary instead of serving from a replica set.
+- Known gap: single-key reads still depend on the primary instead of serving
+  from a replica set, and read-only operations like `Count` still use only
+  local state.
 - Active: dedicated worktrees are now producing distributed control-plane,
   distributed data-plane, and multiprocess validation changes in parallel.
-- Next: broaden the distributed data path so more of the legacy request surface
-  can cross daemon boundaries, then tighten simulation around those paths.
+- Next: add replica-serving key reads with a focused failure-oriented proof,
+  then broaden the remaining read-only operations and simulation around those
+  paths.
 
 ## Next Bounded Iteration
 
-Make distributed search converge across replicas so a multi-record query sees
-the same matching set regardless of which replica processes it, then prove that
-with a focused distributed search test.
+Serve `Get` from the replica set instead of only the primary, then prove a
+replica can satisfy a key lookup when the primary is unavailable while keeping
+the result identical to the current primary-routed path.
 
 ## Loop Ledger
 
@@ -243,3 +245,4 @@ with a focused distributed search test.
 | 32 | Once daemon-process forwarding works, the next missing distributed-system property is replica fanout, because a primary-only write still leaves secondaries stale even though placement already computes a replica set. | Add an explicit replica-apply internode request, make successful primary `Put` and `ConditionalPut` operations fan out to the placement replicas, add a focused public-path test in `transport-grpc` with `replicas = 2`, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `legacy_atomic_replicates_to_secondary_runtime`; `cargo test -p server` passes; `cargo test --workspace` passes, proving a public legacy atomic write now leaves both the primary and the secondary runtime with stored state. | Confirmed. | advance | Extend the same replica-fanout path to delete and prove replicated records disappear from both runtimes after a distributed delete. |
 | 33 | After replica fanout for writes, delete is the next missing convergence property because a secondary that keeps a deleted record is an immediate correctness bug. | Add an explicit replicated-delete internode request, make successful primary delete fan out to the placement replicas, add a focused distributed delete proof in `transport-grpc`, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `distributed_delete_removes_replicated_state_from_secondary_runtime`; `cargo test -p server` passes; `cargo test --workspace` passes, proving a distributed delete now removes replicated state from both the primary and the secondary runtime. | Confirmed. | advance | Extend replica convergence to delete-group and prove matching records disappear from all replicas after a distributed group delete. |
 | 34 | After single-key delete convergence, delete-group is the next missing multi-record mutation property because group deletion that only affects one replica would leave immediately visible divergence. | Add an explicit replicated-delete-group internode request, make distributed `DeleteGroup` fan out across the cluster and normalize the logical deleted count by replica factor, add a focused distributed delete-group proof in `transport-grpc`, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `distributed_delete_group_removes_matching_records_from_all_replicas`; `cargo test -p server` passes; `cargo test --workspace` passes, proving matching records now disappear from every replica while a non-matching replicated record remains. | Confirmed. | advance | Make distributed search converge across replicas and prove a multi-record query returns the same logical result set regardless of which replica handles it. |
+| 35 | After delete-group convergence, distributed search is the next missing multi-record read property because every matching record now exists on multiple replicas and an uncoordinated fanout would overcount or duplicate logical rows. | Add an internode `Search` request and response shape, make `ClientRequest::Search` fan out across cluster nodes and dedupe logical records by key, add a focused distributed search proof in `transport-grpc`, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `distributed_search_dedupes_replicated_records_across_runtimes`; `cargo test -p server` passes; `cargo test --workspace` passes, proving replicated search now returns one logical result per matching key regardless of which runtime handles the request. | Confirmed. | advance | Serve `Get` from the replica set and prove a replica can satisfy a key lookup when the primary is unavailable. |
