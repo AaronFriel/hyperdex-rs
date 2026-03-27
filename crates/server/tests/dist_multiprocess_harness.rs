@@ -2163,6 +2163,45 @@ async fn legacy_hyhac_large_object_probe_hits_clientgarbage_fast() -> Result<()>
 
 #[tokio::test]
 #[serial]
+async fn legacy_hyhac_large_object_probe_reports_no_daemon_traffic_after_startup() -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+    let capture_file = tempfile::NamedTempFile::new()?;
+    let capture_path = capture_file.path().to_path_buf();
+    drop(capture_file);
+
+    std::env::set_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE", &capture_path);
+    let mut cluster = spawn_single_daemon_cluster().await?;
+    std::env::remove_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE");
+    fs::write(&capture_path, "")?;
+
+    let (exit_status, stdout, stderr) = run_hyhac_selected_tests_direct(
+        cluster.coordinator_address,
+        "*Can store a large object*",
+        Duration::from_secs(10),
+    )
+    .await?;
+    cluster._coordinator.ensure_running()?;
+    cluster._daemon.ensure_running()?;
+
+    let capture = fs::read_to_string(&capture_path).unwrap_or_default();
+    eprintln!(
+        "hyhac large-object daemon trace: exit_status={exit_status:?} stdout=`{stdout}` stderr=`{stderr}` capture=`{capture}`"
+    );
+
+    assert!(
+        stdout.contains("Left ClientGarbage"),
+        "expected the focused hyhac probe to report ClientGarbage"
+    );
+    assert!(
+        capture.trim().is_empty(),
+        "expected no daemon legacy frontend traffic after clearing the harness startup probe; capture=`{capture}`"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
 async fn legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let (
