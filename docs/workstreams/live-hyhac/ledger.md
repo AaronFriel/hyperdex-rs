@@ -2055,7 +2055,7 @@
 - Hypothesis: a new product pass that preserves the `profiles` space setup
   before running the focused large-object subset will expose the real later
   failure and replace the flawed old fast validator.
-- Owner: next delegated product worker
+- Owner: delegated worker `019d318e-8775-74a0-864e-a67fdd23eb49` (`Fermat`)
 - Start commit: `eb6d093`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
@@ -2084,7 +2084,7 @@
 - Hypothesis: a parallel read-only pass over `hyhac` test ordering and setup
   code can pin down the smallest prerequisite sequence needed to make the
   focused large-object probe honest before the product worker rewires it.
-- Owner: next delegated read-only worker
+- Owner: delegated worker `019d318e-895a-7462-9396-ddf6791d417a` (`Harvey`)
 - Start commit: `eb6d093`
 - Worktree / branch:
   - none required; read-only evidence gathering only
