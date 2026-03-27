@@ -506,6 +506,32 @@ mod tests {
         });
     }
 
+    #[hegel::test(test_cases = 25)]
+    fn hegel_memory_engine_tracks_latest_write_per_key(tc: hegel::TestCase) {
+        let writes: Vec<(String, String)> = tc.draw(
+            hegel::generators::vecs(hegel::generators::tuples2(
+                hegel::generators::text().max_size(4),
+                hegel::generators::text().max_size(8),
+            ))
+            .max_size(20),
+        );
+
+        let harness = TestHarness::new();
+        let mut expected = BTreeMap::new();
+
+        for (key, value) in writes {
+            assert_eq!(harness.put_name(&key, &value), WriteResult::Written);
+            expected.insert(key, value);
+        }
+
+        assert_eq!(harness.snapshot(), expected);
+        assert_eq!(harness.count(), expected.len() as u64);
+
+        for (key, value) in expected {
+            assert_eq!(harness.get_name(&key), Some(value));
+        }
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig {
             cases: 64,
