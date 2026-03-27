@@ -354,6 +354,7 @@ async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()>
             format!("--control-port={daemon_one_control_port}"),
             "--coordinator=127.0.0.1".to_owned(),
             format!("--coordinator-port={coordinator_port}"),
+            "--transport=grpc".to_owned(),
         ],
         tempdir.path(),
     )?;
@@ -371,10 +372,18 @@ async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()>
             format!("--control-port={daemon_two_control_port}"),
             "--coordinator=127.0.0.1".to_owned(),
             format!("--coordinator-port={coordinator_port}"),
+            "--transport=grpc".to_owned(),
         ],
         tempdir.path(),
     )?;
     daemon_two.wait_for_daemon(daemon_two_address).await?;
+
+    daemon_one
+        .wait_for_log("daemon internode gRPC listening")
+        .await?;
+    daemon_two
+        .wait_for_log("daemon internode gRPC listening")
+        .await?;
 
     let ready = request_coordinator_control_with_body_once(
         coordinator_address,

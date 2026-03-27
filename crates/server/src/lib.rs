@@ -466,6 +466,10 @@ impl ClusterRuntime {
         Ok(records_by_key.into_values().collect())
     }
 
+    async fn execute_distributed_count(&self, space: String, checks: Vec<Check>) -> Result<u64> {
+        Ok(self.execute_distributed_search(space, checks).await?.len() as u64)
+    }
+
     async fn apply_primary_conditional_put(
         &self,
         space: String,
@@ -1623,7 +1627,7 @@ impl HyperdexClientService for ClusterRuntime {
                 self.execute_distributed_search(space, checks).await?,
             )),
             ClientRequest::Count { space, checks } => Ok(ClientResponse::Count(
-                self.data_plane.count(&space, &checks)?,
+                self.execute_distributed_count(space, checks).await?,
             )),
             ClientRequest::DeleteGroup { space, checks } => Ok(ClientResponse::Deleted(
                 self.execute_distributed_delete_group(space, checks).await?,
