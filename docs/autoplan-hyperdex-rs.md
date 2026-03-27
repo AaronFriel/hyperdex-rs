@@ -88,11 +88,11 @@ One bounded design-or-implementation step with validation and a recorded verdict
 
 ## Current Hypothesis
 
-The runtime now converges single-key writes and deletes across the replica set,
-so the next limiting gap is multi-record mutation and replica-serving reads.
-The next useful step is to bring delete-group into the same convergence model,
-because it extends existing delete semantics without yet forcing a larger read
-selection policy.
+The runtime now converges writes and deletes, including group delete, across
+the replica set. The next limiting gap is distributed read behavior for
+multi-record queries, and the smallest next step is to make search results
+converge across replicas before taking on a broader replica-serving read
+policy.
 
 ## Milestones
 
@@ -189,8 +189,11 @@ selection policy.
 - Done: committed delete now fans out to the placement replica set as well, and
   the transport-grpc harness proves a replicated record disappears from both
   runtimes after a distributed delete.
-- Known gap: delete-group and search semantics still do not converge replicas,
-  and reads still depend on the primary instead of serving from a replica set.
+- Done: distributed delete-group now converges across replicas too, with a
+  focused proof that matching records disappear from every replica while
+  non-matching records survive.
+- Known gap: search semantics still do not converge replicas, and reads still
+  depend on the primary instead of serving from a replica set.
 - Active: dedicated worktrees are now producing distributed control-plane,
   distributed data-plane, and multiprocess validation changes in parallel.
 - Next: broaden the distributed data path so more of the legacy request surface
@@ -198,9 +201,9 @@ selection policy.
 
 ## Next Bounded Iteration
 
-Extend replica convergence to delete-group so a committed group delete removes
-matching state from every replica that previously stored it, then prove the
-result with a focused distributed test.
+Make distributed search converge across replicas so a multi-record query sees
+the same matching set regardless of which replica processes it, then prove that
+with a focused distributed search test.
 
 ## Loop Ledger
 
@@ -239,3 +242,4 @@ result with a focused distributed test.
 | 31 | The next limiting gap after the multi-runtime legacy proof is daemon-process internode hosting, because without it the same distributed mutation path cannot be proven across the real coordinator-plus-daemons harness. | Add a server-local tonic/prost build path for the internode RPC, make daemon startup install a gRPC transport adapter and host the internode service on `control_port` when `--transport=grpc` is selected, route remote gRPC dials to `control_port`, restore the multiprocess legacy atomic test, and revalidate `server` plus the full workspace. | `cargo test -p server --test dist_multiprocess_harness -- --nocapture` passes with `legacy_atomic_routes_numeric_update_to_remote_primary_process`; `cargo test -p server` passes; `cargo test --workspace` passes, proving a legacy `REQ_ATOMIC` can now cross real daemon processes through the coordinator-published cluster layout and the daemon-hosted internode gRPC service. | Confirmed. | advance | Add first real replication fanout beyond the primary and prove a secondary daemon stores replicated state after a distributed write. |
 | 32 | Once daemon-process forwarding works, the next missing distributed-system property is replica fanout, because a primary-only write still leaves secondaries stale even though placement already computes a replica set. | Add an explicit replica-apply internode request, make successful primary `Put` and `ConditionalPut` operations fan out to the placement replicas, add a focused public-path test in `transport-grpc` with `replicas = 2`, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `legacy_atomic_replicates_to_secondary_runtime`; `cargo test -p server` passes; `cargo test --workspace` passes, proving a public legacy atomic write now leaves both the primary and the secondary runtime with stored state. | Confirmed. | advance | Extend the same replica-fanout path to delete and prove replicated records disappear from both runtimes after a distributed delete. |
 | 33 | After replica fanout for writes, delete is the next missing convergence property because a secondary that keeps a deleted record is an immediate correctness bug. | Add an explicit replicated-delete internode request, make successful primary delete fan out to the placement replicas, add a focused distributed delete proof in `transport-grpc`, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `distributed_delete_removes_replicated_state_from_secondary_runtime`; `cargo test -p server` passes; `cargo test --workspace` passes, proving a distributed delete now removes replicated state from both the primary and the secondary runtime. | Confirmed. | advance | Extend replica convergence to delete-group and prove matching records disappear from all replicas after a distributed group delete. |
+| 34 | After single-key delete convergence, delete-group is the next missing multi-record mutation property because group deletion that only affects one replica would leave immediately visible divergence. | Add an explicit replicated-delete-group internode request, make distributed `DeleteGroup` fan out across the cluster and normalize the logical deleted count by replica factor, add a focused distributed delete-group proof in `transport-grpc`, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `distributed_delete_group_removes_matching_records_from_all_replicas`; `cargo test -p server` passes; `cargo test --workspace` passes, proving matching records now disappear from every replica while a non-matching replicated record remains. | Confirmed. | advance | Make distributed search converge across replicas and prove a multi-record query returns the same logical result set regardless of which replica handles it. |
