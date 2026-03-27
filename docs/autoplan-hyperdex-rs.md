@@ -122,7 +122,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | root | None; `69d5918` already proved the fast Hyhac failure loops only through coordinator identify/bootstrap traffic on the cleaned baseline, so this workstream can pause again until another harness change is justified. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence -- --nocapture` | Hold until product or read-only comparison work needs another harness change. | `advance` |
-| `live-hyhac` | active | `019d316f-5ffb-7f62-885c-e7eddcc6345f` (`Confucius`) | The repeated-identify mismatch is fixed and the corrected proxy probe now shows post-bootstrap `CondWait` traffic, but the direct large-object Hyhac loop still returns `Left ClientGarbage`. `hyh-040` was retired after a no-op product relaunch, and `hyh-041` now owns the actual product pass on the same clean worktree. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow` on `live-hyhac-post-follow` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence -- --nocapture` | Move the remaining large-object failure forward on the corrected post-follow baseline with code or one exact blocker. | `advance` |
+| `live-hyhac` | ready | root | `hyh-041` is reconciled on `main` and now proves the failing large-object Hyhac path still produces no daemon legacy traffic after startup. The next product change should wait for the exact coordinator-side post-follow mismatch from the active read-only comparison instead of guessing. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow` on `live-hyhac-post-follow` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_no_daemon_traffic_after_startup -- --nocapture` | Wait for `cce-015`, then relaunch product work on the exact remaining coordinator-side mismatch. | `advance` |
 | `coordinator-config-evidence` | active | `019d316c-58c6-7981-b76e-86a5a507a3a3` (`Nietzsche`) | `cce-013` is reconciled and `cce-014` was retired after it contradicted the corrected baseline; the new comparison starts from the observed post-bootstrap follow traffic on current `main`. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence -- --nocapture` | Name the first exact post-follow mismatch on the corrected baseline without reopening already-fixed bootstrap or interval issues. | `advance` |
 
 ## Progress
@@ -368,24 +368,28 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 23:31Z) Relaunched the product pass as `hyh-041` with
   `Confucius` on the same clean `live-hyhac-post-follow` worktree and kept
   `Nietzsche` active on `cce-015`.
+- [x] (2026-03-27 23:41Z) Reconciled `5e2224a` (`Capture missing daemon
+  traffic in hyhac probe`), which proves the focused large-object Hyhac path
+  still reaches zero daemon legacy traffic after startup, so the next exact
+  target remains coordinator-side post-follow behavior.
 - [ ] Rerun the bounded live `hyhac` probe after the remaining large-object
   mismatch is fixed.
 
 ## Current Root Focus
 
 Drive the remaining focused large-object `ClientGarbage` failure on the
-corrected post-bootstrap baseline with two active owners. The coordinator no
-longer stops at bootstrap: the corrected BusyBee proxy now shows the original
-client advancing into `CondWait` requests and `ClientResponse` completions on
-the coordinator connection, so the next reduction must move farther toward the
-first daemon request or the exact post-follow mismatch that still blocks it.
+corrected post-bootstrap baseline without reopening the daemon path too early.
+The coordinator no longer stops at bootstrap, but the newly integrated harness
+result proves the focused large-object Hyhac path still produces zero daemon
+legacy traffic after startup, so the next exact reduction remains on the
+coordinator-side post-follow behavior.
 
 ## Next Root Move
 
-Use the corrected BusyBee proxy as the shortest coordinator-side check and let
-`Confucius` and `Nietzsche` work in parallel from the same corrected baseline.
-The next root action after this pass is a long wait on both active workers,
-then reconcile whichever one first returns a concrete fix or exact mismatch.
+Use the corrected BusyBee proxy and the new no-daemon-traffic harness as the
+short coordinator-side checks. The next root action after this pass is to feed
+that new evidence into `Nietzsche`, wait for the exact post-follow mismatch,
+and then relaunch product work on that narrower target.
 
 ## Surprises & Discoveries
 

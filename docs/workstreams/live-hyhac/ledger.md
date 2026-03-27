@@ -1920,6 +1920,30 @@
     probe
   - focused validator evidence for the new reduction or fix
 
+### Entry `hyh-041` - Outcome
+
+- Timestamp: `2026-03-27 23:41Z`
+- Kind: `outcome`
+- End commit: `5e2224a`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence summary:
+  - `5e2224a` adds a focused daemon-capture harness for the failing large-object
+    Hyhac subset and clears startup readiness probe noise before asserting on
+    daemon traffic
+  - `legacy_hyhac_large_object_probe_reports_no_daemon_traffic_after_startup`
+    passes on integrated `main` and proves the daemon capture is empty while
+    the large-object subset still returns `Left ClientGarbage`
+  - `legacy_hyhac_large_object_probe_hits_clientgarbage_fast` still reproduces
+    the same public failure
+  - `cargo test -p server` passes on integrated `main`
+- Conclusion: the corrected post-follow failure is still before the first
+  daemon legacy request. The next product target must remain on the
+  coordinator-side post-follow behavior rather than daemon request handling.
+- Disposition: `advance`
+- Next move: wait for `cce-015` to name the exact remaining coordinator-side
+  mismatch, then relaunch product work on that narrower target.
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`
