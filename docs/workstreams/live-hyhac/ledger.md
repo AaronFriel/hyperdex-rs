@@ -797,3 +797,28 @@
 - Disposition: `retry`
 - Next move: relaunch both implementation steps with direct `hyperspace.cc`
   and `admin.cc` source targets.
+
+### Entry `hyh-019` - Preregistration
+
+- Timestamp: `2026-03-27 06:05Z`
+- Kind: `preregister`
+- Hypothesis: porting the packed `hyperdex::space` decoder and mapping
+  Replicant admin requests into `CoordinatorAdminRequest` values will remove
+  the remaining format ambiguity from the coordinator admin service work and
+  produce a code result that the next live session layer can consume directly.
+- Owner: root checkout on `main`
+- Start commit: `afd3f8b`
+- Worktree / branch:
+  - root checkout on `main`
+- Mutable surface:
+  - `crates/hyperdex-admin-protocol/**`
+  - `crates/server/**` only for small integration glue and focused tests
+- Validator:
+  - focused protocol tests for packed-space decoding and request mapping
+  - `cargo test -p hyperdex-admin-protocol`
+  - `cargo test -p server`
+- Expected artifacts:
+  - packed `hyperdex::space` decoder
+  - Replicant admin request to coordinator-request mapping
+  - focused tests proving `space_add`, `space_rm`, and `wait_until_stable`
+    semantics through the new mapping layer

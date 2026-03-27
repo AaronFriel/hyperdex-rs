@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 use cluster_config::{ClusterConfig, ClusterNode};
-use data_model::{Space, SpaceName};
+use data_model::{SchemaFormat, Space, SpaceName, SpaceOptions, Subspace, ValueKind};
 use serde::{Deserialize, Serialize};
 
 pub const BUSYBEE_HEADER_SIZE: usize = 4;
@@ -10,10 +10,20 @@ pub const BUSYBEE_HEADER_EXTENDED: u32 = 0x4000_0000;
 
 const BUSYBEE_SIZE_MASK: u32 = 0x00ff_ffff;
 const REPLICANT_OBJECT_HYPERDEX: &[u8] = b"hyperdex";
+const REPLICANT_CONDITION_CONFIG: &[u8] = b"config";
 const REPLICANT_CONDITION_STABLE: &[u8] = b"stable";
 const REPLICANT_FUNCTION_SPACE_ADD: &[u8] = b"space_add";
 const REPLICANT_FUNCTION_SPACE_RM: &[u8] = b"space_rm";
 const REPLICANT_ROBUST_PARAMS_BYTES: usize = 16;
+const HYPERDATATYPE_STRING: u16 = 9217;
+const HYPERDATATYPE_INT64: u16 = 9218;
+const HYPERDATATYPE_FLOAT: u16 = 9219;
+const HYPERDATATYPE_DOCUMENT: u16 = 9223;
+const HYPERDATATYPE_LIST_GENERIC: u16 = 9280;
+const HYPERDATATYPE_SET_GENERIC: u16 = 9344;
+const HYPERDATATYPE_MAP_GENERIC: u16 = 9408;
+const HYPERDATATYPE_TIMESTAMP_GENERIC: u16 = 9472;
+const HYPERDATATYPE_MACAROON_SECRET: u16 = 9664;
 const CAPTURED_INITIAL_CONFIG_FOLLOW_REQUEST: [u8; 25] = [
     0x80, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x1c,
@@ -171,6 +181,18 @@ pub struct ReplicantRobustParams {
 #[async_trait]
 pub trait HyperdexAdminService: Send + Sync {
     async fn handle(&self, request: AdminRequest) -> anyhow::Result<AdminResponse>;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PackedSpaceAttribute {
+    name: String,
+    datatype: u16,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PackedSpaceSubspace {
+    attrs: Vec<u16>,
+    regions_len: usize,
 }
 
 impl CoordinatorAdminRequest {
@@ -507,6 +529,68 @@ impl ReplicantAdminRequestMessage {
             other => bail!("replicant msgtype {other:?} is not an admin request"),
         }
     }
+
+    pub fn nonce(&self) -> u64 {
+        match self {
+            Self::CondWait { nonce, .. }
+            | Self::Call { nonce, .. }
+            | Self::CallRobust { nonce, .. } => *nonce,
+        }
+    }
+
+    pub fn into_coordinator_request(self) -> Result<CoordinatorAdminRequest> {
+        match self {
+            Self::CondWait {
+                object,
+                condition,
+                ..
+            } if object == REPLICANT_OBJECT_HYPERDEX && condition == REPLICANT_CONDITION_STABLE => {
+                Ok(CoordinatorAdminRequest::WaitUntilStable)
+            }
+            Self::CondWait {
+                object,
+                condition,
+                ..
+            } if object == REPLICANT_OBJECT_HYPERDEX && condition == REPLICANT_CONDITION_CONFIG => {
+                Ok(CoordinatorAdminRequest::ConfigGet)
+            }
+            Self::Call {
+                object,
+                function,
+                input,
+                ..
+            }
+            | Self::CallRobust {
+                object,
+                function,
+                input,
+                ..
+            } if object == REPLICANT_OBJECT_HYPERDEX && function == REPLICANT_FUNCTION_SPACE_ADD => {
+                Ok(CoordinatorAdminRequest::SpaceAdd(decode_packed_hyperdex_space(
+                    &input,
+                )?))
+            }
+            Self::Call {
+                object,
+                function,
+                input,
+                ..
+            }
+            | Self::CallRobust {
+                object,
+                function,
+                input,
+                ..
+            } if object == REPLICANT_OBJECT_HYPERDEX && function == REPLICANT_FUNCTION_SPACE_RM => {
+                Ok(CoordinatorAdminRequest::SpaceRm(
+                    decode_c_string(&input)?.to_owned(),
+                ))
+            }
+            other => Err(anyhow!(
+                "unsupported replicant admin request for coordinator mapping: {other:?}"
+            )),
+        }
+    }
 }
 
 impl ReplicantCallCompletion {
@@ -696,6 +780,259 @@ fn decode_u64_be(bytes: &[u8], cursor: &mut usize) -> Result<u64> {
     Ok(value)
 }
 
+pub fn decode_packed_hyperdex_space(bytes: &[u8]) -> Result<Space> {
+    let mut cursor = 0;
+    let _space_id = decode_u64_be(bytes, &mut cursor)?;
+    let name = decode_len32_string(bytes, &mut cursor, "space name")?;
+    let fault_tolerance = decode_u64_be(bytes, &mut cursor)?;
+    let attrs_len = decode_u16_be(bytes, &mut cursor)? as usize;
+    let subspaces_len = decode_u16_be(bytes, &mut cursor)? as usize;
+    let indices_len = decode_u16_be(bytes, &mut cursor)? as usize;
+
+    let mut attrs = Vec::with_capacity(attrs_len);
+    for _ in 0..attrs_len {
+        let attr_name = decode_len32_string(bytes, &mut cursor, "attribute name")?;
+        let datatype = decode_u16_be(bytes, &mut cursor)?;
+        attrs.push(PackedSpaceAttribute {
+            name: attr_name,
+            datatype,
+        });
+    }
+
+    if attrs.is_empty() {
+        bail!("packed hyperdex::space did not include a key attribute");
+    }
+
+    let mut subspaces = Vec::with_capacity(subspaces_len);
+    for _ in 0..subspaces_len {
+        subspaces.push(decode_packed_subspace(bytes, &mut cursor)?);
+    }
+
+    for _ in 0..indices_len {
+        decode_packed_index(bytes, &mut cursor)?;
+    }
+
+    expect_consumed(bytes, cursor, "packed hyperdex::space")?;
+
+    let key_attribute = attrs[0].name.clone();
+    let mut attribute_defs = Vec::new();
+    for attr in attrs.iter().skip(1) {
+        if attr.datatype == HYPERDATATYPE_MACAROON_SECRET {
+            continue;
+        }
+        attribute_defs.push(data_model::AttributeDefinition {
+            name: attr.name.clone(),
+            kind: decode_hyperdatatype(attr.datatype)?,
+        });
+    }
+
+    let mut rust_subspaces = Vec::new();
+    for subspace in subspaces.iter().skip(1) {
+        let mut dimensions = Vec::with_capacity(subspace.attrs.len());
+        for attr_index in &subspace.attrs {
+            let attr = attrs
+                .get(*attr_index as usize)
+                .ok_or_else(|| anyhow!("subspace attribute index {attr_index} out of range"))?;
+            if attr.name == key_attribute || attr.datatype == HYPERDATATYPE_MACAROON_SECRET {
+                continue;
+            }
+            dimensions.push(attr.name.clone());
+        }
+        if !dimensions.is_empty() {
+            rust_subspaces.push(Subspace { dimensions });
+        }
+    }
+
+    let partitions = subspaces
+        .first()
+        .map(|subspace| subspace.regions_len as u32)
+        .filter(|count| *count > 0)
+        .unwrap_or_else(|| SpaceOptions::default().partitions);
+
+    Ok(Space {
+        name,
+        key_attribute,
+        attributes: attribute_defs,
+        subspaces: rust_subspaces,
+        options: SpaceOptions {
+            fault_tolerance: u32::try_from(fault_tolerance)
+                .map_err(|_| anyhow!("fault tolerance {fault_tolerance} does not fit in u32"))?,
+            partitions,
+            schema_format: SchemaFormat::HyperDexDsl,
+        },
+    })
+}
+
+fn decode_packed_subspace(bytes: &[u8], cursor: &mut usize) -> Result<PackedSpaceSubspace> {
+    let _subspace_id = decode_u64_be(bytes, cursor)?;
+    let attrs_len = decode_u16_be(bytes, cursor)? as usize;
+    let regions_len = decode_u32_be(bytes, cursor)? as usize;
+    let mut attrs = Vec::with_capacity(attrs_len);
+
+    for _ in 0..attrs_len {
+        attrs.push(decode_u16_be(bytes, cursor)?);
+    }
+
+    for _ in 0..regions_len {
+        decode_packed_region(bytes, cursor)?;
+    }
+
+    Ok(PackedSpaceSubspace { attrs, regions_len })
+}
+
+fn decode_packed_region(bytes: &[u8], cursor: &mut usize) -> Result<()> {
+    let _region_id = decode_u64_be(bytes, cursor)?;
+    let hashes_len = decode_u16_be(bytes, cursor)? as usize;
+    let replicas_len = decode_u8(bytes, cursor)? as usize;
+
+    for _ in 0..hashes_len {
+        let _lower = decode_u64_be(bytes, cursor)?;
+        let _upper = decode_u64_be(bytes, cursor)?;
+    }
+
+    for _ in 0..replicas_len {
+        let _server_id = decode_u64_be(bytes, cursor)?;
+        let _virtual_server_id = decode_u64_be(bytes, cursor)?;
+    }
+
+    Ok(())
+}
+
+fn decode_packed_index(bytes: &[u8], cursor: &mut usize) -> Result<()> {
+    let _index_type = decode_u8(bytes, cursor)?;
+    let _index_id = decode_u64_be(bytes, cursor)?;
+    let _attr = decode_u16_be(bytes, cursor)?;
+    let _extra = decode_len32_slice(bytes, cursor, "index extra")?;
+    Ok(())
+}
+
+fn decode_hyperdatatype(datatype: u16) -> Result<ValueKind> {
+    if datatype == HYPERDATATYPE_STRING {
+        return Ok(ValueKind::String);
+    }
+    if datatype == HYPERDATATYPE_INT64 {
+        return Ok(ValueKind::Int);
+    }
+    if datatype == HYPERDATATYPE_FLOAT {
+        return Ok(ValueKind::Float);
+    }
+    if datatype == HYPERDATATYPE_DOCUMENT {
+        return Ok(ValueKind::Document);
+    }
+    if (HYPERDATATYPE_LIST_GENERIC..HYPERDATATYPE_SET_GENERIC).contains(&datatype) {
+        return Ok(ValueKind::List(Box::new(decode_container_elem(datatype)?)));
+    }
+    if (HYPERDATATYPE_SET_GENERIC..HYPERDATATYPE_MAP_GENERIC).contains(&datatype) {
+        return Ok(ValueKind::Set(Box::new(decode_container_elem(datatype)?)));
+    }
+    if (HYPERDATATYPE_MAP_GENERIC..HYPERDATATYPE_TIMESTAMP_GENERIC).contains(&datatype) {
+        let (key, value) = decode_map_types(datatype)?;
+        return Ok(ValueKind::Map {
+            key: Box::new(key),
+            value: Box::new(value),
+        });
+    }
+    if (HYPERDATATYPE_TIMESTAMP_GENERIC..HYPERDATATYPE_MACAROON_SECRET).contains(&datatype) {
+        return Ok(ValueKind::Timestamp(decode_time_unit(datatype)?));
+    }
+
+    bail!("unsupported hyperdatatype {datatype}");
+}
+
+fn decode_container_elem(datatype: u16) -> Result<ValueKind> {
+    decode_primitive_hyperdatatype(datatype & 0x2407)
+}
+
+fn decode_map_types(datatype: u16) -> Result<(ValueKind, ValueKind)> {
+    let key = decode_primitive_hyperdatatype(((datatype & 0x0038) >> 3) | (datatype & 0x2400))?;
+    let value = decode_primitive_hyperdatatype(datatype & 0x2407)?;
+    Ok((key, value))
+}
+
+fn decode_primitive_hyperdatatype(datatype: u16) -> Result<ValueKind> {
+    match datatype {
+        9216 => Ok(ValueKind::Bytes),
+        HYPERDATATYPE_STRING => Ok(ValueKind::String),
+        HYPERDATATYPE_INT64 => Ok(ValueKind::Int),
+        HYPERDATATYPE_FLOAT => Ok(ValueKind::Float),
+        HYPERDATATYPE_DOCUMENT => Ok(ValueKind::Document),
+        other => bail!("unsupported primitive hyperdatatype {other}"),
+    }
+}
+
+fn decode_time_unit(datatype: u16) -> Result<data_model::TimeUnit> {
+    match datatype {
+        9472 | 9473 => Ok(data_model::TimeUnit::Second),
+        9474 => Ok(data_model::TimeUnit::Minute),
+        9475 => Ok(data_model::TimeUnit::Hour),
+        9476 => Ok(data_model::TimeUnit::Day),
+        9477 => Ok(data_model::TimeUnit::Week),
+        9478 => Ok(data_model::TimeUnit::Month),
+        other => bail!("unsupported timestamp hyperdatatype {other}"),
+    }
+}
+
+fn decode_c_string(bytes: &[u8]) -> Result<&str> {
+    let Some((&0, prefix)) = bytes.split_last() else {
+        bail!("expected nul-terminated string");
+    };
+    Ok(std::str::from_utf8(prefix)?)
+}
+
+fn decode_len32_string(bytes: &[u8], cursor: &mut usize, label: &str) -> Result<String> {
+    let slice = decode_len32_slice(bytes, cursor, label)?;
+    Ok(std::str::from_utf8(&slice)?.to_owned())
+}
+
+fn decode_len32_slice(bytes: &[u8], cursor: &mut usize, label: &str) -> Result<Vec<u8>> {
+    let len = decode_u32_be(bytes, cursor)? as usize;
+    let end = cursor
+        .checked_add(len)
+        .ok_or_else(|| anyhow!("cursor overflow while decoding {label}"))?;
+    if end > bytes.len() {
+        bail!("buffer too short for {label}");
+    }
+    let slice = bytes[*cursor..end].to_vec();
+    *cursor = end;
+    Ok(slice)
+}
+
+fn decode_u32_be(bytes: &[u8], cursor: &mut usize) -> Result<u32> {
+    let end = cursor
+        .checked_add(4)
+        .ok_or_else(|| anyhow!("cursor overflow while decoding u32"))?;
+    if end > bytes.len() {
+        bail!("buffer too short for u32");
+    }
+    let value = u32::from_be_bytes(bytes[*cursor..end].try_into().unwrap());
+    *cursor = end;
+    Ok(value)
+}
+
+fn decode_u16_be(bytes: &[u8], cursor: &mut usize) -> Result<u16> {
+    let end = cursor
+        .checked_add(2)
+        .ok_or_else(|| anyhow!("cursor overflow while decoding u16"))?;
+    if end > bytes.len() {
+        bail!("buffer too short for u16");
+    }
+    let value = u16::from_be_bytes(bytes[*cursor..end].try_into().unwrap());
+    *cursor = end;
+    Ok(value)
+}
+
+fn decode_u8(bytes: &[u8], cursor: &mut usize) -> Result<u8> {
+    let end = cursor
+        .checked_add(1)
+        .ok_or_else(|| anyhow!("cursor overflow while decoding u8"))?;
+    if end > bytes.len() {
+        bail!("buffer too short for u8");
+    }
+    let value = bytes[*cursor];
+    *cursor = end;
+    Ok(value)
+}
+
 fn decode_return_code_at(bytes: &[u8], cursor: &mut usize) -> Result<ReplicantReturnCode> {
     let end = cursor
         .checked_add(2)
@@ -783,6 +1120,89 @@ mod tests {
         let decoded = ReplicantAdminRequestMessage::decode(&encoded).unwrap();
 
         assert_eq!(decoded, message);
+    }
+
+    #[test]
+    fn packed_space_decoder_translates_original_hyperdex_layout() {
+        let encoded_space = encode_test_space_payload();
+
+        let decoded = decode_packed_hyperdex_space(&encoded_space).unwrap();
+
+        assert_eq!(
+            decoded,
+            Space {
+                name: "profiles".to_owned(),
+                key_attribute: "username".to_owned(),
+                attributes: vec![
+                    AttributeDefinition {
+                        name: "first".to_owned(),
+                        kind: ValueKind::String,
+                    },
+                    AttributeDefinition {
+                        name: "profile_views".to_owned(),
+                        kind: ValueKind::Int,
+                    },
+                ],
+                subspaces: vec![Subspace {
+                    dimensions: vec!["profile_views".to_owned()],
+                }],
+                options: SpaceOptions {
+                    fault_tolerance: 2,
+                    partitions: 4,
+                    schema_format: SchemaFormat::HyperDexDsl,
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn space_add_request_maps_through_packed_space_decoder() {
+        let request =
+            ReplicantAdminRequestMessage::space_add(41, encode_test_space_payload());
+
+        let mapped = request.into_coordinator_request().unwrap();
+
+        assert_eq!(
+            mapped,
+            CoordinatorAdminRequest::SpaceAdd(Space {
+                name: "profiles".to_owned(),
+                key_attribute: "username".to_owned(),
+                attributes: vec![
+                    AttributeDefinition {
+                        name: "first".to_owned(),
+                        kind: ValueKind::String,
+                    },
+                    AttributeDefinition {
+                        name: "profile_views".to_owned(),
+                        kind: ValueKind::Int,
+                    },
+                ],
+                subspaces: vec![Subspace {
+                    dimensions: vec!["profile_views".to_owned()],
+                }],
+                options: SpaceOptions {
+                    fault_tolerance: 2,
+                    partitions: 4,
+                    schema_format: SchemaFormat::HyperDexDsl,
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn stable_wait_and_space_rm_map_to_coordinator_requests() {
+        assert_eq!(
+            ReplicantAdminRequestMessage::wait_until_stable(7, 11)
+                .into_coordinator_request()
+                .unwrap(),
+            CoordinatorAdminRequest::WaitUntilStable
+        );
+        assert_eq!(
+            ReplicantAdminRequestMessage::space_rm(9, "profiles".to_owned())
+                .into_coordinator_request()
+                .unwrap(),
+            CoordinatorAdminRequest::SpaceRm("profiles".to_owned())
+        );
     }
 
     #[test]
@@ -902,5 +1322,69 @@ mod tests {
             CoordinatorAdminRequest::ConfigGet.method_name(),
             "config_get"
         );
+    }
+
+    fn encode_test_space_payload() -> Vec<u8> {
+        let mut out = Vec::new();
+        encode_u64(&mut out, 0);
+        encode_slice32(&mut out, b"profiles");
+        encode_u64(&mut out, 2);
+        encode_u16(&mut out, 3);
+        encode_u16(&mut out, 2);
+        encode_u16(&mut out, 1);
+
+        encode_slice32(&mut out, b"username");
+        encode_u16(&mut out, HYPERDATATYPE_STRING);
+        encode_slice32(&mut out, b"first");
+        encode_u16(&mut out, HYPERDATATYPE_STRING);
+        encode_slice32(&mut out, b"profile_views");
+        encode_u16(&mut out, HYPERDATATYPE_INT64);
+
+        encode_subspace(&mut out, 0, &[0], 4);
+        encode_subspace(&mut out, 1, &[2], 4);
+
+        encode_u8(&mut out, 0);
+        encode_u64(&mut out, 0);
+        encode_u16(&mut out, 2);
+        encode_slice32(&mut out, b"");
+
+        out
+    }
+
+    fn encode_subspace(out: &mut Vec<u8>, id: u64, attrs: &[u16], partitions: u32) {
+        encode_u64(out, id);
+        encode_u16(out, attrs.len() as u16);
+        encode_u32(out, partitions);
+        for attr in attrs {
+            encode_u16(out, *attr);
+        }
+        for partition in 0..partitions {
+            encode_u64(out, partition as u64);
+            encode_u16(out, 1);
+            encode_u8(out, 0);
+            encode_u64(out, partition as u64);
+            encode_u64(out, partition as u64);
+        }
+    }
+
+    fn encode_slice32(out: &mut Vec<u8>, bytes: &[u8]) {
+        encode_u32(out, bytes.len() as u32);
+        out.extend_from_slice(bytes);
+    }
+
+    fn encode_u64(out: &mut Vec<u8>, value: u64) {
+        out.extend_from_slice(&value.to_be_bytes());
+    }
+
+    fn encode_u32(out: &mut Vec<u8>, value: u32) {
+        out.extend_from_slice(&value.to_be_bytes());
+    }
+
+    fn encode_u16(out: &mut Vec<u8>, value: u16) {
+        out.extend_from_slice(&value.to_be_bytes());
+    }
+
+    fn encode_u8(out: &mut Vec<u8>, value: u8) {
+        out.push(value);
     }
 }

@@ -18,6 +18,8 @@ use engine_rocks::RocksEngine;
 use hyperdex_admin_protocol::{
     AdminRequest, AdminResponse, ConfigView, CoordinatorAdminRequest, CoordinatorReturnCode,
     HyperdexAdminService, LegacyAdminRequest, LegacyAdminReturnCode,
+    ReplicantAdminRequestMessage, ReplicantCallCompletion, ReplicantConditionCompletion,
+    ReplicantReturnCode,
 };
 use hyperdex_client_protocol::{ClientRequest, ClientResponse, HyperdexClientService};
 use legacy_protocol::{
@@ -1537,6 +1539,50 @@ pub async fn handle_legacy_admin_request(
     }
 }
 
+pub async fn handle_replicant_admin_request(
+    runtime: &ClusterRuntime,
+    request: ReplicantAdminRequestMessage,
+) -> Result<Vec<u8>> {
+    let nonce = request.nonce();
+    match request.into_coordinator_request()? {
+        CoordinatorAdminRequest::SpaceAdd(space) => {
+            let status =
+                handle_coordinator_admin_request(runtime, CoordinatorAdminRequest::SpaceAdd(space))
+                    .await?;
+            Ok(ReplicantCallCompletion {
+                nonce,
+                status: ReplicantReturnCode::Success,
+                output: status.encode().to_vec(),
+            }
+            .encode())
+        }
+        CoordinatorAdminRequest::SpaceRm(name) => {
+            let status =
+                handle_coordinator_admin_request(runtime, CoordinatorAdminRequest::SpaceRm(name))
+                    .await?;
+            Ok(ReplicantCallCompletion {
+                nonce,
+                status: ReplicantReturnCode::Success,
+                output: status.encode().to_vec(),
+            }
+            .encode())
+        }
+        CoordinatorAdminRequest::WaitUntilStable => Ok(ReplicantConditionCompletion {
+            nonce,
+            status: ReplicantReturnCode::Success,
+            state: runtime.stable_version(),
+            data: Vec::new(),
+        }
+        .encode()),
+        CoordinatorAdminRequest::ConfigGet => anyhow::bail!(
+            "legacy admin config follow still needs HyperDex configuration encoding"
+        ),
+        CoordinatorAdminRequest::DaemonRegister(_) => {
+            anyhow::bail!("daemon registration is not part of the legacy admin client surface")
+        }
+    }
+}
+
 fn map_admin_error_to_coordinator(err: &anyhow::Error) -> CoordinatorReturnCode {
     let msg = err.to_string();
     if msg.contains("already exists") {
@@ -1898,6 +1944,8 @@ mod tests {
     use hyperdex_admin_protocol::{
         AdminRequest, AdminResponse, ConfigView, CoordinatorAdminRequest, CoordinatorReturnCode,
         HyperdexAdminService, LegacyAdminRequest, LegacyAdminReturnCode,
+        ReplicantAdminRequestMessage, ReplicantCallCompletion, ReplicantConditionCompletion,
+        ReplicantReturnCode,
     };
     use hyperdex_client_protocol::HyperdexClientService;
     use legacy_protocol::{
@@ -2319,6 +2367,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn replicant_space_add_request_maps_to_call_completion() {
+        let runtime = bootstrap_runtime();
+        let response = handle_replicant_admin_request(
+            &runtime,
+            ReplicantAdminRequestMessage::space_add(41, encode_test_space_payload()),
+        )
+        .await
+        .unwrap();
+        let completion = ReplicantCallCompletion::decode(&response).unwrap();
+
+        assert_eq!(completion.nonce, 41);
+        assert_eq!(completion.status, ReplicantReturnCode::Success);
+        assert_eq!(
+            CoordinatorReturnCode::decode(&completion.output).unwrap(),
+            CoordinatorReturnCode::Success
+        );
+    }
+
+    #[tokio::test]
+    async fn replicant_wait_until_stable_maps_to_condition_completion() {
+        let runtime = bootstrap_runtime();
+        let response = handle_replicant_admin_request(
+            &runtime,
+            ReplicantAdminRequestMessage::wait_until_stable(7, 0),
+        )
+        .await
+        .unwrap();
+        let completion = ReplicantConditionCompletion::decode(&response).unwrap();
+
+        assert_eq!(completion.nonce, 7);
+        assert_eq!(completion.status, ReplicantReturnCode::Success);
+        assert_eq!(completion.state, runtime.stable_version());
+        assert!(completion.data.is_empty());
+    }
+
+    #[tokio::test]
     async fn coordinator_admin_space_rm_maps_to_exact_coordinator_code() {
         let runtime = bootstrap_runtime();
 
@@ -2417,6 +2501,70 @@ mod tests {
             CoordinatorReturnCode::decode(&response).unwrap(),
             CoordinatorReturnCode::Success
         );
+    }
+
+    fn encode_test_space_payload() -> Vec<u8> {
+        let mut out = Vec::new();
+        encode_u64(&mut out, 0);
+        encode_slice32(&mut out, b"profiles");
+        encode_u64(&mut out, 2);
+        encode_u16(&mut out, 3);
+        encode_u16(&mut out, 2);
+        encode_u16(&mut out, 1);
+
+        encode_slice32(&mut out, b"username");
+        encode_u16(&mut out, 9217);
+        encode_slice32(&mut out, b"first");
+        encode_u16(&mut out, 9217);
+        encode_slice32(&mut out, b"profile_views");
+        encode_u16(&mut out, 9218);
+
+        encode_subspace(&mut out, 0, &[0], 4);
+        encode_subspace(&mut out, 1, &[2], 4);
+
+        encode_u8(&mut out, 0);
+        encode_u64(&mut out, 0);
+        encode_u16(&mut out, 2);
+        encode_slice32(&mut out, b"");
+
+        out
+    }
+
+    fn encode_subspace(out: &mut Vec<u8>, id: u64, attrs: &[u16], partitions: u32) {
+        encode_u64(out, id);
+        encode_u16(out, attrs.len() as u16);
+        encode_u32(out, partitions);
+        for attr in attrs {
+            encode_u16(out, *attr);
+        }
+        for partition in 0..partitions {
+            encode_u64(out, partition as u64);
+            encode_u16(out, 1);
+            encode_u8(out, 0);
+            encode_u64(out, partition as u64);
+            encode_u64(out, partition as u64);
+        }
+    }
+
+    fn encode_slice32(out: &mut Vec<u8>, bytes: &[u8]) {
+        encode_u32(out, bytes.len() as u32);
+        out.extend_from_slice(bytes);
+    }
+
+    fn encode_u64(out: &mut Vec<u8>, value: u64) {
+        out.extend_from_slice(&value.to_be_bytes());
+    }
+
+    fn encode_u32(out: &mut Vec<u8>, value: u32) {
+        out.extend_from_slice(&value.to_be_bytes());
+    }
+
+    fn encode_u16(out: &mut Vec<u8>, value: u16) {
+        out.extend_from_slice(&value.to_be_bytes());
+    }
+
+    fn encode_u8(out: &mut Vec<u8>, value: u8) {
+        out.push(value);
     }
 
     #[tokio::test]
