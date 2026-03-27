@@ -126,21 +126,22 @@ surface.
 - [x] (2026-03-27 05:58Z) Reconciled `007bdf1` (`Harden packed admin space
   decoding`), which ports the missing packed-space validation and richer tests
   into the existing decoder path on `main`.
+- [x] (2026-03-27 06:02Z) Reconciled `99d3922` (`Serve coordinator legacy
+  admin on the public port`), which proves same-port public-port dispatch but
+  still leaves the original admin tools timing out.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
-The request core, session core, and packed-space decoder hardening are now on
-`main`. The remaining live contract is down to two implementation jobs: the
-coordinator binary still needs same-port legacy-admin startup, and the `config`
-follow payload still needs the original binary format.
+The request core, session core, packed-space decoder hardening, and same-port
+startup are now on `main`. The remaining live contract is down to one
+implementation job: the `config` follow payload still needs the original
+binary format.
 
 ## Next Bounded Step
 
-Reconcile the two active follow-ups:
-1. same-port coordinator startup integration on the public coordinator port
-2. original binary `config` follow payload encoding
-Then rerun the bounded `hyperdex-add-space` and
+Reconcile the binary `config` follow payload encoder, then rerun the bounded
+`hyperdex-add-space` and
 `hyperdex-wait-until-stable` probes, followed by the direct `hyhac` Cabal
 test if those probes advance.
 
@@ -248,6 +249,15 @@ test if those probes advance.
   narrow write scope.
   Evidence: `007bdf1` landed on `main` from the clean retry and avoided the
   earlier unrelated edits across other crates.
+- Observation: the startup path is now past the public-port binding problem.
+  Evidence: `99d3922` dispatches accepted public-port connections between the
+  JSON control path and the legacy admin path, and a focused test keeps a
+  legacy `config_follow` connection open while a JSON `space_add` succeeds on
+  the same port.
+- Observation: after the startup fix, the remaining live admin timeout points
+  downstream of accept/dispatch.
+  Evidence: bounded `hyperdex-add-space` and `hyperdex-wait-until-stable`
+  probes still timed out against the live listener after `99d3922`.
 
 ## Decision Log
 

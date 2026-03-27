@@ -122,7 +122,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Hold until a new real-cluster failure requires deeper harness work. | `advance` |
-| `live-hyhac` | active | The request core, service core, and packed-space decoder hardening are now on `main`, but the live coordinator still needs same-port startup integration and original-format config-condition payloads before the C admin client can complete a real probe. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated admin workers | Finish same-port coordinator startup and binary config payload encoding, then rerun the admin probes. | `advance` |
+| `live-hyhac` | active | The request core, service core, decoder hardening, and same-port startup are now on `main`, but the live coordinator still needs original-format config-condition payloads before the C admin client can complete a real probe. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus one active config-encoder worker | Finish binary config payload encoding, then rerun the admin probes. | `advance` |
 
 ## Progress
 
@@ -209,22 +209,22 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 05:58Z) Reconciled `007bdf1` (`Harden packed admin space
   decoding`), which ports the missing packed-space validation and richer tests
   into `hyperdex-admin-protocol` while keeping the current public entry points.
+- [x] (2026-03-27 06:02Z) Reconciled `99d3922` (`Serve coordinator legacy
+  admin on the public port`), which proves same-port coordinator dispatch but
+  also proves the original admin tools still time out afterward.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
 Drive the remaining live coordinator compatibility gap now that the request
-core, service core, and decoder hardening are on `main`. The two active
-implementation jobs are same-port coordinator startup and binary config payload
-encoding. The next integration should turn those into real admin-tool probe
-results.
+core, service core, decoder hardening, and same-port startup are on `main`.
+The one active implementation job is binary config payload encoding. The next
+integration should turn that into a real admin-tool probe result.
 
 ## Next Root Move
 
-Reconcile the two currently active `live-hyhac` follow-ups:
-1. same-port coordinator startup integration
-2. original HyperDex binary `config` condition payload encoding
-Then rerun `hyperdex-add-space` and `hyperdex-wait-until-stable`.
+Reconcile the binary `config` condition payload encoder, then rerun
+`hyperdex-add-space` and `hyperdex-wait-until-stable`.
 
 ## Surprises & Discoveries
 
@@ -343,6 +343,12 @@ Then rerun `hyperdex-add-space` and `hyperdex-wait-until-stable`.
   Evidence: `007bdf1` restores secret-attribute validation, partition-count
   validation, index validation, contextual truncation checks, and richer
   packed-space fixtures in `crates/hyperdex-admin-protocol/src/lib.rs`.
+- Observation: same-port coordinator dispatch is now working, but it did not
+  by itself unblock the original C admin tools.
+  Evidence: `99d3922` adds public-port dispatch between JSON control traffic
+  and legacy admin traffic, its tests pass, and bounded `hyperdex-add-space`
+  plus `hyperdex-wait-until-stable` probes still timed out against the live
+  listener afterward.
 
 ## Decision Log
 

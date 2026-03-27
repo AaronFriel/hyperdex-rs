@@ -970,6 +970,31 @@
   - focused startup tests
   - bounded live probe evidence
 
+### Entry `hyh-023` - Outcome
+
+- Timestamp: `2026-03-27 06:02Z`
+- Kind: `outcome`
+- End commit: `99d3922`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/main.rs`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+- Evidence summary:
+  - `99d3922` binds one public coordinator listener, accepts connections on
+    that port, peeks the first bytes, and dispatches each connection to either
+    the JSON control path or the legacy admin path
+  - `99d3922` adds a focused test that keeps a legacy `config_follow`
+    connection open while a JSON `space_add` request succeeds on the same port
+  - `cargo test -p server` passed
+  - `cargo test --workspace` passed
+  - bounded `hyperdex-add-space` and `hyperdex-wait-until-stable` probes still
+    timed out against the live listener afterward
+- Conclusion: same-port startup is no longer the main live blocker. The next
+  live gap is downstream of accept/dispatch, with the binary `config` payload
+  path now the strongest remaining candidate.
+- Disposition: `advance`
+- Next move: finish the binary `config` follow payload encoder and rerun the
+  bounded admin-tool probes.
+
 ### Entry `hyh-024` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`
@@ -991,6 +1016,46 @@
   - binary `config` follow payload encoder
   - updated focused server tests that no longer assert JSON
   - one commit ready for reconciliation
+
+### Entry `hyh-024` - Outcome
+
+- Timestamp: `2026-03-27 06:02Z`
+- Kind: `outcome`
+- End commit: `4ec59fa`
+- Artifact location:
+  - no code changes from worker `019d2ddc-b498-70c3-98f3-fedc5f07521a`
+- Evidence summary:
+  - the first binary-config worker was interrupted before returning a code
+    result
+  - same-port startup landed in parallel as `99d3922`, which makes the binary
+    `config` payload path more important rather than less
+- Conclusion: keep the scope, replace the worker, and finish the encoder with
+  the now-stable process-facing context.
+- Disposition: `retry`
+- Next move: preregister the replacement binary-config worker on the same
+  narrow write scope.
+
+### Entry `hyh-026` - Preregistration
+
+- Timestamp: `2026-03-27 06:02Z`
+- Kind: `preregister`
+- Hypothesis: with same-port startup now on `main`, a replacement worker can
+  finish the packed `hyperdex::configuration` encoder as the main remaining
+  live admin blocker.
+- Owner: delegated worker `019d2de2-abda-70e3-9c78-3b604c742be1`
+- Start commit: `99d3922`
+- Worktree / branch:
+  - delegated worker branch from `main`
+- Mutable surface:
+  - `crates/server/src/lib.rs`
+- Validator:
+  - `cargo test -p server`
+  - `cargo test --workspace`
+  - bounded `hyperdex-add-space` probe if reasonable after the patch
+- Expected artifacts:
+  - binary `config` follow payload encoder
+  - updated focused server tests
+  - the next concrete live admin result
 
 ### Entry `hyh-025` - Preregistration
 
