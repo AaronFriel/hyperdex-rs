@@ -295,3 +295,7 @@ contract.
   contract after a structurally valid atomic request.
 - The ninth bounded step found that contract: missing schema validation and
   missing explicit `RESP_ATOMIC/NET_BADDIMSPEC` handling after atomic decode.
+- The product work that followed has now landed both that validation contract
+  and the multiprocess `early eof` cleanup on `main`. This workstream can be
+  reopened on the remaining large-object failure if product work needs another
+  narrow comparison, but it is no longer the active path right now.

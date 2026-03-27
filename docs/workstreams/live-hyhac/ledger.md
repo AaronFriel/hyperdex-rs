@@ -1679,6 +1679,69 @@
   - a clean next live-cluster baseline for the remaining large-object failure
   - or a tighter process-level mismatch with code and evidence
 
+### Entry `hyh-037` - Outcome
+
+- Timestamp: `2026-03-27 21:20Z`
+- Kind: `outcome`
+- End commit: `9afb11a`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence summary:
+  - taught the legacy daemon frontend to accept both newer protocol bodies and
+    older named-body requests on the public data path
+  - added compatibility for named-body `ReqCount`, `ReqGet`, `ReqAtomic`, and
+    `ReqSearchStart` plus named get/search response bodies
+  - `cargo test -p server --test dist_multiprocess_harness coordinator_space_add_reaches_multiple_daemon_processes -- --nocapture`
+    passed on integrated `main`
+  - `cargo test -p server --test dist_multiprocess_harness legacy_atomic_routes_numeric_update_to_remote_primary_process -- --nocapture`
+    passed on integrated `main`
+  - `cargo test -p server --test dist_multiprocess_harness degraded_search_and_count_survive_one_daemon_process_shutdown -- --nocapture`
+    passed on integrated `main`
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
+    still reproduces `Left ClientGarbage`
+- Conclusion: the multiprocess `early eof` process-level failures are removed
+  from `main`. The next active blocker is once again the focused large-object
+  `ClientGarbage` failure, now on a cleaner live-cluster baseline.
+- Disposition: `advance`
+- Next move: preregister a fresh current-main product step for the large-object
+  failure and relaunch a parallel read-only narrowing pass on that cleaner
+  baseline.
+
+### Entry `hyh-038` - Preregistration
+
+- Timestamp: `2026-03-27 21:20Z`
+- Kind: `preregister`
+- Hypothesis: a fresh forked worker on current `main` can move the focused
+  large-object `ClientGarbage` path forward now that the multiprocess `early
+  eof` failures are gone, or reduce it to the next exact daemon-side mismatch
+  with code and validators.
+- Owner: next forked worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object`
+- Start commit: `5879fab`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object` on
+    `live-hyhac-large-object`
+- Mutable surface:
+  - `crates/server/**`
+  - `crates/legacy-frontend/**`
+  - `crates/legacy-protocol/**`
+  - `crates/transport-grpc/**` only if strictly required by the remaining live
+    path
+- Validator:
+  - fastest useful check:
+    - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
+  - strong checks:
+    - `cargo test -p server --test dist_multiprocess_harness coordinator_space_add_reaches_multiple_daemon_processes -- --nocapture`
+    - `cargo test -p server --test dist_multiprocess_harness legacy_atomic_routes_numeric_update_to_remote_primary_process -- --nocapture`
+    - `cargo test -p server --test dist_multiprocess_harness degraded_search_and_count_survive_one_daemon_process_shutdown -- --nocapture`
+    - `cargo test -p server`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - code and tests that move the focused large-object path past `Left ClientGarbage`
+  - or the next exact remaining mismatch with code and evidence
+  - a clean current-main branch-local loop for the remaining live failure
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`

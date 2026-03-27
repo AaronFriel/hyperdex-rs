@@ -201,24 +201,27 @@ stronger live probe before returning control.
   `main` but still leaves the focused large-object public loop failing.
 - [x] (2026-03-27 21:05Z) Verified that the next concrete failing surface is
   now the multiprocess process-level `early eof` path.
-- [ ] Rerun the bounded live `hyhac` probe after the next packed-config/body
+- [x] (2026-03-27 21:20Z) Reconciled `5879fab` (`Fix legacy daemon multiprocess
+  EOF path`), which clears the process-level `early eof` failures on `main`
+  and restores a cleaner live-cluster baseline for the remaining large-object
+  failure.
+- [ ] Rerun the bounded live `hyhac` probe after the remaining large-object
   mismatch is fixed.
 
 ## Current Hypothesis
 
-The earlier coordinator-side and request-shape gaps are now behind `main`.
-`acfdcdc` landed the missing atomic validation-and-explicit-error behavior, and
-the focused large-object public loop still reproduces. The next concrete
-blocker is now the multiprocess process-level `early eof` path, which is also
-failing the broader live-cluster harnesses and therefore prevents a trustworthy
-baseline for the remaining large-object mismatch.
+The earlier coordinator-side, request-shape, and process-level `early eof`
+gaps are now behind `main`. `5879fab` removes the multiprocess EOF failures, so
+the active blocker is again the focused large-object `ClientGarbage` failure on
+a cleaner live-cluster baseline.
 
 ## Next Bounded Step
 
-Own the multiprocess `early eof` process-level path from current `main`. Use
-`coordinator_space_add_reaches_multiple_daemon_processes` as the fast loop,
-clear the three failing process-level harnesses, and then rerun the focused
-large-object public check on top of that cleaner live-cluster baseline.
+Own the focused large-object `ClientGarbage` path again from current `main`,
+using the now-cleaner live-cluster baseline. Keep
+`legacy_hyhac_large_object_probe_hits_clientgarbage_fast` as the fast loop,
+and hold the repaired multiprocess process-level checks as the stronger
+baseline before widening back out.
 
 ## Surprises & Discoveries
 
