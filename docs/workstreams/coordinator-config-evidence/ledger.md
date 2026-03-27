@@ -421,3 +421,55 @@
 - Expected artifacts:
   - the next exact post-header contract for the large-object put
   - concrete file/function pointers for the original producer and consumer
+
+### Entry `cce-008` - Outcome
+
+- Timestamp: `2026-03-27 20:51Z`
+- Kind: `outcome`
+- End commit: `dd2553b`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/HyperDex/client/c.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/client/keyop_info.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/common/key_change.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/common/funcall.cc`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/legacy-frontend/src/lib.rs`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/legacy-protocol/src/lib.rs`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+- Evidence summary:
+  - original HyperDex lowers `put` to `FUNC_SET` funcalls before send
+  - original daemon reads `nonce >> key_change` after the accepted header
+  - `key_change` and `funcall` field orderings match the current Rust decode
+    path
+  - current Rust explicitly accepts `FUNC_SET` with empty `arg2` as a plain
+    mutation for the atomic request path
+  - the focused public validator still reproduces `Left ClientGarbage`
+- Conclusion: the first post-header body contract is structurally aligned on
+  current `main`. The remaining blocker is later than function selection and
+  later than `key_change` field packing.
+- Disposition: `reframe`
+- Next move: reopen this workstream for the first daemon-side processing or
+  response contract after a structurally valid atomic request.
+
+### Entry `cce-009` - Preregistration
+
+- Timestamp: `2026-03-27 20:51Z`
+- Kind: `preregister`
+- Hypothesis: a new read-only pass that starts at daemon-side atomic handling
+  and the first client-visible response path will identify the next exact
+  mismatch after a structurally valid `REQ_ATOMIC`, whether in daemon mutation
+  processing, large-value handling, or response encoding.
+- Owner: next delegated read-only worker
+- Start commit: `dd2553b`
+- Worktree / branch:
+  - none required; read-only evidence gathering only
+- Mutable surface:
+  - none
+- Validator:
+  - source-backed explanation of the first daemon-side processing or response
+    contract after a valid large-object atomic request
+  - or the next exact mismatch in that post-request path
+- Expected artifacts:
+  - the next exact daemon-side processing or response contract for the large
+    object path
+  - concrete file/function pointers for the original producer and consumer

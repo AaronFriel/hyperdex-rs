@@ -84,6 +84,9 @@ first atomic write.
 - [x] (2026-03-27 20:46Z) Finished `cce-007` and ruled out the routing-header
   contract for the concrete failing key `"large"`, so the remaining blocker is
   later than the daemon header gate.
+- [x] (2026-03-27 20:51Z) Finished `cce-008` and ruled out the first atomic
+  body contract as well: current `hyperdex-rs` is structurally aligned with the
+  original `key_change` and `FUNC_SET` packing for the large-object put.
 - [x] (2026-03-27 20:14Z) Reopened this workstream for a second read-only step
   that compares the Rust `default_legacy_config_encoder` output against the
   original HyperDex `configuration` / `space` packing rules on a live
@@ -109,6 +112,9 @@ client-to-daemon routing header, especially whether the chosen
 stamped config version passes the daemon-side header gate. `cce-007` rules that
 header contract out for the concrete failing key as well, so the next exact
 question is the first body contract after a daemon-acceptable header.
+`cce-008` rules out that first body contract too, so the next exact question is
+the first daemon-side processing or response contract after a structurally
+valid `REQ_ATOMIC`.
 
 ## Next Bounded Step
 
@@ -116,7 +122,10 @@ Keep this workstream read-only. The next bounded step is now narrower than
 general comparison: follow the original client path one step beyond an
 accepted daemon header for the failing large-object put and identify the first
 exact body contract, function-selection contract, or `key_change` encoding
-contract that must hold before the daemon can process `REQ_ATOMIC`.
+contract that must hold before the daemon can process `REQ_ATOMIC`. That
+request-shape contract now looks sound, so the next bounded step is the first
+daemon-side processing or response contract after a structurally valid atomic
+request.
 
 ## Surprises & Discoveries
 
@@ -171,6 +180,11 @@ contract that must hold before the daemon can process `REQ_ATOMIC`.
   Rust config emits matching server-table and replica data from one source, and
   the original daemon-side acceptance checks would accept that header shape for
   a single-daemon cluster.
+- Observation: the first atomic-body contract also appears structurally
+  consistent on current `main`.
+  Evidence: both the original path and Rust lower `put` to `FUNC_SET`
+  funcalls, pack `nonce >> key_change`, and use compatible funcall and
+  `key_change` field orderings for the large-object put.
 
 ## Decision Log
 
@@ -213,6 +227,11 @@ contract that must hold before the daemon can process `REQ_ATOMIC`.
   concrete failing key, so the next useful read-only pass is the first body
   contract after an accepted header, not more header analysis.
   Date/Author: 2026-03-27 / root
+- Decision: move the read-only path one step later again after `cce-008`.
+  Rationale: the large-object put now looks structurally valid through the
+  first atomic-body contract, so the next useful read-only question is the
+  first daemon-side processing or response contract after `REQ_ATOMIC`.
+  Date/Author: 2026-03-27 / root
 
 ## Outcomes & Retrospective
 
@@ -251,3 +270,6 @@ contract that must hold before the daemon can process `REQ_ATOMIC`.
   concrete failing key. The next read-only pass should therefore inspect the
   first body contract after an accepted header rather than revisit config or
   header mechanics.
+- The eighth bounded step ruled out that first body contract as well. The next
+  read-only pass should inspect the first daemon-side processing or response
+  contract after a structurally valid atomic request.

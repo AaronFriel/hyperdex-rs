@@ -122,8 +122,8 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` | Hold until the product worker needs another harness change. | `advance` |
-| `live-hyhac` | active | running forked product worker on a clean compatibility worktree | `cce-007` ruled out the routing-header contract for the concrete failing key, so the active product target is now the first body contract after an accepted daemon header. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-config-body` on `live-hyhac-config-body` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused manual cluster probes | Expose or fix the first post-header body mismatch for the large-object put. | `advance` |
-| `coordinator-config-evidence` | active | next delegated read-only worker | None; `cce-007` ruled out the routing-header contract, so this active read-only step now needs to identify the first body contract after an accepted daemon header. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required for the bounded step | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus source-backed post-header comparison | Name the first exact post-header contract for the large-object path. | `reframe` |
+| `live-hyhac` | active | running forked product worker on a clean compatibility worktree | `cce-008` ruled out the first post-header body contract as well, so the active product target is now the first daemon-side processing or response contract after a structurally valid atomic request. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-config-body` on `live-hyhac-config-body` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused manual cluster probes | Expose or fix the first daemon-side processing or response mismatch for the large-object put. | `reframe` |
+| `coordinator-config-evidence` | active | next delegated read-only worker | None; `cce-008` ruled out request structure itself, so this active read-only step now needs to identify the first daemon-side processing or response contract after a structurally valid atomic request. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required for the bounded step | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus source-backed post-request comparison | Name the next exact daemon-side processing or response contract for the large-object path. | `reframe` |
 
 ## Progress
 
@@ -311,6 +311,10 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 20:46Z) Finished `cce-007`, which ruled out the routing-header
   contract for the concrete failing key and moved the active diagnosis to the
   first body contract after an accepted daemon header.
+- [x] (2026-03-27 20:51Z) Finished `cce-008`, which ruled out the first
+  post-header body contract as well and moved the active diagnosis to the first
+  daemon-side processing or response contract after a structurally valid atomic
+  request.
 - [ ] Rerun the bounded live `hyhac` probe after the next packed-config/body
   mismatch is fixed.
 
@@ -320,15 +324,17 @@ Drive the next live compatibility step around the remaining packed
 `hyperdex::configuration` / `hyperdex::space` mismatch after the region-interval
 fix that landed in `1d6093c`. A real ID-allocation mismatch still exists in
 the packed config body, but the concrete failing key `"large"` is already past
-that route-selection boundary, and the routing-header contract now also looks
-sound for that key. The next exact target is therefore the first body contract
-after an accepted daemon header.
+that route-selection boundary, and the routing-header plus first atomic-body
+contracts now also look sound for that key. The next exact target is therefore
+the first daemon-side processing or response contract after a structurally
+valid atomic request.
 
 ## Next Root Move
 
-Push the post-header body target into the running product fork, relaunch the
-read-only evidence thread on the first body contract after header acceptance,
-and reconcile the first substantive result that exposes or fixes that contract.
+Push the post-request target into the running product fork, relaunch the
+read-only evidence thread on the first daemon-side processing or response
+contract, and reconcile the first substantive result that exposes or fixes that
+contract.
 
 ## Surprises & Discoveries
 

@@ -189,6 +189,9 @@ stronger live probe before returning control.
 - [x] (2026-03-27 20:46Z) The routing-header comparison did not find a concrete
   mismatch for the failing key `"large"`, so the remaining blocker is now the
   first body contract after an accepted daemon header.
+- [x] (2026-03-27 20:51Z) The first body comparison did not find a concrete
+  mismatch either, so the remaining blocker is now later than function
+  selection and `key_change` packing.
 - [ ] Rerun the bounded live `hyhac` probe after the next packed-config/body
   mismatch is fixed.
 
@@ -214,7 +217,10 @@ contract is the client-to-daemon routing header, especially whether the chosen
 `virtual_server_id` maps back to a real `server_id` and address and whether
 the stamped config version and `vidt` pass the daemon-side header gate. That
 header contract now appears sound for the concrete failing key, so the next
-exact question is the first body contract after an accepted daemon header.
+exact question is the first body contract after an accepted daemon header. That
+first body contract also appears sound, so the next exact question is the first
+daemon-side processing or response contract after a structurally valid atomic
+request.
 
 ## Next Bounded Step
 
@@ -226,7 +232,7 @@ concrete failing key is already past route selection, so drive until the next
 exact pre-daemon mismatch is exposed or fixed. The next exact target is the
 first body contract after the daemon would accept the header. Stay on the fast
 public loop until that path either clears or yields the next exact
-coordinator-side contract.
+coordinator-side contract, which is now later than request structure itself.
 
 ## Surprises & Discoveries
 
