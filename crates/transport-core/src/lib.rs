@@ -40,6 +40,10 @@ pub enum DataPlaneRequest {
         space: String,
         key: Bytes,
     },
+    Search {
+        space: String,
+        checks: Vec<Check>,
+    },
     ConditionalPut {
         space: String,
         key: Bytes,
@@ -65,6 +69,7 @@ pub enum DataPlaneRequest {
 pub enum DataPlaneResponse {
     Unit,
     Record(Option<Record>),
+    SearchResult(Vec<Record>),
     Deleted(u64),
     ConditionFailed,
 }

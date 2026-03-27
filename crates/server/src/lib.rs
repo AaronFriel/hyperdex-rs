@@ -28,7 +28,9 @@ use legacy_protocol::{
     LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND, LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND,
     LEGACY_ATOMIC_FLAG_WRITE,
 };
-use placement_core::{HyperSpacePlacement, PlacementDecision, PlacementStrategy, RendezvousPlacement};
+use placement_core::{
+    HyperSpacePlacement, PlacementDecision, PlacementStrategy, RendezvousPlacement,
+};
 use storage_core::{StorageEngine, WriteResult};
 use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -326,21 +328,16 @@ impl ClusterRuntime {
                 DataPlaneResponse::Unit => {}
                 DataPlaneResponse::ConditionFailed
                 | DataPlaneResponse::Record(_)
+                | DataPlaneResponse::SearchResult(_)
                 | DataPlaneResponse::Deleted(_) => {
-                    anyhow::bail!(
-                        "unexpected response to replicated put on replica {replica}"
-                    );
+                    anyhow::bail!("unexpected response to replicated put on replica {replica}");
                 }
             }
         }
         Ok(())
     }
 
-    async fn replicate_delete_to_secondaries(
-        &self,
-        space: &str,
-        key: &bytes::Bytes,
-    ) -> Result<()> {
+    async fn replicate_delete_to_secondaries(&self, space: &str, key: &bytes::Bytes) -> Result<()> {
         let decision = self.locate_key(key)?;
         for replica in decision.replicas {
             if replica == self.local_node_id {
@@ -359,10 +356,9 @@ impl ClusterRuntime {
                 DataPlaneResponse::Unit => {}
                 DataPlaneResponse::ConditionFailed
                 | DataPlaneResponse::Record(_)
+                | DataPlaneResponse::SearchResult(_)
                 | DataPlaneResponse::Deleted(_) => {
-                    anyhow::bail!(
-                        "unexpected response to replicated delete on replica {replica}"
-                    );
+                    anyhow::bail!("unexpected response to replicated delete on replica {replica}");
                 }
             }
         }
@@ -377,7 +373,8 @@ impl ClusterRuntime {
     ) -> Result<DataPlaneResponse> {
         match self.data_plane.put(&space, key.clone(), &mutations)? {
             WriteResult::Written | WriteResult::Missing => {
-                self.replicate_put_to_secondaries(&space, &key, &mutations).await?;
+                self.replicate_put_to_secondaries(&space, &key, &mutations)
+                    .await?;
                 Ok(DataPlaneResponse::Unit)
             }
             WriteResult::ConditionFailed => Ok(DataPlaneResponse::ConditionFailed),
@@ -407,7 +404,8 @@ impl ClusterRuntime {
                     DataPlaneResponse::Deleted(count) => count,
                     DataPlaneResponse::Unit
                     | DataPlaneResponse::ConditionFailed
-                    | DataPlaneResponse::Record(_) => {
+                    | DataPlaneResponse::Record(_)
+                    | DataPlaneResponse::SearchResult(_) => {
                         anyhow::bail!(
                             "unexpected response to replicated delete-group on replica {node_id}"
                         )
@@ -427,6 +425,47 @@ impl ClusterRuntime {
         Ok(deleted_total / replica_factor)
     }
 
+    async fn execute_distributed_search(
+        &self,
+        space: String,
+        checks: Vec<Check>,
+    ) -> Result<Vec<Record>> {
+        let mut records_by_key = BTreeMap::new();
+
+        for node_id in self.cluster_node_ids() {
+            let records = if node_id == self.local_node_id {
+                self.data_plane.search(&space, &checks)?
+            } else {
+                match self
+                    .forward_data_request(
+                        node_id,
+                        DataPlaneRequest::Search {
+                            space: space.clone(),
+                            checks: checks.clone(),
+                        },
+                    )
+                    .await?
+                {
+                    DataPlaneResponse::SearchResult(records) => records,
+                    DataPlaneResponse::Unit
+                    | DataPlaneResponse::ConditionFailed
+                    | DataPlaneResponse::Record(_)
+                    | DataPlaneResponse::Deleted(_) => {
+                        anyhow::bail!(
+                            "unexpected response to distributed search on replica {node_id}"
+                        )
+                    }
+                }
+            };
+
+            for record in records {
+                records_by_key.entry(record.key.clone()).or_insert(record);
+            }
+        }
+
+        Ok(records_by_key.into_values().collect())
+    }
+
     async fn apply_primary_conditional_put(
         &self,
         space: String,
@@ -439,7 +478,8 @@ impl ClusterRuntime {
             .conditional_put(&space, key.clone(), &checks, &mutations)?
         {
             WriteResult::Written | WriteResult::Missing => {
-                self.replicate_put_to_secondaries(&space, &key, &mutations).await?;
+                self.replicate_put_to_secondaries(&space, &key, &mutations)
+                    .await?;
                 Ok(DataPlaneResponse::Unit)
             }
             WriteResult::ConditionFailed => Ok(DataPlaneResponse::ConditionFailed),
@@ -475,6 +515,9 @@ impl ClusterRuntime {
                     DataPlaneRequest::Get { space, key } => {
                         DataPlaneResponse::Record(self.data_plane.get(&space, &key)?)
                     }
+                    DataPlaneRequest::Search { space, checks } => {
+                        DataPlaneResponse::SearchResult(self.data_plane.search(&space, &checks)?)
+                    }
                     DataPlaneRequest::Delete { space, key } => {
                         self.apply_primary_delete(space, key).await?
                     }
@@ -483,9 +526,10 @@ impl ClusterRuntime {
                         key,
                         checks,
                         mutations,
-                    } => self
-                        .apply_primary_conditional_put(space, key, checks, mutations)
-                        .await?,
+                    } => {
+                        self.apply_primary_conditional_put(space, key, checks, mutations)
+                            .await?
+                    }
                     DataPlaneRequest::ReplicatedPut {
                         space,
                         key,
@@ -501,7 +545,9 @@ impl ClusterRuntime {
                         }
                     }
                     DataPlaneRequest::ReplicatedDeleteGroup { space, checks } => {
-                        DataPlaneResponse::Deleted(self.data_plane.delete_matching(&space, &checks)?)
+                        DataPlaneResponse::Deleted(
+                            self.data_plane.delete_matching(&space, &checks)?,
+                        )
                     }
                 };
                 InternodeResponse::encode(200, &response)
@@ -1444,7 +1490,9 @@ impl HyperdexClientService for ClusterRuntime {
                     Ok(match self.apply_primary_put(space, key, mutations).await? {
                         DataPlaneResponse::Unit => ClientResponse::Unit,
                         DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
-                        DataPlaneResponse::Record(_) | DataPlaneResponse::Deleted(_) => {
+                        DataPlaneResponse::Record(_)
+                        | DataPlaneResponse::SearchResult(_)
+                        | DataPlaneResponse::Deleted(_) => {
                             anyhow::bail!("unexpected record response to local put")
                         }
                     })
@@ -1463,7 +1511,9 @@ impl HyperdexClientService for ClusterRuntime {
                         {
                             DataPlaneResponse::Unit => ClientResponse::Unit,
                             DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
-                            DataPlaneResponse::Record(_) | DataPlaneResponse::Deleted(_) => {
+                            DataPlaneResponse::Record(_)
+                            | DataPlaneResponse::SearchResult(_)
+                            | DataPlaneResponse::Deleted(_) => {
                                 anyhow::bail!("unexpected record response to remote put")
                             }
                         },
@@ -1483,6 +1533,7 @@ impl HyperdexClientService for ClusterRuntime {
                             DataPlaneResponse::Record(record) => ClientResponse::Record(record),
                             DataPlaneResponse::Unit
                             | DataPlaneResponse::ConditionFailed
+                            | DataPlaneResponse::SearchResult(_)
                             | DataPlaneResponse::Deleted(_) => {
                                 anyhow::bail!("unexpected write response to remote get")
                             }
@@ -1496,7 +1547,9 @@ impl HyperdexClientService for ClusterRuntime {
                     Ok(match self.apply_primary_delete(space, key).await? {
                         DataPlaneResponse::Unit => ClientResponse::Unit,
                         DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
-                        DataPlaneResponse::Record(_) | DataPlaneResponse::Deleted(_) => {
+                        DataPlaneResponse::Record(_)
+                        | DataPlaneResponse::SearchResult(_)
+                        | DataPlaneResponse::Deleted(_) => {
                             anyhow::bail!("unexpected record response to local delete")
                         }
                     })
@@ -1508,7 +1561,9 @@ impl HyperdexClientService for ClusterRuntime {
                         {
                             DataPlaneResponse::Unit => ClientResponse::Unit,
                             DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
-                            DataPlaneResponse::Record(_) | DataPlaneResponse::Deleted(_) => {
+                            DataPlaneResponse::Record(_)
+                            | DataPlaneResponse::SearchResult(_)
+                            | DataPlaneResponse::Deleted(_) => {
                                 anyhow::bail!("unexpected record response to remote delete")
                             }
                         },
@@ -1523,16 +1578,20 @@ impl HyperdexClientService for ClusterRuntime {
             } => {
                 let primary = self.route_primary(&key)?;
                 if primary == self.local_node_id {
-                    Ok(match self
-                        .apply_primary_conditional_put(space, key, checks, mutations)
-                        .await?
-                    {
-                        DataPlaneResponse::Unit => ClientResponse::Unit,
-                        DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
-                        DataPlaneResponse::Record(_) | DataPlaneResponse::Deleted(_) => {
-                            anyhow::bail!("unexpected record response to local conditional put")
-                        }
-                    })
+                    Ok(
+                        match self
+                            .apply_primary_conditional_put(space, key, checks, mutations)
+                            .await?
+                        {
+                            DataPlaneResponse::Unit => ClientResponse::Unit,
+                            DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
+                            DataPlaneResponse::Record(_)
+                            | DataPlaneResponse::SearchResult(_)
+                            | DataPlaneResponse::Deleted(_) => {
+                                anyhow::bail!("unexpected record response to local conditional put")
+                            }
+                        },
+                    )
                 } else {
                     Ok(
                         match self
@@ -1549,15 +1608,19 @@ impl HyperdexClientService for ClusterRuntime {
                         {
                             DataPlaneResponse::Unit => ClientResponse::Unit,
                             DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
-                            DataPlaneResponse::Record(_) | DataPlaneResponse::Deleted(_) => anyhow::bail!(
-                                "unexpected record response to remote conditional put"
-                            ),
+                            DataPlaneResponse::Record(_)
+                            | DataPlaneResponse::SearchResult(_)
+                            | DataPlaneResponse::Deleted(_) => {
+                                anyhow::bail!(
+                                    "unexpected record response to remote conditional put"
+                                )
+                            }
                         },
                     )
                 }
             }
             ClientRequest::Search { space, checks } => Ok(ClientResponse::SearchResult(
-                self.data_plane.search(&space, &checks)?,
+                self.execute_distributed_search(space, checks).await?,
             )),
             ClientRequest::Count { space, checks } => Ok(ClientResponse::Count(
                 self.data_plane.count(&space, &checks)?,
