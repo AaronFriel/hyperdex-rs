@@ -11,8 +11,9 @@ use anyhow::{anyhow, Context, Result};
 use cluster_config::{ClusterConfig, ClusterNode, TransportBackend};
 use data_model::parse_hyperdex_space;
 use hyperdex_admin_protocol::{
-    decode_packed_hyperdex_space, BusyBeeFrame, ConfigView, CoordinatorAdminRequest, CoordinatorReturnCode,
-    ReplicantAdminRequestMessage, ReplicantCallCompletion, ReplicantNetworkMsgtype,
+    decode_packed_hyperdex_space, BusyBeeFrame, ConfigView, CoordinatorAdminRequest,
+    CoordinatorReturnCode, ReplicantAdminRequestMessage, ReplicantCallCompletion,
+    ReplicantNetworkMsgtype,
 };
 use legacy_frontend::request_once;
 use legacy_protocol::{
@@ -357,6 +358,78 @@ fn legacy_tool_library_path() -> String {
     path
 }
 
+fn hyhac_root() -> PathBuf {
+    PathBuf::from("/home/friel/c/aaronfriel/hyhac")
+}
+
+fn hyhac_runtime_library_path() -> String {
+    let mut path = hyhac_root().join(".toolchain/lib").display().to_string();
+    path.push(':');
+    path.push_str(&legacy_hyperdex_root().join(".libs").display().to_string());
+    if let Some(existing) = std::env::var_os("LD_LIBRARY_PATH") {
+        path.push(':');
+        path.push_str(&existing.to_string_lossy());
+    }
+    path
+}
+
+fn find_hyhac_test_binary() -> Result<Option<PathBuf>> {
+    let dist_root = hyhac_root().join("dist-newstyle");
+    if !dist_root.is_dir() {
+        return Ok(None);
+    }
+
+    let mut stack = vec![dist_root];
+
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+
+            if path.file_name().is_some_and(|name| name == "tests")
+                && path
+                    .parent()
+                    .and_then(Path::file_name)
+                    .is_some_and(|name| name == "tests")
+                && path
+                    .parent()
+                    .and_then(Path::parent)
+                    .and_then(Path::file_name)
+                    .is_some_and(|name| name == "build")
+            {
+                return Ok(Some(path));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+fn hyhac_test_binary_path() -> Result<PathBuf> {
+    if let Some(path) = find_hyhac_test_binary()? {
+        return Ok(path);
+    }
+
+    let status = Command::new(hyhac_root().join("scripts/cabal.sh"))
+        .arg("build")
+        .arg("-f")
+        .arg("tests")
+        .arg("lib:hyhac")
+        .arg("test:tests")
+        .status()
+        .context("failed to build hyhac test binary")?;
+    if !status.success() {
+        anyhow::bail!("hyhac test binary build failed with status {status}");
+    }
+
+    find_hyhac_test_binary()?
+        .context("hyhac test binary still not present after building test:tests")
+}
+
 fn busybee_total_len(header: [u8; 4]) -> usize {
     (u32::from_be_bytes(header) & 0x00ff_ffff) as usize
 }
@@ -458,7 +531,10 @@ async fn run_busybee_proxy_capture(
     }
 }
 
-async fn finalize_proxy_task(proxy_task: tokio::task::JoinHandle<Result<()>>, stop: Arc<AtomicBool>) -> Result<()> {
+async fn finalize_proxy_task(
+    proxy_task: tokio::task::JoinHandle<Result<()>>,
+    stop: Arc<AtomicBool>,
+) -> Result<()> {
     stop.store(true, Ordering::Relaxed);
     tokio::time::timeout(Duration::from_secs(2), proxy_task)
         .await
@@ -593,7 +669,9 @@ async fn run_add_space_probe_via_proxy(
     .await
 }
 
-async fn run_add_space_direct(address: SocketAddr) -> Result<(Option<std::process::ExitStatus>, String, String)> {
+async fn run_add_space_direct(
+    address: SocketAddr,
+) -> Result<(Option<std::process::ExitStatus>, String, String)> {
     let stdout_path = std::env::temp_dir().join(format!(
         "legacy-admin-add-space-stdout-{}.log",
         std::process::id()
@@ -638,6 +716,59 @@ async fn run_add_space_direct(address: SocketAddr) -> Result<(Option<std::proces
     }
 
     let deadline = Instant::now() + Duration::from_secs(5);
+    let exit_status = loop {
+        if let Some(status) = child.try_wait()? {
+            break Some(status);
+        }
+
+        if Instant::now() >= deadline {
+            child.kill().ok();
+            break child.wait().ok();
+        }
+
+        sleep(Duration::from_millis(20)).await;
+    };
+
+    Ok((
+        exit_status,
+        fs::read_to_string(stdout_path).unwrap_or_default(),
+        fs::read_to_string(stderr_path).unwrap_or_default(),
+    ))
+}
+
+async fn run_hyhac_selected_tests_direct(
+    address: SocketAddr,
+    pattern: &str,
+    deadline_span: Duration,
+) -> Result<(Option<std::process::ExitStatus>, String, String)> {
+    let stdout_path = std::env::temp_dir().join(format!(
+        "hyhac-selected-stdout-{}-{}.log",
+        std::process::id(),
+        address.port()
+    ));
+    let stderr_path = std::env::temp_dir().join(format!(
+        "hyhac-selected-stderr-{}-{}.log",
+        std::process::id(),
+        address.port()
+    ));
+    let stdout_file = File::create(&stdout_path)?;
+    let stderr_file = File::create(&stderr_path)?;
+
+    let mut child = Command::new(hyhac_test_binary_path()?)
+        .arg("--plain")
+        .arg("--test-seed=1")
+        .arg(format!("--select-tests={pattern}"))
+        .env("LD_LIBRARY_PATH", hyhac_runtime_library_path())
+        .env("HYPERDEX_ROOT", legacy_hyperdex_root())
+        .env("HYPERDEX_COORD_HOST", "127.0.0.1")
+        .env("HYPERDEX_COORD_PORT", address.port().to_string())
+        .current_dir(hyhac_root())
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file))
+        .spawn()
+        .with_context(|| format!("failed to spawn hyhac selected test `{pattern}`"))?;
+
+    let deadline = Instant::now() + deadline_span;
     let exit_status = loop {
         if let Some(status) = child.try_wait()? {
             break Some(status);
@@ -1382,7 +1513,10 @@ async fn legacy_admin_wait_until_stable_probe_reports_bootstrap_progress() -> Re
     let proxy_address = localhost(proxy_port.port())?;
     proxy_port.release();
     let proxy_listener = tokio::net::TcpListener::bind(proxy_address).await?;
-    std::env::set_var("HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR", proxy_address.to_string());
+    std::env::set_var(
+        "HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR",
+        proxy_address.to_string(),
+    );
     let cluster = spawn_single_daemon_cluster().await?;
     std::env::remove_var("HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR");
 
@@ -1461,7 +1595,10 @@ async fn legacy_admin_add_space_probe_completes_after_bootstrap_and_robust_call(
     let proxy_address = localhost(proxy_port.port())?;
     proxy_port.release();
     let proxy_listener = tokio::net::TcpListener::bind(proxy_address).await?;
-    std::env::set_var("HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR", proxy_address.to_string());
+    std::env::set_var(
+        "HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR",
+        proxy_address.to_string(),
+    );
     let cluster = spawn_single_daemon_cluster().await?;
     std::env::remove_var("HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR");
 
@@ -1561,5 +1698,77 @@ async fn legacy_admin_add_space_succeeds_against_live_cluster() -> Result<()> {
     );
 
     assert_eq!(exit_status.map(|status| status.code()), Some(Some(0)));
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn legacy_hyhac_large_object_probe_hits_clientgarbage_fast() -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+    let cluster = spawn_single_daemon_cluster().await?;
+
+    let started = Instant::now();
+    let (exit_status, stdout, stderr) = run_hyhac_selected_tests_direct(
+        cluster.coordinator_address,
+        "*Can store a large object*",
+        Duration::from_secs(10),
+    )
+    .await?;
+    eprintln!(
+        "hyhac large-object probe: elapsed={:?} exit_status={exit_status:?} stdout=`{stdout}` stderr=`{stderr}`",
+        started.elapsed(),
+    );
+
+    assert!(
+        stdout.contains("Can store a large object: [Failed]"),
+        "expected the focused hyhac probe to fail in the large-object test"
+    );
+    assert!(
+        stdout.contains("Left ClientGarbage"),
+        "expected the focused hyhac probe to report ClientGarbage"
+    );
+    assert!(
+        exit_status.is_some(),
+        "expected the focused hyhac probe to finish before the deadline"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn legacy_hyhac_pooled_probe_reports_large_object_failure_first() -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+    let cluster = spawn_single_daemon_cluster().await?;
+
+    let (exit_status, stdout, stderr) = run_hyhac_selected_tests_direct(
+        cluster.coordinator_address,
+        "*pooled*",
+        Duration::from_secs(20),
+    )
+    .await?;
+    eprintln!(
+        "hyhac pooled probe: exit_status={exit_status:?} stdout=`{stdout}` stderr=`{stderr}`"
+    );
+
+    let large_object_idx = stdout
+        .find("Can store a large object: [Failed]")
+        .context("pooled hyhac probe did not report the large-object failure")?;
+    let roundtrip_idx = stdout
+        .find("roundtrip: [Failed]")
+        .context("pooled hyhac probe did not reach the later roundtrip failure")?;
+    assert!(
+        large_object_idx < roundtrip_idx,
+        "expected the large-object failure to appear before later pooled failures"
+    );
+    assert!(
+        stdout.contains("Left ClientGarbage"),
+        "expected the pooled hyhac probe to report ClientGarbage"
+    );
+    assert!(
+        exit_status.is_some(),
+        "expected the pooled hyhac probe to finish before the deadline"
+    );
+
     Ok(())
 }
