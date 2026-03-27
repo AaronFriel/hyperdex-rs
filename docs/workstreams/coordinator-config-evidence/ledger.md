@@ -584,3 +584,55 @@
   - the next exact coordinator follow/config mismatch on the cleaned baseline
   - concrete producer/consumer pointers in the original HyperDex and current
     Rust code
+
+### Entry `cce-011` - Outcome
+
+- Timestamp: `2026-03-27 21:46Z`
+- Kind: `outcome`
+- End commit: `6fe08c5`
+- Artifact location:
+  - `/home/friel/HyperDex/Replicant/client/client.cc`
+  - `/home/friel/HyperDex/Replicant/daemon/daemon.cc`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence summary:
+  - the new harness result on `main` shows the failing path sends and receives
+    only repeated bootstrap traffic on the coordinator connection
+  - the original Replicant client only accepts bootstrap when the sender token
+    identity and decoded bootstrap body satisfy `si == s.id && c.has(s.id)`
+  - while bootstrap is not accepted, the original client stays in the
+    `start_bootstrap(...)` retry loop and never advances to follow/config or
+    daemon traffic
+  - current Rust bootstrap handling queues a synthetic bootstrap response but
+    does not implement the original sender-token / encoded-`server.id` binding
+    the client checks before adopting config
+- Conclusion: the remaining exact mismatch is the Replicant bootstrap
+  sender-identity contract. Fixing that is the immediate product target.
+- Disposition: `advance`
+- Next move: hand this exact target to the product worker, then reopen this
+  workstream for a narrower read-only implementation map of the current Rust
+  patch points and proving tests.
+
+### Entry `cce-012` - Preregistration
+
+- Timestamp: `2026-03-27 21:46Z`
+- Kind: `preregister`
+- Hypothesis: a final read-only pass focused only on the bootstrap
+  sender-identity contract can name the exact current Rust patch points and the
+  minimal proving tests for getting the original client past the bootstrap
+  retry loop.
+- Owner: next forked read-only worker
+- Start commit: `6fe08c5`
+- Worktree / branch:
+  - none required; read-only evidence gathering only
+- Mutable surface:
+  - none
+- Validator:
+  - source-backed mapping from the original sender-token / `server.id`
+    contract to the exact current Rust implementation sites that must change
+  - minimal focused test or probe suggestions that should prove the client
+    leaves bootstrap once the contract is fixed
+- Expected artifacts:
+  - exact Rust patch points for the bootstrap sender-identity fix
+  - exact focused tests or probes to prove the fix

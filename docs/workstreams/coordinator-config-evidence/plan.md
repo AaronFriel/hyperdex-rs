@@ -99,28 +99,26 @@ first atomic write.
   confirmed that the focused large-object failure still does not reach daemon
   request handling; the active mismatch is back in the coordinator follow/config
   path the original client must complete before daemon traffic starts.
+- [x] (2026-03-27 21:46Z) Finished `cce-011` and named the remaining exact
+  mismatch: the Replicant bootstrap sender-identity contract still differs from
+  the original, so the client never leaves the bootstrap retry loop.
 
 ## Current Hypothesis
 
-The cleaned post-`5879fab` baseline moved the active diagnosis earlier again.
-The focused large-object path still does not reach daemon request handling, so
-the immediate blocker is back in the coordinator follow/config path that the
-original client must finish in `client::maintain_coord_connection` before it
-can even reach normal request preparation. The earlier packed-config work still
-matters because it fixed several real contracts inside that path, but the next
-exact target is now the remaining coordinator follow/config mismatch, not a
-daemon request or response. One downstream daemon gap is now explicit and
-should stay queued behind that barrier: current Rust still has no
-`ReqGetPartial -> RespGetPartial` support.
+The remaining exact mismatch is now known. The focused large-object path still
+does not reach daemon request handling because the Rust coordinator bootstrap
+reply does not satisfy the original Replicant client’s sender-identity
+acceptance rule, so the client never adopts config and never leaves the
+bootstrap retry loop. One downstream daemon gap is still queued behind that
+barrier: current Rust has no `ReqGetPartial -> RespGetPartial` support.
 
 ## Next Bounded Step
 
-Keep this workstream read-only. The next bounded step is to compare the
-remaining coordinator follow/config contract on the cleaned baseline:
-determine what the original client still expects to see or unpack between
-`replicant_client_cond_follow("hyperdex", "config", ...)` and the point where
-it would start daemon traffic for the large-object put. Do not broaden into
-daemon request handling unless the coordinator path is proven complete first.
+Keep this workstream read-only. The next bounded step is no longer broad
+diagnosis; it is an implementation map for the exact bootstrap sender-identity
+contract: identify the current Rust sites where the BusyBee sender token and
+encoded `server.id` must line up, plus the minimal focused tests that should
+prove the client leaves the bootstrap retry loop once that is fixed.
 
 ## Surprises & Discoveries
 
@@ -197,6 +195,11 @@ daemon request handling unless the coordinator path is proven complete first.
   message types and still lacks `ReqGetPartial -> RespGetPartial`, while the
   original producer/consumer contract is `hyperdex_client_get_partial` plus
   `pending_get_partial::handle_message`.
+- Observation: the remaining exact mismatch is the Replicant bootstrap
+  sender-identity contract, not a later `hyperdex/config` body field.
+  Evidence: the new harness probe shows only repeated bootstrap traffic, and
+  the original client only leaves bootstrap when the sender token identity and
+  encoded `server.id` satisfy the `si == s.id && c.has(s.id)` acceptance check.
 
 ## Decision Log
 
