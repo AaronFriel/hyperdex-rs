@@ -89,3 +89,40 @@
   - exact comparison of Rust `default_legacy_config_encoder` output versus the
     original HyperDex packing contract for a live `profiles` config body
   - a tighter product target for `hyh-034`
+
+### Entry `cce-002` - Outcome
+
+- Timestamp: `2026-03-27 20:20Z`
+- Kind: `outcome`
+- End commit: `9e108b8`
+- Artifact location:
+  - read-only comparison across the current Rust encoder and the original
+    HyperDex `configuration` / `space` packing sources
+- Evidence summary:
+  - the live `profiles` schema is the container-heavy definition in
+    `/home/friel/c/aaronfriel/hyhac/test/Test/HyperDex/Space.hs`
+  - the original HyperDex builder inserts the primary subspace on attribute `0`
+    and fills each region with `hyperdex::partition(...)` from
+    `/home/friel/c/aaronfriel/HyperDex/admin/hyperspace_builder.cc` and
+    `/home/friel/c/aaronfriel/HyperDex/admin/partition.cc`
+  - for `64` partitions on a 1-attribute primary subspace, the first primary
+    region is `lower=0`, `upper=0x03ffffffffffffff`, the second begins at
+    `0x0400000000000000`, and the last ends at `UINT64_MAX`
+  - Rust’s `default_legacy_config_encoder` currently emits
+    `lower=partition`, `upper=partition` for every region in
+    `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - the original HyperDex client consumes those region bounds in
+    `configuration::point_leader`, so singleton bounds leave ordinary key
+    hashes outside every region before the client can route and prepare the
+    first atomic write
+- Conclusion:
+  - the first concrete mismatch in the packed `hyperdex/config` follow payload
+    is the primary-subspace region bounds
+  - bootstrap is healthy, string-slice and datatype encoding already moved
+    forward, and the next product fix should replace singleton bounds with the
+    original contiguous partition hash intervals
+- Disposition: `advance`
+- Next move:
+  - hand the exact region-bound mismatch to the active product worker
+  - park this read-only workstream until the product fix lands or another
+    packed-config mismatch remains

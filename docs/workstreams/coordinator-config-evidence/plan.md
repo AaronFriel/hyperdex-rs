@@ -61,6 +61,9 @@ first atomic write.
   identify plus Replicant bootstrap traffic and tied the next product target
   to the packed `hyperdex::configuration` body behind the `hyperdex/config`
   follow reply.
+- [x] (2026-03-27 20:20Z) Identified the first concrete mismatch inside that
+  packed config body: Rust is emitting singleton primary-region bounds instead
+  of HyperDex partition hash intervals.
 - [x] (2026-03-27 20:14Z) Reopened this workstream for a second read-only step
   that compares the Rust `default_legacy_config_encoder` output against the
   original HyperDex `configuration` / `space` packing rules on a live
@@ -70,19 +73,17 @@ first atomic write.
 
 The focused large-object path is still blocked by the coordinator-side packed
 `hyperdex::configuration` body that the HyperDex client consumes after
-`replicant_client_cond_follow("hyperdex", "config", ...)`. The first captured
-pair is only bootstrap traffic. The next likely mismatch is now specific
-enough to compare directly: the bytes produced by Rust
-`default_legacy_config_encoder` for the live `profiles` schema may not satisfy
-the original HyperDex `configuration` and `space` unpackers, especially around
-container and map datatype encoding.
+`replicant_client_cond_follow("hyperdex", "config", ...)`. The first concrete
+mismatch is now known: Rust writes singleton primary-subspace region bounds
+instead of the contiguous `hyperdex::partition(...)` hash intervals the
+original client expects when it later routes through `configuration::point_leader`.
 
 ## Next Bounded Step
 
-Keep this workstream read-only. Compare the Rust `default_legacy_config_encoder`
-output against the original HyperDex `configuration` / `space` packing rules on
-a live `profiles` config body, then state the first concrete mismatch if one
-exists.
+Keep this workstream read-only unless root opens another evidence step. The
+current useful result is already in hand: fix the primary-subspace region
+bounds first, then reopen read-only comparison only if another packed-config
+mismatch remains.
 
 ## Surprises & Discoveries
 
@@ -101,6 +102,13 @@ exists.
   `replicant_client_cond_follow("hyperdex", "config", ...)`, then unpacks
   `m_config_data` into `configuration` before `get_schema`, `point_leader`,
   and `prepare_funcs` are used.
+- Observation: the first concrete mismatch is in the primary-subspace region
+  bounds, not in bootstrap or string/datatype metadata.
+  Evidence: the original HyperDex builder fills regions with
+  `hyperdex::partition(...)`, yielding contiguous hash intervals such as
+  `upper=0x03ffffffffffffff` for the first primary region, while Rust currently
+  writes `lower=partition` and `upper=partition` in
+  `default_legacy_config_encoder`.
 
 ## Decision Log
 
@@ -113,6 +121,10 @@ exists.
   ownership, and the product worker already owns the code surface where fixes
   will land.
   Date/Author: 2026-03-27 / root
+- Decision: park this workstream after the region-bound mismatch was identified.
+  Rationale: the active product worker now has a precise fix target, so another
+  read-only pass is unnecessary until that fix lands and a new mismatch remains.
+  Date/Author: 2026-03-27 / root
 
 ## Outcomes & Retrospective
 
@@ -124,3 +136,8 @@ exists.
 - The second bounded step is now narrower and more useful than generic packet
   decoding: directly compare the Rust packed-config bytes against the original
   HyperDex unpacking rules for the same live `profiles` body.
+- That second bounded step produced the first concrete byte-level mismatch:
+  primary-region upper bounds are encoded as singleton partition ids instead of
+  contiguous partition hash intervals. This workstream can now pause until the
+  product fix lands or another packed-config mismatch needs source-backed
+  narrowing.
