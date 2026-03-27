@@ -186,6 +186,9 @@ stronger live probe before returning control.
 - [x] (2026-03-27 20:41Z) The next read-only pass identified the next exact
   contract after route selection: the client-to-daemon routing header and its
   `virtual_server_id -> server_id -> address` mapping plus version acceptance.
+- [x] (2026-03-27 20:46Z) The routing-header comparison did not find a concrete
+  mismatch for the failing key `"large"`, so the remaining blocker is now the
+  first body contract after an accepted daemon header.
 - [ ] Rerun the bounded live `hyhac` probe after the next packed-config/body
   mismatch is fixed.
 
@@ -209,7 +212,9 @@ already routes to a non-null replica tuple on current `main`, so the active
 public blocker is now one step later than route selection. The next exact
 contract is the client-to-daemon routing header, especially whether the chosen
 `virtual_server_id` maps back to a real `server_id` and address and whether
-the stamped config version and `vidt` pass the daemon-side header gate.
+the stamped config version and `vidt` pass the daemon-side header gate. That
+header contract now appears sound for the concrete failing key, so the next
+exact question is the first body contract after an accepted daemon header.
 
 ## Next Bounded Step
 
@@ -219,8 +224,9 @@ repro now that region intervals are corrected. Use the ID-allocation mismatch
 as a correctness fix if it is already in flight, but do not stop there: the
 concrete failing key is already past route selection, so drive until the next
 exact pre-daemon mismatch is exposed or fixed. The next exact target is the
-client-to-daemon routing header contract. Stay on the fast public loop until
-that path either clears or yields the next exact coordinator-side contract.
+first body contract after the daemon would accept the header. Stay on the fast
+public loop until that path either clears or yields the next exact
+coordinator-side contract.
 
 ## Surprises & Discoveries
 

@@ -369,3 +369,55 @@
   - the next exact mismatch, if any, in Rust’s reverse mapping or stamped
     request header for the large-object put
   - concrete file/function pointers for the original producer and consumer
+
+### Entry `cce-007` - Outcome
+
+- Timestamp: `2026-03-27 20:46Z`
+- Kind: `outcome`
+- End commit: `50c064c`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+  - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/common/configuration.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/common/mapper.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/daemon/communication.cc`
+- Evidence summary:
+  - for the concrete failing key `"large"`, current Rust config already gives
+    the selected region a non-null replica tuple and matching server-table
+    entry from the same config source
+  - the original client-side header producer and daemon-side header consumer
+    line up cleanly on `(mt, flags=0, version, vidt, nonce)` plus
+    `vidt -> server_id -> address`
+  - no concrete routing-header mismatch was found for the single-daemon live
+    repro path
+  - the focused public validator still reproduces `Left ClientGarbage`
+- Conclusion: the remaining blocker is later than the routing-header contract
+  for the concrete failing key. The next read-only question is the first body
+  contract after an accepted header.
+- Disposition: `reframe`
+- Next move: reopen this workstream one step later and identify the first exact
+  body, function-selection, or `key_change` encoding contract after an accepted
+  daemon header.
+
+### Entry `cce-008` - Preregistration
+
+- Timestamp: `2026-03-27 20:46Z`
+- Kind: `preregister`
+- Hypothesis: a new read-only pass that follows the large-object put one step
+  beyond an accepted daemon header will identify the first exact body contract
+  after the header, whether that is function selection, `key_change` packing,
+  or large-object attribute encoding.
+- Owner: next delegated read-only worker
+- Start commit: `50c064c`
+- Worktree / branch:
+  - none required; read-only evidence gathering only
+- Mutable surface:
+  - none
+- Validator:
+  - source-backed explanation of the first body contract after a daemon-
+    acceptable header for the large-object put
+  - or the next exact mismatch in that body contract
+- Expected artifacts:
+  - the next exact post-header contract for the large-object put
+  - concrete file/function pointers for the original producer and consumer

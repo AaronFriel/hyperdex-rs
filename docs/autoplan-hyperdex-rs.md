@@ -122,8 +122,8 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` | Hold until the product worker needs another harness change. | `advance` |
-| `live-hyhac` | active | running forked product worker on a clean compatibility worktree | `cce-006` now proves the next exact pre-daemon contract is the client-to-daemon routing header, especially the `virtual_server_id -> server_id -> address` mapping plus version acceptance. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-config-body` on `live-hyhac-config-body` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused manual cluster probes | Expose or fix the routing-header mismatch for the large-object put before broadening into the atomic body. | `advance` |
-| `coordinator-config-evidence` | active | next delegated read-only worker | None; `cce-006` identified the routing-header contract, so this active read-only step now needs to compare Rust’s reverse mapping and stamped header directly against the original daemon-side acceptance contract. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required for the bounded step | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus source-backed header comparison | Name the next exact mismatch, if any, in Rust’s reverse mapping or stamped request header for the large-object path. | `advance` |
+| `live-hyhac` | active | running forked product worker on a clean compatibility worktree | `cce-007` ruled out the routing-header contract for the concrete failing key, so the active product target is now the first body contract after an accepted daemon header. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-config-body` on `live-hyhac-config-body` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused manual cluster probes | Expose or fix the first post-header body mismatch for the large-object put. | `advance` |
+| `coordinator-config-evidence` | active | next delegated read-only worker | None; `cce-007` ruled out the routing-header contract, so this active read-only step now needs to identify the first body contract after an accepted daemon header. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required for the bounded step | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus source-backed post-header comparison | Name the first exact post-header contract for the large-object path. | `reframe` |
 
 ## Progress
 
@@ -308,6 +308,9 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 20:41Z) Finished `cce-006`, which identified the next exact
   pre-daemon contract after route selection: the client-to-daemon routing
   header and its reverse mapping plus version acceptance.
+- [x] (2026-03-27 20:46Z) Finished `cce-007`, which ruled out the routing-header
+  contract for the concrete failing key and moved the active diagnosis to the
+  first body contract after an accepted daemon header.
 - [ ] Rerun the bounded live `hyhac` probe after the next packed-config/body
   mismatch is fixed.
 
@@ -317,16 +320,15 @@ Drive the next live compatibility step around the remaining packed
 `hyperdex::configuration` / `hyperdex::space` mismatch after the region-interval
 fix that landed in `1d6093c`. A real ID-allocation mismatch still exists in
 the packed config body, but the concrete failing key `"large"` is already past
-that route-selection boundary. The next exact target is now the client-to-daemon
-routing header: reverse mapping from the chosen `virtual_server_id` to
-`server_id` and address, plus the version and `vidt` values stamped into the
-outgoing request.
+that route-selection boundary, and the routing-header contract now also looks
+sound for that key. The next exact target is therefore the first body contract
+after an accepted daemon header.
 
 ## Next Root Move
 
-Push the routing-header contract into the running product fork, relaunch the
-read-only evidence thread on Rust’s reverse mapping and stamped header, and
-reconcile the first substantive result that exposes or fixes that contract.
+Push the post-header body target into the running product fork, relaunch the
+read-only evidence thread on the first body contract after header acceptance,
+and reconcile the first substantive result that exposes or fixes that contract.
 
 ## Surprises & Discoveries
 
