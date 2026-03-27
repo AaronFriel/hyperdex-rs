@@ -211,17 +211,19 @@ stronger live probe before returning control.
 ## Current Hypothesis
 
 The earlier coordinator-side, request-shape, and process-level `early eof`
-gaps are now behind `main`. `5879fab` removes the multiprocess EOF failures, so
-the active blocker is again the focused large-object `ClientGarbage` failure on
-a cleaner live-cluster baseline.
+gaps are now behind `main`. The coordinator now reuses one session-chosen
+sender id consistently across BusyBee identify, bootstrap `server.id`, and the
+bootstrap config server list, but the focused Hyhac failure still sends only
+bootstrap traffic on the coordinator connection and never advances to a
+follow/config request.
 
 ## Next Bounded Step
 
-Own the focused large-object `ClientGarbage` path again from current `main`,
-using the now-cleaner live-cluster baseline. Keep
-`legacy_hyhac_large_object_probe_hits_clientgarbage_fast` as the fast loop,
-and hold the repaired multiprocess process-level checks as the stronger
-baseline before widening back out.
+Keep the coordinator BusyBee proxy as the fastest useful check and reduce the
+remaining bootstrap-only failure to the next exact acceptance mismatch after
+wire-visible sender-id consistency. Do not widen back out to the daemon path
+again until the coordinator connection produces one non-bootstrap Replicant
+request on the focused Hyhac path.
 
 ## Surprises & Discoveries
 
@@ -409,6 +411,16 @@ baseline before widening back out.
   Evidence: the captured wire shows one 25-byte Replicant bootstrap request
   and one 88-byte Rust completion response, after which the client sends no
   second request before timing out.
+- Observation: the coordinator now keeps one session-owned sender id
+  consistent across identify and bootstrap, but that wire-visible consistency
+  still does not move the focused Hyhac path past bootstrap.
+  Evidence: the current `live-hyhac-large-object` worktree passes
+  `coordinator_admin_legacy_service_bootstrap_sends_bootstrap_reply`,
+  `legacy_bootstrap_response_matches_replicant_sender_identity_contract`, and
+  `cargo test -p server`, while
+  `legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence`
+  still shows only identify plus bootstrap frames and no non-bootstrap
+  Replicant request from the client.
 
 ## Decision Log
 

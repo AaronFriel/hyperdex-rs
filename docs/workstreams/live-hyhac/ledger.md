@@ -1742,6 +1742,40 @@
   - or the next exact remaining mismatch with code and evidence
   - a clean current-main branch-local loop for the remaining live failure
 
+### Entry `hyh-038` - Outcome
+
+- Timestamp: `2026-03-27 22:30Z`
+- Kind: `outcome`
+- End commit: `live-hyhac-large-object` worktree after `57a23a0`, `5a8eac4`, and the
+  session-owned sender-id edits
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object/crates/server/src/lib.rs`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object/crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence summary:
+  - the coordinator admin session now owns one sender id and reuses it across
+    BusyBee identify, bootstrap `server.id`, and the bootstrap config server
+    list
+  - `coordinator_admin_legacy_service_bootstrap_sends_bootstrap_reply` now
+    proves a non-anonymous identify request keeps one chosen sender id
+    consistent across the identify reply and bootstrap body
+  - `legacy_bootstrap_response_matches_replicant_sender_identity_contract`
+    encodes the original Replicant acceptance rule directly and passes
+  - `legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence`
+    still shows only identify plus bootstrap traffic on the coordinator
+    connection, with no non-bootstrap Replicant message from Hyhac
+  - `legacy_hyhac_large_object_probe_hits_clientgarbage_fast` still reports
+    `Left ClientGarbage`
+  - `cargo test -p server` passed
+- Conclusion: the wire-visible sender-id mismatch is narrowed and the
+  coordinator is now internally consistent on that contract, but the focused
+  Hyhac path still fails before follow/config. The next exact target is the
+  non-wire bootstrap acceptance behavior on the original Replicant client side,
+  not the daemon path.
+- Disposition: `reframe`
+- Next move: compare the original Replicant client's anonymous-channel
+  bootstrap acceptance against the handcrafted Rust BusyBee session behavior
+  and isolate the next remaining acceptance mismatch.
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`
