@@ -122,7 +122,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Hold until a new real-cluster failure requires deeper harness work. | `advance` |
-| `live-hyhac` | active | The BusyBee/Replicant service core is now on `main`, but the live coordinator still needs startup wiring and original-format config-condition payloads before the C admin client can complete a real probe. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated admin worktrees | Wire the legacy admin listener into coordinator startup, harden the packed-space decoder, then rerun the admin probes. | `advance` |
+| `live-hyhac` | active | The request core, service core, and packed-space decoder hardening are now on `main`, but the live coordinator still needs same-port startup integration and original-format config-condition payloads before the C admin client can complete a real probe. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated admin workers | Finish same-port coordinator startup and binary config payload encoding, then rerun the admin probes. | `advance` |
 
 ## Progress
 
@@ -206,24 +206,25 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 05:48Z) Relaunched two substantial follow-up steps in
   parallel: coordinator startup plus live admin probes, and selective
   decoder-hardening based on the richer admin-decoder worktree result.
+- [x] (2026-03-27 05:58Z) Reconciled `007bdf1` (`Harden packed admin space
+  decoding`), which ports the missing packed-space validation and richer tests
+  into `hyperdex-admin-protocol` while keeping the current public entry points.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
 Drive the remaining live coordinator compatibility gap now that the request
-core and service core are on `main`. The next code needs to expose that
-service from the real coordinator binary and make its configuration replies
-look enough like HyperDex for the original admin client to finish bootstrap
-and reach a real operation.
+core, service core, and decoder hardening are on `main`. The two active
+implementation jobs are same-port coordinator startup and binary config payload
+encoding. The next integration should turn those into real admin-tool probe
+results.
 
 ## Next Root Move
 
-Finish the first end-to-end live admin path:
-1. wire `CoordinatorAdminLegacyService` into coordinator startup
-2. replace the placeholder config-follow payload with the original binary
-   condition payload the C admin client expects
-3. harden the packed-space decoder with the missing validation and richer tests
-4. rerun `hyperdex-add-space` and `hyperdex-wait-until-stable`
+Reconcile the two currently active `live-hyhac` follow-ups:
+1. same-port coordinator startup integration
+2. original HyperDex binary `config` condition payload encoding
+Then rerun `hyperdex-add-space` and `hyperdex-wait-until-stable`.
 
 ## Surprises & Discoveries
 
@@ -329,6 +330,19 @@ Finish the first end-to-end live admin path:
   tests pass inside `cargo test -p server`; the full workspace is green again
   after `f26d042`, while the active follow-up work is now coordinator startup
   plus live probes and selective decoder validation.
+- Observation: the original C admin client does not accept the current JSON
+  config-follow payload, and the public coordinator port still binds only the
+  JSON control service on `main`.
+  Evidence: the recovered HyperDex source path shows `config` follow data is a
+  packed `hyperdex::configuration` binary payload, while
+  `default_legacy_config_encoder` still uses `serde_json::to_vec(view)` and
+  `crates/server/src/main.rs` still binds only `CoordinatorControlService` on
+  the public coordinator port.
+- Observation: the packed-space decoder now has the missing validation and
+  richer tests on `main`.
+  Evidence: `007bdf1` restores secret-attribute validation, partition-count
+  validation, index validation, contextual truncation checks, and richer
+  packed-space fixtures in `crates/hyperdex-admin-protocol/src/lib.rs`.
 
 ## Decision Log
 

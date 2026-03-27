@@ -944,3 +944,96 @@
   - secret, partition, and index validation in packed-space decoding
   - richer truncation and fixture tests
   - one commit ready for reconciliation
+
+### Entry `hyh-023` - Preregistration
+
+- Timestamp: `2026-03-27 05:58Z`
+- Kind: `preregister`
+- Hypothesis: the startup/probe path now needs to solve one concrete process
+  problem, not the whole legacy admin surface: the public coordinator port
+  must serve the existing JSON control traffic and the legacy BusyBee/Replicant
+  admin traffic on the same listener.
+- Owner: delegated worker `019d2ddc-dcd8-7b61-b69f-4aa4b4bd2c2e`
+- Start commit: `6bf04d5`
+- Worktree / branch:
+  - delegated worker branch from `main`
+- Mutable surface:
+  - `crates/server/src/main.rs`
+  - `crates/server/src/lib.rs` only for minimal startup-facing glue
+- Validator:
+  - `cargo test -p server`
+  - `cargo test --workspace`
+  - bounded `hyperdex-add-space` probe
+  - bounded `hyperdex-wait-until-stable` probe
+- Expected artifacts:
+  - same-port coordinator startup that reaches the legacy admin path
+  - focused startup tests
+  - bounded live probe evidence
+
+### Entry `hyh-024` - Preregistration
+
+- Timestamp: `2026-03-27 05:58Z`
+- Kind: `preregister`
+- Hypothesis: replacing the JSON `config` follow payload with the original
+  packed `hyperdex::configuration` binary layout will remove the next concrete
+  decoding failure for the C admin client without reopening the session-core
+  work.
+- Owner: delegated worker `019d2ddc-b498-70c3-98f3-fedc5f07521a`
+- Start commit: `6bf04d5`
+- Worktree / branch:
+  - delegated worker branch from `main`
+- Mutable surface:
+  - `crates/server/src/lib.rs`
+- Validator:
+  - `cargo test -p server`
+  - `cargo test --workspace`
+- Expected artifacts:
+  - binary `config` follow payload encoder
+  - updated focused server tests that no longer assert JSON
+  - one commit ready for reconciliation
+
+### Entry `hyh-025` - Preregistration
+
+- Timestamp: `2026-03-27 05:58Z`
+- Kind: `preregister`
+- Hypothesis: a clean retry of the decoder-hardening step with strict file
+  ownership will land the missing validation and tests without repeating the
+  earlier drift across unrelated crates.
+- Owner: delegated worker `019d2ddc-89a0-7000-af8f-8683597f4a89`
+- Start commit: `6bf04d5`
+- Worktree / branch:
+  - delegated worker branch from `main`
+- Mutable surface:
+  - `crates/hyperdex-admin-protocol/**`
+- Validator:
+  - `cargo test -p hyperdex-admin-protocol`
+  - `cargo test --workspace`
+- Expected artifacts:
+  - secret, partition, and index validation in packed-space decoding
+  - richer truncation and fixture tests
+  - one commit ready for reconciliation
+
+### Entry `hyh-025` - Outcome
+
+- Timestamp: `2026-03-27 05:58Z`
+- Kind: `outcome`
+- End commit: `007bdf1`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
+- Evidence summary:
+  - `007bdf1` restores secret-attribute validation for `__secret` and rejects
+    secret key attributes
+  - `007bdf1` enforces consistent partition counts across packed subspaces
+  - `007bdf1` validates packed index types and packed index attribute
+    references
+  - `007bdf1` switches packed-space decoding to contextual truncation checks
+  - `007bdf1` replaces the minimal fixture with richer coverage for maps,
+    timestamps, secret attributes, indices, and rejection paths
+  - `cargo test -p hyperdex-admin-protocol` passed
+  - `cargo test --workspace` passed
+- Conclusion: the packed-space decoder is no longer the main live blocker. The
+  remaining live admin gap is now same-port coordinator startup plus original
+  binary `config` follow payloads.
+- Disposition: `advance`
+- Next move: reconcile the startup and binary-config workers, then rerun the
+  bounded admin-tool probes.

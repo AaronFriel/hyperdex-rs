@@ -119,23 +119,30 @@ surface.
 - [x] (2026-03-27 05:48Z) Relaunched the next two concrete follow-ups in
   parallel: coordinator startup plus bounded live probes, and selective
   decoder hardening from the richer admin-decoder worktree result.
+- [x] (2026-03-27 05:58Z) Narrowed the remaining live admin gap further:
+  same-port coordinator startup, binary `config` condition payload encoding,
+  and a clean retry of decoder hardening are now active as separate bounded
+  implementation jobs.
+- [x] (2026-03-27 05:58Z) Reconciled `007bdf1` (`Harden packed admin space
+  decoding`), which ports the missing packed-space validation and richer tests
+  into the existing decoder path on `main`.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
-The request core and the session core are both on `main`. The remaining live
-contract is now the gap between tests and the real process: the coordinator
-binary still needs to host the legacy admin listener, and the config-follow
-payload still needs to match what the original C admin client can decode.
+The request core, session core, and packed-space decoder hardening are now on
+`main`. The remaining live contract is down to two implementation jobs: the
+coordinator binary still needs same-port legacy-admin startup, and the `config`
+follow payload still needs the original binary format.
 
 ## Next Bounded Step
 
-Finish the first live coordinator admin path in one bounded pass:
-1. wire `CoordinatorAdminLegacyService` into coordinator startup
-2. encode the HyperDex `config` follow payload in the original binary format
-3. rerun the bounded `hyperdex-add-space` and `hyperdex-wait-until-stable`
-   probes
-4. if those probes advance, rerun the bounded direct `hyhac` Cabal test
+Reconcile the two active follow-ups:
+1. same-port coordinator startup integration on the public coordinator port
+2. original binary `config` follow payload encoding
+Then rerun the bounded `hyperdex-add-space` and
+`hyperdex-wait-until-stable` probes, followed by the direct `hyhac` Cabal
+test if those probes advance.
 
 ## Surprises & Discoveries
 
@@ -226,6 +233,21 @@ Finish the first live coordinator admin path in one bounded pass:
   Evidence: `78162d5` adds `CoordinatorAdminLegacyService`, focused server
   tests cover bootstrap, `space_add`, and `wait_until_stable`, and
   `cargo test --workspace` passed after `f26d042`.
+- Observation: the `stable` condition payload is already compatible, but the
+  `config` condition payload is not.
+  Evidence: the recovered HyperDex source path shows `stable` completes with
+  an empty `e::slice` payload, which Rust already emits, while `config`
+  follow data is a packed `hyperdex::configuration` binary payload and the
+  current Rust encoder still sends JSON.
+- Observation: the public coordinator port handling is still wrong for a live
+  C admin client.
+  Evidence: `crates/server/src/main.rs` still binds only
+  `CoordinatorControlService` on the coordinator port, while the legacy admin
+  path exists only as `CoordinatorAdminLegacyService` in `crates/server/src/lib.rs`.
+- Observation: the decoder-hardening retry succeeded once it was kept on a
+  narrow write scope.
+  Evidence: `007bdf1` landed on `main` from the clean retry and avoided the
+  earlier unrelated edits across other crates.
 
 ## Decision Log
 
