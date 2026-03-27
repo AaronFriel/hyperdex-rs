@@ -313,3 +313,59 @@
   - the next exact pre-daemon contract after route selection for the large
     object path
   - concrete file/function pointers for the original producer and consumer
+
+### Entry `cce-006` - Outcome
+
+- Timestamp: `2026-03-27 20:41Z`
+- Kind: `outcome`
+- End commit: `7afc90f`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/common/configuration.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/common/mapper.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/daemon/communication.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/daemon/daemon.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/common/key_change.cc`
+- Evidence summary:
+  - after `configuration::point_leader`, the original client only allocates a
+    nonce and sends a header `(mt, flags=0, version, vidt, nonce)`
+  - that send path first resolves `vidt -> server_id` through unpacked config
+    reverse maps, then resolves `server_id -> address`
+  - the daemon-side consumer only treats the frame as a daemon request if the
+    header decodes, `vidt` maps back to the receiving server, and the stamped
+    config version is acceptable
+  - only after those header checks does the daemon reach `process_req_atomic`
+    and unpack the `key_change` body
+  - the focused public validator still reproduces `Left ClientGarbage`
+- Conclusion: the next exact pre-daemon contract after route selection is the
+  client-to-daemon routing header, especially the reverse mapping from chosen
+  `virtual_server_id` to `server_id` and address, plus the version and `vidt`
+  values stamped into the outgoing header.
+- Disposition: `advance`
+- Next move: hand this routing-header contract to the active product worker and
+  reopen this workstream for a direct comparison of Rust’s reverse mapping and
+  stamped header against the original acceptance contract.
+
+### Entry `cce-007` - Preregistration
+
+- Timestamp: `2026-03-27 20:41Z`
+- Kind: `preregister`
+- Hypothesis: a final read-only comparison of Rust’s current
+  `virtual_server_id -> server_id -> address` mapping and stamped request
+  header against the original HyperDex daemon-side acceptance contract will
+  identify the next exact pre-daemon mismatch, if any, before the product
+  worker needs to broaden into the atomic body.
+- Owner: next delegated read-only worker
+- Start commit: `7afc90f`
+- Worktree / branch:
+  - none required; read-only evidence gathering only
+- Mutable surface:
+  - none
+- Validator:
+  - source-backed statement of whether Rust currently produces a valid reverse
+    mapping and request header for the `"large"` path
+  - or the next exact mismatch in that routing-header contract
+- Expected artifacts:
+  - the next exact mismatch, if any, in Rust’s reverse mapping or stamped
+    request header for the large-object put
+  - concrete file/function pointers for the original producer and consumer

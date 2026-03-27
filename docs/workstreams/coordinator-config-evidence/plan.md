@@ -77,6 +77,10 @@ first atomic write.
 - [x] (2026-03-27 20:36Z) Finished `cce-005` and proved that the concrete
   failing key `"large"` already routes to a non-null replica tuple on current
   `main`, so the remaining blocker lies beyond coordinator route selection.
+- [x] (2026-03-27 20:41Z) Finished `cce-006` and identified the next exact
+  pre-daemon contract after route selection: the client-to-daemon routing
+  header and its `virtual_server_id -> server_id -> address` mapping plus
+  version acceptance.
 - [x] (2026-03-27 20:14Z) Reopened this workstream for a second read-only step
   that compares the Rust `default_legacy_config_encoder` output against the
   original HyperDex `configuration` / `space` packing rules on a live
@@ -95,14 +99,19 @@ original coordinator allocates all of those IDs from a shared counter seeded
 at `1`.
 at `1`. `cce-005` narrows that again for the concrete failing key: `"large"`
 does not route through the zero-valued replica tuple, so the remaining public
-failure is beyond coordinator route selection.
+failure is beyond coordinator route selection. `cce-006` narrows it one step
+later: after `configuration::point_leader`, the next exact contract is the
+client-to-daemon routing header, especially whether the chosen
+`virtual_server_id` maps back to a real `server_id` and address and whether the
+stamped config version passes the daemon-side header gate.
 
 ## Next Bounded Step
 
 Keep this workstream read-only. The next bounded step is now narrower than
 general comparison: follow the original client path one step beyond route
-selection for the failing large-object put and identify the next exact
-pre-daemon contract that must hold before `REQ_ATOMIC` is actually sent.
+selection for the failing large-object put and compare the Rust
+`virtual_server_id -> server_id -> address` mapping and stamped request header
+against the original daemon-side acceptance contract.
 
 ## Surprises & Discoveries
 
@@ -145,6 +154,12 @@ pre-daemon contract that must hold before `REQ_ATOMIC` is actually sent.
   Evidence: `CityHash64("large") = 0xe2d4d8f959c0215c`, which maps to primary
   region index `56`, and the current Rust config already gives that region a
   non-null replica tuple `(server_id=1, virtual_server_id=56)`.
+- Observation: the next exact pre-daemon contract is the routing header, not
+  the atomic body.
+  Evidence: after `point_leader`, the original client only allocates a nonce
+  and packs `(mt, flags=0, version, vidt, nonce)` before BusyBee send, and the
+  original daemon only reaches `process_req_atomic` if that header passes its
+  `vidt` and version checks first.
 
 ## Decision Log
 
@@ -177,6 +192,11 @@ pre-daemon contract that must hold before `REQ_ATOMIC` is actually sent.
   the next high-value read-only question is the next client-side contract after
   route selection, not another packed-config comparison.
   Date/Author: 2026-03-27 / root
+- Decision: keep the workstream active for one more focused comparison after
+  `cce-006`.
+  Rationale: the next contract is now narrow enough to inspect directly in the
+  Rust implementation without broadening into daemon-body speculation.
+  Date/Author: 2026-03-27 / root
 
 ## Outcomes & Retrospective
 
@@ -207,3 +227,7 @@ pre-daemon contract that must hold before `REQ_ATOMIC` is actually sent.
   current `main`. The next read-only pass should therefore move one step later
   in the client path and identify the next exact pre-daemon contract before
   `REQ_ATOMIC` is sent.
+- The sixth bounded step identified that next exact contract: the routing
+  header and its `virtual_server_id -> server_id -> address` reverse mapping,
+  plus the stamped config version that the daemon checks before it will
+  classify the frame as `REQ_ATOMIC`.

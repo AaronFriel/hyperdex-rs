@@ -183,6 +183,9 @@ stronger live probe before returning control.
 - [x] (2026-03-27 20:36Z) The follow-up tie-off proved that the concrete
   failing key `"large"` already routes to a non-null replica tuple on current
   `main`, so the remaining blocker is later than coordinator route selection.
+- [x] (2026-03-27 20:41Z) The next read-only pass identified the next exact
+  contract after route selection: the client-to-daemon routing header and its
+  `virtual_server_id -> server_id -> address` mapping plus version acceptance.
 - [ ] Rerun the bounded live `hyhac` probe after the next packed-config/body
   mismatch is fixed.
 
@@ -203,7 +206,10 @@ Rust emits zero-based `space_id`, `subspace_id`, `region_id`, and especially
 `virtual_server_id=0`, while the original coordinator allocates those IDs from
 one shared counter seeded at `1`. But the concrete failing key `"large"`
 already routes to a non-null replica tuple on current `main`, so the active
-public blocker is now one step later than route selection.
+public blocker is now one step later than route selection. The next exact
+contract is the client-to-daemon routing header, especially whether the chosen
+`virtual_server_id` maps back to a real `server_id` and address and whether
+the stamped config version and `vidt` pass the daemon-side header gate.
 
 ## Next Bounded Step
 
@@ -212,9 +218,9 @@ the full `profiles` schema through the focused large-object `ClientGarbage`
 repro now that region intervals are corrected. Use the ID-allocation mismatch
 as a correctness fix if it is already in flight, but do not stop there: the
 concrete failing key is already past route selection, so drive until the next
-exact pre-daemon mismatch is exposed or fixed. Stay on the fast public loop
-until that path either clears or yields that next exact coordinator-side
-contract.
+exact pre-daemon mismatch is exposed or fixed. The next exact target is the
+client-to-daemon routing header contract. Stay on the fast public loop until
+that path either clears or yields the next exact coordinator-side contract.
 
 ## Surprises & Discoveries
 
