@@ -383,3 +383,30 @@
     tied to test output that names that edge exactly
   - clearer failure evidence for the active product and read-only workers
   - one bounded harness-only commit ready for reconciliation
+
+### Entry `mph-008` - Outcome
+
+- Timestamp: `2026-03-27 21:42Z`
+- Kind: `outcome`
+- End commit: `69d5918`
+- Artifact location:
+  - `crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence summary:
+  - `69d5918` adds
+    `legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence`
+  - root verified on integrated `main`:
+    - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence -- --nocapture`
+    - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
+  - the fast Hyhac failure still reports `Left ClientGarbage`
+  - the new harness probe shows only repeated coordinator identify/bootstrap
+    traffic on that path and no non-bootstrap coordinator or daemon messages
+  - the worker report mentioned a raw-protocol live-cluster test, but that test
+    did not land in `69d5918`; root reconciled only the commit contents and the
+    validators actually present on `main`
+- Conclusion: the cleaned-baseline Hyhac failure is now harness-proven to stop
+  inside the coordinator/client-visible bootstrap-follow loop. The immediate
+  next debugging work belongs to product code and read-only coordinator
+  comparison, not more harness instrumentation.
+- Disposition: `advance`
+- Next move: hand this evidence to the product and read-only workers and hold
+  this workstream until another harness change is justified.

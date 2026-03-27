@@ -121,7 +121,7 @@ split, sequencing, or validator set needs to change.
 | Workstream | Status | Owner | Dependencies / Blockers | Plan | Ledger | Worktree / Branch | Fastest Useful Check | Next Step | Latest Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
-| `multiprocess-harness` | active | forked harness worker in `clientgarbage-wire` | None; `5879fab` cleaned up the multiprocess `early eof` noise, so this workstream can return to harness-owned evidence on the remaining large-object failure without overlapping product files. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` | Expose or decode the first bad client-visible response or wire edge for the cleaned large-object repro without touching product code. | `advance` |
+| `multiprocess-harness` | ready | root | None; `69d5918` already proved the fast Hyhac failure loops only through coordinator identify/bootstrap traffic on the cleaned baseline, so this workstream can pause again until another harness change is justified. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence -- --nocapture` | Hold until product or read-only comparison work needs another harness change. | `advance` |
 | `live-hyhac` | active | forked product worker in `live-hyhac-large-object` | `5879fab` removed the multiprocess `early eof` failures, so the active blocker is again the focused large-object `ClientGarbage` failure on a cleaner live-cluster baseline. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object` on `live-hyhac-large-object` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` | Move the focused large-object path past `Left ClientGarbage` or isolate the next exact mismatch on the cleaner baseline. | `advance` |
 | `coordinator-config-evidence` | active | forked read-only worker | None; the cleaned baseline still fails before daemon traffic, so this workstream is back on the remaining coordinator follow/config mismatch and should keep product work source-backed. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` | Name the remaining exact coordinator follow/config mismatch that still blocks daemon traffic on the cleaned baseline. | `reframe` |
 
@@ -341,21 +341,27 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 21:35Z) Passed that pre-daemon evidence into the running
   product and harness workers, closed the completed read-only worker, and
   launched a new read-only comparison on the narrower follow/config target.
+- [x] (2026-03-27 21:42Z) Reconciled `69d5918` (`Capture failing hyhac
+  bootstrap-only coordinator loop`), which proves the fast Hyhac failure on
+  the cleaned baseline still loops only through coordinator identify/bootstrap
+  traffic and does not progress to non-bootstrap coordinator or daemon
+  messages.
 - [ ] Rerun the bounded live `hyhac` probe after the remaining large-object
   mismatch is fixed.
 
 ## Current Root Focus
 
-Drive the remaining focused large-object `ClientGarbage` failure with three
-active parallel workstreams on the cleaned live-cluster baseline. The latest
-read-only result shows the current blocker is still before daemon traffic, so
-the immediate target is again the coordinator follow/config contract rather
-than a daemon request or response.
+Drive the remaining focused large-object `ClientGarbage` failure with the
+product and read-only comparison workstreams on the cleaned live-cluster
+baseline. The latest harness and read-only results agree that the current
+blocker is still before daemon traffic, so the immediate target is the
+coordinator follow/config contract rather than a daemon request or response.
 
 ## Next Root Move
 
-Use long waits on the three active workers and reconcile the first substantive
-result that moves or narrows the focused large-object public loop.
+Use long waits on the remaining product and read-only workers and reconcile the
+first substantive result that moves or narrows the focused large-object public
+loop.
 
 ## Surprises & Discoveries
 

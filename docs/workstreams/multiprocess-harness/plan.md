@@ -88,23 +88,22 @@ waiting on the whole Haskell path every time.
 - [x] (2026-03-27 21:30Z) Reopened this workstream as an active parallel owner
   because the multiprocess `early eof` noise is gone and the remaining
   large-object failure still needs a tighter harness-owned explanation.
+- [x] (2026-03-27 21:42Z) Reconciled `69d5918` (`Capture failing hyhac
+  bootstrap-only coordinator loop`), which proves the fast Hyhac failure on
+  the cleaned baseline still loops only through coordinator identify/bootstrap
+  traffic and not through later coordinator or daemon messages.
 
 ## Current Hypothesis
 
-`5879fab` removed the multiprocess `early eof` noise that temporarily pushed
-this workstream aside. The short `ClientGarbage` repro is still on `main`, and
-the older coordinator-frame capture is still useful, but the cleaned baseline
-makes another harness-owned pass worthwhile: the product worker and the
-read-only comparison worker still need a tighter client-visible or wire-visible
-failure summary from the same fast large-object repro, without touching product
-code.
+This workstream has done the next useful harness job on the cleaned baseline.
+`69d5918` now proves that the fast Hyhac large-object failure still loops only
+through coordinator identify/bootstrap traffic, so the immediate debugging work
+returns to product code and read-only coordinator comparison rather than more
+harness edits.
 
 ## Next Bounded Step
 
-Reopen the harness on the cleaned large-object baseline. The next bounded step
-is to instrument the existing fast repro so it exposes or decodes the first bad
-client-visible response or wire edge that remains after `5879fab`, while
-staying inside `crates/server/tests/**` and related harness-owned files.
+Hold until the product or read-only workstreams need another harness change.
 
 ## Surprises & Discoveries
 
@@ -181,3 +180,6 @@ staying inside `crates/server/tests/**` and related harness-owned files.
 - `5879fab` cleaned the multiprocess process baseline enough that a new
   harness-owned explanation pass is justified on the same fast large-object
   repro.
+- `69d5918` delivered that next explanation. The harness now proves that the
+  fast Hyhac failure does not progress beyond coordinator identify/bootstrap on
+  the cleaned baseline, so this workstream can pause again.
