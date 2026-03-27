@@ -29,14 +29,16 @@ use legacy_protocol::{
     config_mismatch_response, decode_protocol_atomic_request, decode_protocol_count_request,
     decode_protocol_get_request, decode_protocol_search_continue, decode_protocol_search_start,
     encode_protocol_atomic_response, encode_protocol_count_response, encode_protocol_get_response,
-    encode_protocol_search_done, encode_protocol_search_item, LegacyMessageType,
-    LegacyReturnCode, ProtocolAttributeCheck, ProtocolFuncall, ProtocolGetResponse,
-    ProtocolKeyChange, ProtocolSearchItem, RequestHeader, ResponseHeader, FUNC_LIST_LPUSH,
-    FUNC_LIST_RPUSH, FUNC_MAP_ADD, FUNC_MAP_REMOVE, FUNC_NUM_ADD, FUNC_NUM_AND, FUNC_NUM_DIV,
-    FUNC_NUM_MAX, FUNC_NUM_MIN, FUNC_NUM_MOD, FUNC_NUM_MUL, FUNC_NUM_OR, FUNC_NUM_SUB,
-    FUNC_NUM_XOR, FUNC_SET, FUNC_SET_ADD, FUNC_SET_INTERSECT, FUNC_SET_REMOVE, FUNC_SET_UNION,
-    FUNC_STRING_APPEND, FUNC_STRING_LTRIM, FUNC_STRING_PREPEND, FUNC_STRING_RTRIM,
-    HYPERDATATYPE_FLOAT, HYPERDATATYPE_INT64, HYPERDATATYPE_LIST_GENERIC,
+    encode_protocol_search_done, encode_protocol_search_item, AtomicRequest, CountRequest,
+    GetAttribute, GetRequest, GetResponse, GetValue, LegacyCheck, LegacyFuncall,
+    LegacyFuncallName, LegacyMessageType, LegacyPredicate, LegacyReturnCode, ProtocolAttributeCheck,
+    ProtocolFuncall, ProtocolGetResponse, ProtocolKeyChange, ProtocolSearchItem,
+    SearchDoneResponse, SearchItemResponse, SearchStartRequest, RequestHeader, ResponseHeader,
+    FUNC_LIST_LPUSH, FUNC_LIST_RPUSH, FUNC_MAP_ADD, FUNC_MAP_REMOVE, FUNC_NUM_ADD, FUNC_NUM_AND,
+    FUNC_NUM_DIV, FUNC_NUM_MAX, FUNC_NUM_MIN, FUNC_NUM_MOD, FUNC_NUM_MUL, FUNC_NUM_OR,
+    FUNC_NUM_SUB, FUNC_NUM_XOR, FUNC_SET, FUNC_SET_ADD, FUNC_SET_INTERSECT, FUNC_SET_REMOVE,
+    FUNC_SET_UNION, FUNC_STRING_APPEND, FUNC_STRING_LTRIM, FUNC_STRING_PREPEND,
+    FUNC_STRING_RTRIM, HYPERDATATYPE_FLOAT, HYPERDATATYPE_INT64, HYPERDATATYPE_LIST_GENERIC,
     HYPERDATATYPE_MAP_GENERIC, HYPERDATATYPE_SET_GENERIC, HYPERDATATYPE_STRING,
     HYPERPREDICATE_EQUALS, HYPERPREDICATE_GREATER_EQUAL, HYPERPREDICATE_GREATER_THAN,
     HYPERPREDICATE_LESS_EQUAL, HYPERPREDICATE_LESS_THAN,
@@ -56,6 +58,18 @@ use transport_core::{
 pub const COORDINATOR_CONTROL_HEADER_SIZE: usize = 2 + 4;
 pub const COORDINATOR_CONTROL_BODY_LENGTH_SIZE: usize = 4;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LegacyBodyFormat {
+    Protocol,
+    Named,
+}
+
+#[derive(Clone, Debug)]
+struct LegacySearchState {
+    records: VecDeque<Record>,
+    format: LegacyBodyFormat,
+}
+
 pub struct ClusterRuntime {
     local_node_id: u64,
     cluster_config: Mutex<ClusterConfig>,
@@ -69,7 +83,7 @@ pub struct ClusterRuntime {
     storage_backend: StorageRuntime,
     internode_transport: TransportRuntime,
     coordinator_state: Mutex<CoordinatorState>,
-    legacy_searches: Mutex<BTreeMap<u64, VecDeque<Record>>>,
+    legacy_searches: Mutex<BTreeMap<u64, LegacySearchState>>,
     _ephemeral_storage_dir: Option<TempDir>,
 }
 
@@ -1957,7 +1971,11 @@ pub async fn handle_legacy_request(
         LegacyMessageType::ReqAtomic => {
             let space = legacy_space(runtime)?;
             let (nonce, request_body) = legacy_decode_request_nonce(body)?;
-            let request = decode_protocol_atomic_request(request_body)?;
+            let request = if let Ok(request) = decode_protocol_atomic_request(request_body) {
+                request
+            } else {
+                legacy_named_atomic_request(&space, &AtomicRequest::decode_body(request_body)?)?
+            };
             if let Err(err) = legacy_validate_atomic_request(&space, &request) {
                 tracing::warn!(
                     "rejecting legacy atomic request with bad dimension spec: {err:#}"
@@ -2070,12 +2088,12 @@ pub async fn handle_legacy_request(
         LegacyMessageType::ReqSearchStart => {
             let space = legacy_space(runtime)?;
             let (nonce, request_body) = legacy_decode_request_nonce(body)?;
-            let request = decode_protocol_search_start(request_body)?;
+            let (search_id, checks, format) = legacy_search_start(runtime, request_body)?;
             let response = HyperdexClientService::handle(
                 runtime,
                 ClientRequest::Search {
                     space: space.name.clone(),
-                    checks: legacy_checks_from_protocol(&space, &request.checks)?,
+                    checks,
                 },
             )
             .await?;
@@ -2088,9 +2106,15 @@ pub async fn handle_legacy_request(
                 .legacy_searches
                 .lock()
                 .expect("legacy search state poisoned")
-                .insert(request.search_id, VecDeque::from(records));
+                .insert(
+                    search_id,
+                    LegacySearchState {
+                        records: VecDeque::from(records),
+                        format,
+                    },
+                );
 
-            legacy_search_response(runtime, &space, header, nonce, request.search_id)
+            legacy_search_response(runtime, &space, header, nonce, search_id)
         }
         LegacyMessageType::ReqSearchNext => {
             let space = legacy_space(runtime)?;
@@ -2119,12 +2143,11 @@ pub async fn handle_legacy_request(
         LegacyMessageType::ReqCount => {
             let space = legacy_space(runtime)?;
             let (nonce, request_body) = legacy_decode_request_nonce(body)?;
-            let checks = decode_protocol_count_request(request_body)?;
             let response = HyperdexClientService::handle(
                 runtime,
                 ClientRequest::Count {
                     space: space.name.clone(),
-                    checks: legacy_checks_from_protocol(&space, &checks)?,
+                    checks: legacy_count_checks(runtime, request_body)?,
                 },
             )
             .await?;
@@ -2145,7 +2168,7 @@ pub async fn handle_legacy_request(
         LegacyMessageType::ReqGet => {
             let space = legacy_space(runtime)?;
             let (nonce, request_body) = legacy_decode_request_nonce(body)?;
-            let key = decode_protocol_get_request(request_body)?;
+            let (key, format) = legacy_get_request_key(request_body)?;
             let response = HyperdexClientService::handle(
                 runtime,
                 ClientRequest::Get {
@@ -2159,14 +2182,28 @@ pub async fn handle_legacy_request(
                 anyhow::bail!("unexpected runtime response to get request");
             };
 
-            let get = match record {
-                Some(record) => ProtocolGetResponse {
-                    status: LegacyReturnCode::Success as u16,
-                    values: legacy_protocol_values_from_record(&space, &record)?,
-                },
-                None => ProtocolGetResponse {
-                    status: LegacyReturnCode::NotFound as u16,
-                    values: Vec::new(),
+            let body = match format {
+                LegacyBodyFormat::Protocol => encode_protocol_get_response(&match record {
+                    Some(record) => ProtocolGetResponse {
+                        status: LegacyReturnCode::Success as u16,
+                        values: legacy_protocol_values_from_record(&space, &record)?,
+                    },
+                    None => ProtocolGetResponse {
+                        status: LegacyReturnCode::NotFound as u16,
+                        values: Vec::new(),
+                    },
+                }),
+                LegacyBodyFormat::Named => match record {
+                    Some(record) => GetResponse {
+                        status: LegacyReturnCode::Success,
+                        attributes: legacy_named_attributes_from_record(&space, &record)?,
+                    }
+                    .encode_body(),
+                    None => GetResponse {
+                        status: LegacyReturnCode::NotFound,
+                        attributes: Vec::new(),
+                    }
+                    .encode_body(),
                 },
             };
 
@@ -2176,7 +2213,7 @@ pub async fn handle_legacy_request(
                     target_virtual_server: header.target_virtual_server,
                     nonce,
                 },
-                encode_protocol_get_response(&get),
+                body,
             ))
         }
         _ => Ok((config_mismatch_response(header), Vec::new())),
@@ -2204,6 +2241,298 @@ fn legacy_space(runtime: &ClusterRuntime) -> Result<Space> {
         .catalog
         .get_space(&space_name)?
         .ok_or_else(|| anyhow!("catalog lost space definition for {space_name}"))
+}
+
+fn legacy_named_attribute<'a>(space: &'a Space, attribute: &str) -> Result<(u16, &'a ValueKind)> {
+    if attribute == space.key_attribute {
+        return Ok((0, &ValueKind::Bytes));
+    }
+
+    let (index, definition) = space
+        .attributes
+        .iter()
+        .enumerate()
+        .find(|(_, definition)| definition.name == attribute)
+        .ok_or_else(|| anyhow!("legacy attribute `{attribute}` is not present in the schema"))?;
+
+    Ok(((index + 1) as u16, &definition.kind))
+}
+
+fn legacy_named_value(kind: &ValueKind, value: &GetValue) -> Result<Value> {
+    match (kind, value) {
+        (_, GetValue::Null) => Ok(Value::Null),
+        (ValueKind::Bool, GetValue::Bool(value)) => Ok(Value::Bool(*value)),
+        (ValueKind::Int, GetValue::Int(value)) => Ok(Value::Int(*value)),
+        (ValueKind::Bytes, GetValue::Bytes(value)) => Ok(Value::Bytes(value.clone().into())),
+        (ValueKind::Bytes, GetValue::String(value)) => {
+            Ok(Value::Bytes(value.as_bytes().to_vec().into()))
+        }
+        (ValueKind::String | ValueKind::Document, GetValue::String(value)) => {
+            Ok(Value::String(value.clone()))
+        }
+        (ValueKind::String | ValueKind::Document, GetValue::Bytes(value)) => Ok(Value::String(
+            std::str::from_utf8(value)
+                .map_err(|_| anyhow!("legacy string value is not valid utf-8"))?
+                .to_owned(),
+        )),
+        _ => Err(anyhow!(
+            "legacy value {value:?} does not match schema kind {kind:?}"
+        )),
+    }
+}
+
+fn legacy_named_value_to_protocol(kind: &ValueKind, value: &GetValue) -> Result<Vec<u8>> {
+    let value = legacy_named_value(kind, value)?;
+    legacy_protocol_value_from_kind(kind, &value)
+}
+
+fn legacy_named_predicate(predicate: LegacyPredicate) -> u16 {
+    predicate as u16
+}
+
+fn legacy_named_checks(space: &Space, checks: &[LegacyCheck]) -> Result<Vec<Check>> {
+    checks
+        .iter()
+        .map(|check| {
+            let (_, kind) = legacy_named_attribute(space, &check.attribute)?;
+            Ok(Check {
+                attribute: check.attribute.clone(),
+                predicate: legacy_protocol_predicate(legacy_named_predicate(check.predicate))?,
+                value: legacy_named_value(kind, &check.value)?,
+            })
+        })
+        .collect()
+}
+
+fn legacy_named_check_to_protocol(
+    space: &Space,
+    check: &LegacyCheck,
+) -> Result<ProtocolAttributeCheck> {
+    let (attr, kind) = legacy_named_attribute(space, &check.attribute)?;
+    Ok(ProtocolAttributeCheck {
+        attr,
+        value: legacy_named_value_to_protocol(kind, &check.value)?,
+        datatype: legacy_hyperdatatype(kind)?,
+        predicate: legacy_named_predicate(check.predicate),
+    })
+}
+
+fn legacy_named_funcall_to_protocol(
+    space: &Space,
+    funcall: &LegacyFuncall,
+) -> Result<ProtocolFuncall> {
+    let (attr, attribute_kind) = legacy_named_attribute(space, &funcall.attribute)?;
+
+    let (name, arg1_kind, arg2_kind, arg2_value) = match funcall.name {
+        LegacyFuncallName::Set => (FUNC_SET, Some(attribute_kind), None, None),
+        LegacyFuncallName::StringAppend => (FUNC_STRING_APPEND, Some(attribute_kind), None, None),
+        LegacyFuncallName::StringPrepend => (FUNC_STRING_PREPEND, Some(attribute_kind), None, None),
+        LegacyFuncallName::NumAdd => (FUNC_NUM_ADD, Some(attribute_kind), None, None),
+        LegacyFuncallName::NumSub => (FUNC_NUM_SUB, Some(attribute_kind), None, None),
+        LegacyFuncallName::NumMul => (FUNC_NUM_MUL, Some(attribute_kind), None, None),
+        LegacyFuncallName::NumDiv => (FUNC_NUM_DIV, Some(attribute_kind), None, None),
+        LegacyFuncallName::NumMod => (FUNC_NUM_MOD, Some(attribute_kind), None, None),
+        LegacyFuncallName::NumAnd => (FUNC_NUM_AND, Some(attribute_kind), None, None),
+        LegacyFuncallName::NumOr => (FUNC_NUM_OR, Some(attribute_kind), None, None),
+        LegacyFuncallName::NumXor => (FUNC_NUM_XOR, Some(attribute_kind), None, None),
+        LegacyFuncallName::ListLPush => match attribute_kind {
+            ValueKind::List(element_kind) => {
+                (FUNC_LIST_LPUSH, Some(element_kind.as_ref()), None, None)
+            }
+            other => {
+                return Err(anyhow!(
+                    "legacy list push requires a list attribute, found {other:?}"
+                ))
+            }
+        },
+        LegacyFuncallName::ListRPush => match attribute_kind {
+            ValueKind::List(element_kind) => {
+                (FUNC_LIST_RPUSH, Some(element_kind.as_ref()), None, None)
+            }
+            other => {
+                return Err(anyhow!(
+                    "legacy list push requires a list attribute, found {other:?}"
+                ))
+            }
+        },
+        LegacyFuncallName::SetAdd => match attribute_kind {
+            ValueKind::Set(element_kind) => (FUNC_SET_ADD, Some(element_kind.as_ref()), None, None),
+            other => {
+                return Err(anyhow!(
+                    "legacy set add requires a set attribute, found {other:?}"
+                ))
+            }
+        },
+        LegacyFuncallName::SetRemove => match attribute_kind {
+            ValueKind::Set(element_kind) => {
+                (FUNC_SET_REMOVE, Some(element_kind.as_ref()), None, None)
+            }
+            other => {
+                return Err(anyhow!(
+                    "legacy set remove requires a set attribute, found {other:?}"
+                ))
+            }
+        },
+        LegacyFuncallName::SetIntersect => (FUNC_SET_INTERSECT, Some(attribute_kind), None, None),
+        LegacyFuncallName::SetUnion => (FUNC_SET_UNION, Some(attribute_kind), None, None),
+        LegacyFuncallName::MapAdd => match attribute_kind {
+            ValueKind::Map { key, value } => (
+                FUNC_MAP_ADD,
+                Some(value.as_ref()),
+                Some(key.as_ref()),
+                funcall.arg2.as_ref(),
+            ),
+            other => {
+                return Err(anyhow!(
+                    "legacy map add requires a map attribute, found {other:?}"
+                ))
+            }
+        },
+        LegacyFuncallName::MapRemove => match attribute_kind {
+            ValueKind::Map { key, .. } => {
+                (FUNC_MAP_REMOVE, None, Some(key.as_ref()), Some(&funcall.arg1))
+            }
+            other => {
+                return Err(anyhow!(
+                    "legacy map remove requires a map attribute, found {other:?}"
+                ))
+            }
+        },
+    };
+
+    let (arg1, arg1_datatype) = match arg1_kind {
+        Some(kind) => (
+            legacy_named_value_to_protocol(kind, &funcall.arg1)?,
+            legacy_hyperdatatype(kind)?,
+        ),
+        None => (Vec::new(), 0),
+    };
+
+    let (arg2, arg2_datatype) = match (arg2_kind, arg2_value) {
+        (Some(kind), Some(value)) => (
+            legacy_named_value_to_protocol(kind, value)?,
+            legacy_hyperdatatype(kind)?,
+        ),
+        (Some(_), None) => {
+            return Err(anyhow!(
+                "legacy funcall {:?} is missing its second argument",
+                funcall.name
+            ))
+        }
+        (None, _) => (Vec::new(), 0),
+    };
+
+    Ok(ProtocolFuncall {
+        attr,
+        name,
+        arg1,
+        arg1_datatype,
+        arg2,
+        arg2_datatype,
+    })
+}
+
+fn legacy_named_atomic_request(space: &Space, request: &AtomicRequest) -> Result<ProtocolKeyChange> {
+    Ok(ProtocolKeyChange {
+        key: request.key.clone(),
+        erase: request.flags & legacy_protocol::LEGACY_ATOMIC_FLAG_WRITE == 0,
+        fail_if_not_found: request.flags & legacy_protocol::LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND
+            != 0,
+        fail_if_found: request.flags & legacy_protocol::LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND != 0,
+        checks: request
+            .checks
+            .iter()
+            .map(|check| legacy_named_check_to_protocol(space, check))
+            .collect::<Result<Vec<_>>>()?,
+        funcalls: request
+            .funcalls
+            .iter()
+            .map(|funcall| legacy_named_funcall_to_protocol(space, funcall))
+            .collect::<Result<Vec<_>>>()?,
+    })
+}
+
+fn legacy_get_request_key(request_body: &[u8]) -> Result<(Vec<u8>, LegacyBodyFormat)> {
+    if let Ok(key) = decode_protocol_get_request(request_body) {
+        return Ok((key, LegacyBodyFormat::Protocol));
+    }
+
+    Ok((GetRequest::decode_body(request_body)?.key, LegacyBodyFormat::Named))
+}
+
+fn legacy_search_start(
+    runtime: &ClusterRuntime,
+    request_body: &[u8],
+) -> Result<(u64, Vec<Check>, LegacyBodyFormat)> {
+    let space = legacy_space(runtime)?;
+
+    if let Ok(request) = decode_protocol_search_start(request_body) {
+        return Ok((
+            request.search_id,
+            legacy_checks_from_protocol(&space, &request.checks)?,
+            LegacyBodyFormat::Protocol,
+        ));
+    }
+
+    let request = SearchStartRequest::decode_body(request_body)?;
+    if request.space != space.name {
+        anyhow::bail!(
+            "legacy search request targeted unknown space `{}`; runtime only serves `{}`",
+            request.space,
+            space.name
+        );
+    }
+
+    Ok((
+        request.search_id,
+        legacy_named_checks(&space, &request.checks)?,
+        LegacyBodyFormat::Named,
+    ))
+}
+
+fn legacy_named_value_from_record(value: &Value) -> Result<GetValue> {
+    match value {
+        Value::Null => Ok(GetValue::Null),
+        Value::Bool(value) => Ok(GetValue::Bool(*value)),
+        Value::Int(value) => Ok(GetValue::Int(*value)),
+        Value::Bytes(value) => Ok(GetValue::Bytes(value.to_vec())),
+        Value::String(value) => Ok(GetValue::String(value.clone())),
+        other => Err(anyhow!("legacy named response does not support {other:?} yet")),
+    }
+}
+
+fn legacy_named_attributes_from_record(space: &Space, record: &Record) -> Result<Vec<GetAttribute>> {
+    space
+        .attributes
+        .iter()
+        .filter_map(|attribute| {
+            record.attributes.get(&attribute.name).map(|value| {
+                Ok(GetAttribute {
+                    name: attribute.name.clone(),
+                    value: legacy_named_value_from_record(value)?,
+                })
+            })
+        })
+        .collect()
+}
+
+fn legacy_count_checks(runtime: &ClusterRuntime, request_body: &[u8]) -> Result<Vec<Check>> {
+    let space = legacy_space(runtime)?;
+
+    if let Ok(checks) = decode_protocol_count_request(request_body) {
+        return legacy_checks_from_protocol(&space, &checks);
+    }
+
+    let request = CountRequest::decode_body(request_body)?;
+    if request.space != space.name {
+        anyhow::bail!(
+            "legacy count request targeted unknown space `{}`; runtime only serves `{}`",
+            request.space,
+            space.name
+        );
+    }
+
+    Ok(Vec::new())
 }
 
 async fn legacy_record_exists(runtime: &ClusterRuntime, space: &str, key: &[u8]) -> Result<bool> {
@@ -2247,28 +2576,37 @@ fn legacy_search_response(
         .legacy_searches
         .lock()
         .expect("legacy search state poisoned");
-    let Some(records) = searches.get_mut(&search_id) else {
+    let Some(state) = searches.get_mut(&search_id) else {
         return Ok((
             ResponseHeader {
                 message_type: LegacyMessageType::RespSearchDone,
                 target_virtual_server: header.target_virtual_server,
                 nonce,
             },
-            encode_protocol_search_done(),
+            SearchDoneResponse { search_id }.encode_body().to_vec(),
         ));
     };
 
-    let response = if let Some(record) = records.pop_front() {
+    let response = if let Some(record) = state.records.pop_front() {
+        let body = match state.format {
+            LegacyBodyFormat::Protocol => encode_protocol_search_item(&ProtocolSearchItem {
+                key: record.key.to_vec(),
+                values: legacy_protocol_values_from_record(space, &record)?,
+            }),
+            LegacyBodyFormat::Named => SearchItemResponse {
+                search_id,
+                key: record.key.to_vec(),
+                attributes: legacy_named_attributes_from_record(space, &record)?,
+            }
+            .encode_body(),
+        };
         (
             ResponseHeader {
                 message_type: LegacyMessageType::RespSearchItem,
                 target_virtual_server: header.target_virtual_server,
                 nonce,
             },
-            encode_protocol_search_item(&ProtocolSearchItem {
-                key: record.key.to_vec(),
-                values: legacy_protocol_values_from_record(space, &record)?,
-            }),
+            body,
         )
     } else {
         (
@@ -2277,11 +2615,11 @@ fn legacy_search_response(
                 target_virtual_server: header.target_virtual_server,
                 nonce,
             },
-            encode_protocol_search_done(),
+            SearchDoneResponse { search_id }.encode_body().to_vec(),
         )
     };
 
-    if records.is_empty() {
+    if state.records.is_empty() {
         searches.remove(&search_id);
     }
 
@@ -6000,6 +6338,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn legacy_count_accepts_named_space_body() {
+        let runtime = bootstrap_runtime();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        let (header, body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqCount,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 23,
+            },
+            &legacy_request_body(
+                23,
+                CountRequest {
+                    space: "profiles".to_owned(),
+                }
+                .encode_body(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(header.message_type, LegacyMessageType::RespCount);
+        assert_eq!(decode_protocol_count_response(&body).unwrap(), 0);
+    }
+
+    #[tokio::test]
     async fn legacy_search_start_returns_first_matching_record() {
         let runtime = bootstrap_runtime();
         HyperdexAdminService::handle(
@@ -6146,7 +6525,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(header.message_type, LegacyMessageType::RespSearchDone);
-        assert!(body.is_empty());
+        assert_eq!(SearchDoneResponse::decode_body(&body).unwrap().search_id, 99);
     }
 
     #[test]

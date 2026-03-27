@@ -850,7 +850,8 @@ async fn spawn_single_daemon_cluster() -> Result<SingleDaemonCluster> {
     )?;
     coordinator
         .wait_for_coordinator(coordinator_address)
-        .await?;
+        .await
+        .context("waiting for coordinator startup response")?;
 
     daemon_port.release();
     daemon_control_port.release();
@@ -1425,7 +1426,10 @@ async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()>
         ],
         tempdir.path(),
     )?;
-    daemon_one.wait_for_daemon(daemon_one_address).await?;
+    daemon_one
+        .wait_for_daemon(daemon_one_address)
+        .await
+        .context("waiting for daemon one legacy frontend startup response")?;
 
     daemon_two_port.release();
     daemon_two_control_port.release();
@@ -1445,21 +1449,26 @@ async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()>
         ],
         tempdir.path(),
     )?;
-    daemon_two.wait_for_daemon(daemon_two_address).await?;
+    daemon_two
+        .wait_for_daemon(daemon_two_address)
+        .await
+        .context("waiting for daemon two legacy frontend startup response")?;
 
     coordinator
         .wait_for_config_view(coordinator_address, "both daemon registrations", |view| {
             view.cluster.nodes.iter().any(|node| node.id == 1)
                 && view.cluster.nodes.iter().any(|node| node.id == 2)
         })
-        .await?;
+        .await
+        .context("waiting for both daemon registrations in coordinator config")?;
 
     let ready = request_coordinator_control_with_body_once(
         coordinator_address,
         CoordinatorAdminRequest::WaitUntilStable.method_name(),
         &CoordinatorAdminRequest::WaitUntilStable,
     )
-    .await?;
+    .await
+    .context("requesting wait_until_stable after both daemon registrations")?;
     assert_eq!(
         CoordinatorReturnCode::decode(&ready.status)?,
         CoordinatorReturnCode::Success
@@ -1479,7 +1488,8 @@ async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()>
         CoordinatorAdminRequest::SpaceAdd(space.clone()).method_name(),
         &CoordinatorAdminRequest::SpaceAdd(space),
     )
-    .await?;
+    .await
+    .context("requesting coordinator space_add for `profiles`")?;
     assert_eq!(
         CoordinatorReturnCode::decode(&status)?,
         CoordinatorReturnCode::Success
@@ -1491,16 +1501,18 @@ async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()>
             "space `profiles` in config view",
             |view| view.spaces.iter().any(|space| space.name == "profiles"),
         )
-        .await?;
+        .await
+        .context("waiting for `profiles` space to appear in coordinator config")?;
     daemon_one
         .wait_for_internode_space(daemon_one_control_address, "profiles")
-        .await?;
+        .await
+        .context("waiting for daemon one internode readiness for `profiles`")?;
     daemon_two
         .wait_for_internode_space(daemon_two_control_address, "profiles")
-        .await?;
+        .await
+        .context("waiting for daemon two internode readiness for `profiles`")?;
 
-    let (daemon_one_header, daemon_one_count) =
-        request_count(daemon_one_address, "profiles", 1).await?;
+    let (daemon_one_header, daemon_one_count) = request_count(daemon_one_address, "profiles", 1).await?;
     assert_eq!(daemon_one_header.message_type, LegacyMessageType::RespCount);
     assert_eq!(daemon_one_count.count, 0);
 
@@ -1614,7 +1626,8 @@ async fn legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Resu
         CoordinatorAdminRequest::SpaceAdd(space.clone()).method_name(),
         &CoordinatorAdminRequest::SpaceAdd(space),
     )
-    .await?;
+    .await
+    .context("requesting coordinator space_add for `profiles` in remote primary test")?;
     assert_eq!(
         CoordinatorReturnCode::decode(&status)?,
         CoordinatorReturnCode::Success
@@ -1629,10 +1642,12 @@ async fn legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Resu
         .await?;
     daemon_one
         .wait_for_internode_space(daemon_one_control_address, "profiles")
-        .await?;
+        .await
+        .context("waiting for daemon one internode readiness for `profiles` in remote primary test")?;
     daemon_two
         .wait_for_internode_space(daemon_two_control_address, "profiles")
-        .await?;
+        .await
+        .context("waiting for daemon two internode readiness for `profiles` in remote primary test")?;
 
     let (atomic_header, atomic_response) = request_atomic(
         daemon_one_address,
@@ -1757,7 +1772,8 @@ async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Resu
         CoordinatorAdminRequest::SpaceAdd(space.clone()).method_name(),
         &CoordinatorAdminRequest::SpaceAdd(space),
     )
-    .await?;
+    .await
+    .context("requesting coordinator space_add for `profiles` in degraded read test")?;
     assert_eq!(
         CoordinatorReturnCode::decode(&status)?,
         CoordinatorReturnCode::Success
@@ -1772,10 +1788,12 @@ async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Resu
         .await?;
     daemon_one
         .wait_for_internode_space(daemon_one_control_address, "profiles")
-        .await?;
+        .await
+        .context("waiting for daemon one internode readiness for `profiles` in degraded read test")?;
     daemon_two
         .wait_for_internode_space(daemon_two_control_address, "profiles")
-        .await?;
+        .await
+        .context("waiting for daemon two internode readiness for `profiles` in degraded read test")?;
 
     for (nonce, key, views) in [
         (100_u64, "degraded-search-a", 7_i64),
