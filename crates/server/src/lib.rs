@@ -33,19 +33,10 @@ use storage_core::{StorageEngine, WriteResult};
 use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-<<<<<<< HEAD
 use transport_core::{
     ClusterTransport, DataPlaneRequest, DataPlaneResponse, InProcessTransport, InternodeRequest,
     InternodeResponse, RemoteNode, DATA_PLANE_METHOD,
 };
-||||||| parent of 30354c7 (Add gRPC internode forwarding for data plane)
-use transport_core::InProcessTransport;
-=======
-use transport_core::{
-    ClusterTransport, DataPlaneRequest, DataPlaneResponse, InProcessTransport, InternodeRequest,
-    InternodeResponse, RemoteNode, DATA_PLANE_METHOD,
-};
->>>>>>> 30354c7 (Add gRPC internode forwarding for data plane)
 
 pub const COORDINATOR_CONTROL_HEADER_SIZE: usize = 2 + 4;
 pub const COORDINATOR_CONTROL_BODY_LENGTH_SIZE: usize = 4;
@@ -153,10 +144,28 @@ impl ClusterRuntime {
         config: ClusterConfig,
         data_dir: Option<&std::path::Path>,
     ) -> Result<Self> {
-        let Some(local_node_id) = config.nodes.first().map(|node| node.id) else {
-            return Err(anyhow!("cluster config must contain at least one node"));
-        };
-        Self::for_node_with_data_dir(config, local_node_id, data_dir)
+        let local_node_id = config.nodes.first().map(|node| node.id).unwrap_or(0);
+        let catalog: Arc<dyn Catalog> =
+            Arc::new(InMemoryCatalog::new(config.nodes.clone(), config.replicas));
+        let consensus = select_consensus_backend(&config)?;
+        let (placement, placement_runtime) = select_placement_backend(&config);
+        let (storage, storage_backend, ephemeral_storage_dir) =
+            select_storage_backend(&config, data_dir)?;
+        let internode_transport = select_internode_transport(&config);
+
+        Ok(Self::new(
+            local_node_id,
+            config,
+            catalog,
+            storage,
+            placement,
+            Arc::new(InProcessTransport),
+            consensus,
+            placement_runtime,
+            storage_backend,
+            internode_transport,
+            ephemeral_storage_dir,
+        ))
     }
 
     pub fn for_node(config: ClusterConfig, local_node_id: u64) -> Result<Self> {
