@@ -2239,3 +2239,77 @@
 - Disposition: `advance`
 - Next move: reconcile the startup and binary-config workers, then rerun the
   bounded admin-tool probes.
+
+### Entry `hyh-046` - Outcome
+
+- Timestamp: `2026-03-28 00:35Z`
+- Kind: `outcome`
+- End commit: `30227c3`
+- Artifact location:
+  - no reconciled code result
+  - stale worktree state in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
+- Evidence summary:
+  - all subagents were stopped before the work completed
+  - the old `live-hyhac-post-follow` worktree is not a clean basis for the
+    next product pass because it carries an uncommitted harness edit
+  - the root package was tightened to reduce planning churn and reset the next
+    product pass around a fresh clean worktree
+- Conclusion: the intended product direction still stands, but the old worker
+  result is not trustworthy enough to continue from directly.
+- Disposition: `reframe`
+- Next move: relaunch the product step from a fresh current-main worktree with
+  the same honest full-schema validator.
+
+### Entry `hyh-047` - Outcome
+
+- Timestamp: `2026-03-28 00:35Z`
+- Kind: `outcome`
+- End commit: `30227c3`
+- Artifact location:
+  - no reconciled code or durable evidence result
+- Evidence summary:
+  - the read-only step was interrupted by the user-directed pause before a
+    durable outcome was integrated
+  - the root plan no longer needs a default parallel read-only step because the
+    next move is a product-owned fix on the honest live baseline
+- Conclusion: the next useful work is a real product pass, not another
+  operation-order note.
+- Disposition: `stop`
+- Next move: preregister the new product-owned pass and only reopen read-only
+  comparison if the product step proves it is necessary.
+
+### Entry `hyh-048` - Preregistration
+
+- Timestamp: `2026-03-28 00:35Z`
+- Kind: `preregister`
+- Hypothesis: a product-owned pass on a fresh worktree can reduce the
+  full-schema post-success Hyhac failure to the first later divergent
+  operation, patch the responsible server or protocol behavior, and move the
+  honest live baseline forward.
+- Owner: next forked product worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-roundtrip-fix`
+- Start commit: `30227c3`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-roundtrip-fix`
+    on `live-hyhac-roundtrip-fix`
+- Mutable surface:
+  - `crates/legacy-protocol/**`
+  - `crates/legacy-frontend/**`
+  - `crates/hyperdex-client-protocol/**`
+  - `crates/server/**`
+  - `crates/server/tests/**`
+  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if launcher wiring must
+    point at `hyperdex-rs`
+- Validator:
+  - fastest useful check:
+    `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture`
+  - expected narrower truthful checks added by the worker if they materially
+    shorten the loop
+  - strong checks:
+    - `cargo test -p server`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - at least one material code change in `crates/**`
+  - a reduced truthful repro for the remaining later Hyhac failure, if needed
+  - either a live-baseline improvement or one precise blocker tied to current
+    code and observed output

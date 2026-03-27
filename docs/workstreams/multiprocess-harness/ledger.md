@@ -410,3 +410,36 @@
 - Disposition: `advance`
 - Next move: hand this evidence to the product and read-only workers and hold
   this workstream until another harness change is justified.
+
+### Entry `mph-009` - Preregistration
+
+- Timestamp: `2026-03-28 00:35Z`
+- Kind: `preregister`
+- Hypothesis: a harness-owned repro-reduction pass can shorten the honest
+  full-schema Hyhac failure into a smaller truthful post-success probe without
+  drifting into product implementation.
+- Owner: next forked worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire`
+- Start commit: `30227c3`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on
+    `clientgarbage-wire`
+- Mutable surface:
+  - `Cargo.toml`
+  - `crates/server/Cargo.toml`
+  - `crates/server/tests/**`
+  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+    is strictly necessary for the repro
+- Validator:
+  - fastest useful check:
+    `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture`
+  - expected narrower truthful checks added by the worker if they materially
+    shorten the loop
+  - strong checks:
+    - `cargo test -p server --test dist_multiprocess_harness -- --nocapture`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - a smaller truthful post-success probe for the active live failure
+  - no product-code drift outside the harness-owned surface
+  - one bounded harness commit ready for reconciliation if the shorter repro is
+    worth keeping
