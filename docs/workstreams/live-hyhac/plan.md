@@ -70,6 +70,11 @@ surface.
 - [x] (2026-03-27 04:41Z) Finished the read-only protocol evidence pass for the
   original HyperDex admin path and recovered the concrete control-flow facts
   needed to reopen implementation.
+- [x] (2026-03-27 04:45Z) Retired the second implementation thread cleanly when
+  it again reported no file changes and a remaining blocker on concrete
+  Replicant framing.
+- [ ] Finish the narrowed evidence steps for Replicant framing and dynamic
+  packet capture.
 - [ ] Implement the verified Replicant-compatible legacy coordinator admin
   behavior in the dedicated control-plane worktree.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
@@ -77,15 +82,17 @@ surface.
 ## Current Hypothesis
 
 The first missing live contract is still the legacy coordinator admin frontend,
-and the verified protocol facts now make the next step concrete: implement
+but the last unresolved blocker is now narrow: concrete Replicant transport
+framing. Once that is pinned down, the implementation target remains
 Replicant-compatible `space_add`, `wait_until_stable`, and request-id-plus-loop
-completion behavior closely enough for the original C admin client path.
+completion behavior.
 
 ## Next Bounded Step
 
-Implement the smallest legacy coordinator admin behavior that matches the
-verified Replicant control flow for `space_add`, `wait_until_stable`, and
-`hyperdex_admin_loop`, then rerun the bounded live probe.
+Finish the two narrowed evidence steps for Replicant framing and dynamic packet
+capture, then relaunch the smallest legacy coordinator admin implementation
+that matches the verified control flow for `space_add`,
+`wait_until_stable`, and `hyperdex_admin_loop`.
 
 ## Surprises & Discoveries
 
@@ -110,6 +117,10 @@ verified Replicant control flow for `space_add`, `wait_until_stable`, and
   `replicant_client_call`, route `wait_until_stable` through
   `replicant_client_cond_wait`, and complete both through
   `hyperdex_admin_loop`.
+- Observation: the remaining blocker is now specifically the Replicant transport
+  framing, not the higher-level admin operation semantics.
+  Evidence: the second implementation thread reported no touched files and
+  named missing concrete Replicant framing as the only blocker.
 
 ## Decision Log
 

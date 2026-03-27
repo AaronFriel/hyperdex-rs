@@ -156,3 +156,61 @@
   - live legacy admin endpoint that no longer times out on `add_space`
   - live legacy admin endpoint that no longer times out on `wait_until_stable`
   - one bounded commit ready for reconciliation
+
+### Entry `hyh-004` - Outcome
+
+- Timestamp: `2026-03-27 04:45Z`
+- Kind: `outcome`
+- End commit: `5b6b614`
+- Artifact location:
+  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+- Evidence summary:
+  - the replacement worker again reported no file changes
+  - the replacement worker confirmed the remaining blocker is concrete
+    Replicant transport framing, not the higher-level admin operation flow
+- Conclusion: the implementation step should not be retried until the Replicant
+  framing is pinned down more concretely.
+- Disposition: `retry`
+- Next move: preregister two narrower evidence steps, one for Replicant
+  framing from source and one for dynamic packet/response capture.
+
+### Entry `hyh-005` - Preregistration
+
+- Timestamp: `2026-03-27 04:45Z`
+- Kind: `preregister`
+- Hypothesis: a source-focused pass over Replicant client/server code can
+  recover enough concrete transport framing detail to constrain the Rust
+  compatibility layer.
+- Owner: delegated read-only worker
+- Start commit: `5b6b614`
+- Worktree / branch:
+  - none; read-only source pass only
+- Mutable surface:
+  - none
+- Validator:
+  - verified findings tied to concrete Replicant and HyperDex source paths
+  - explicit framing facts that reduce implementation ambiguity
+- Expected artifacts:
+  - concrete Replicant framing facts
+  - implementation implications for the Rust coordinator path
+
+### Entry `hyh-006` - Preregistration
+
+- Timestamp: `2026-03-27 04:45Z`
+- Kind: `preregister`
+- Hypothesis: a dynamic capture pass using the original HyperDex admin tools
+  against a dummy listener can recover the first request bytes and any immediate
+  response expectations for `add_space` and `wait_until_stable`.
+- Owner: delegated read-only worker
+- Start commit: `5b6b614`
+- Worktree / branch:
+  - none; dynamic capture only
+- Mutable surface:
+  - none
+- Validator:
+  - captured byte sequences and concise interpretation
+  - concrete difference between `add_space` and `wait_until_stable` startup
+    behavior if any
+- Expected artifacts:
+  - first-packet captures for the legacy admin tools
+  - concrete transport facts that reduce implementation ambiguity
