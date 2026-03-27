@@ -2156,7 +2156,7 @@
   later-failure probes will isolate which selected large-object operation
   stalls after the first successful Hyhac round-trip and expose the exact
   daemon/client contract that still differs from HyperDex.
-- Owner: next delegated product worker
+- Owner: delegated worker `019d319b-e6f9-72a3-87ad-58542da51ba1` (`Hume`)
 - Start commit: `589ce4f`
 - Worktree / branch:
   - root checkout on `main`
@@ -2180,7 +2180,7 @@
   can identify the exact operation order after the first successful `put` plus
   `loop`, so the product worker can split the corrected baseline without
   guessing which post-success step is actually hanging.
-- Owner: next delegated read-only worker
+- Owner: delegated worker `019d319b-e8a2-7fa1-a8bb-41d50791b9f2` (`Zeno`)
 - Start commit: `589ce4f`
 - Worktree / branch:
   - none required; read-only evidence gathering only
