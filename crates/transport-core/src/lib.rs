@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
-use data_model::{Mutation, Record};
+use data_model::{Check, Mutation, Record};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 pub const DATA_PLANE_METHOD: &str = "data-plane";
@@ -39,6 +39,12 @@ pub enum DataPlaneRequest {
     Delete {
         space: String,
         key: Bytes,
+    },
+    ConditionalPut {
+        space: String,
+        key: Bytes,
+        checks: Vec<Check>,
+        mutations: Vec<Mutation>,
     },
 }
 

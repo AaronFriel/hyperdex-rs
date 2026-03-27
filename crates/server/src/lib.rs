@@ -303,6 +303,18 @@ impl ClusterRuntime {
                             WriteResult::ConditionFailed => DataPlaneResponse::ConditionFailed,
                         }
                     }
+                    DataPlaneRequest::ConditionalPut {
+                        space,
+                        key,
+                        checks,
+                        mutations,
+                    } => match self
+                        .data_plane
+                        .conditional_put(&space, key, &checks, &mutations)?
+                    {
+                        WriteResult::Written | WriteResult::Missing => DataPlaneResponse::Unit,
+                        WriteResult::ConditionFailed => DataPlaneResponse::ConditionFailed,
+                    },
                 };
                 InternodeResponse::encode(200, &response)
             }
@@ -1317,16 +1329,40 @@ impl HyperdexClientService for ClusterRuntime {
                 key,
                 checks,
                 mutations,
-            } => Ok(
-                match self
-                    .data_plane
-                    .conditional_put(&space, key, &checks, &mutations)?
-                {
-                    WriteResult::Written => ClientResponse::Unit,
-                    WriteResult::ConditionFailed => ClientResponse::ConditionFailed,
-                    WriteResult::Missing => ClientResponse::Unit,
-                },
-            ),
+            } => {
+                let primary = self.route_primary(&key)?;
+                if primary == self.local_node_id {
+                    Ok(match self
+                        .data_plane
+                        .conditional_put(&space, key, &checks, &mutations)?
+                    {
+                        WriteResult::Written => ClientResponse::Unit,
+                        WriteResult::ConditionFailed => ClientResponse::ConditionFailed,
+                        WriteResult::Missing => ClientResponse::Unit,
+                    })
+                } else {
+                    Ok(
+                        match self
+                            .forward_data_request(
+                                primary,
+                                DataPlaneRequest::ConditionalPut {
+                                    space,
+                                    key,
+                                    checks,
+                                    mutations,
+                                },
+                            )
+                            .await?
+                        {
+                            DataPlaneResponse::Unit => ClientResponse::Unit,
+                            DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
+                            DataPlaneResponse::Record(_) => anyhow::bail!(
+                                "unexpected record response to remote conditional put"
+                            ),
+                        },
+                    )
+                }
+            }
             ClientRequest::Search { space, checks } => Ok(ClientResponse::SearchResult(
                 self.data_plane.search(&space, &checks)?,
             )),

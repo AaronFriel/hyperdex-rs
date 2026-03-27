@@ -7,6 +7,7 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
+use data_model::{Attribute as ModelAttribute, Check, Mutation, Predicate, Value as ModelValue};
 use hyperdex_client_protocol::{ClientRequest, ClientResponse, HyperdexClientService};
 use transport_core::{DataPlaneRequest, DataPlaneResponse, InternodeRequest, DATA_PLANE_METHOD};
 use transport_grpc::hyperdex::v1::hyperdex_admin_client::HyperdexAdminClient;
@@ -369,6 +370,167 @@ async fn grpc_forwards_delete_requests_between_two_runtimes() {
         .unwrap();
 
     assert_eq!(node2_record, DataPlaneResponse::Record(None));
+
+    shutdown1.send(()).unwrap();
+    shutdown2.send(()).unwrap();
+}
+
+#[tokio::test]
+async fn grpc_forwards_conditional_put_requests_between_two_runtimes() {
+    let listener1 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr1 = listener1.local_addr().unwrap();
+    let listener2 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr2 = listener2.local_addr().unwrap();
+
+    let config = ClusterConfig {
+        nodes: vec![
+            ClusterNode {
+                id: 1,
+                host: "127.0.0.1".to_owned(),
+                control_port: addr1.port(),
+                data_port: addr1.port(),
+            },
+            ClusterNode {
+                id: 2,
+                host: "127.0.0.1".to_owned(),
+                control_port: addr2.port(),
+                data_port: addr2.port(),
+            },
+        ],
+        internode_transport: TransportBackend::Grpc,
+        ..ClusterConfig::default()
+    };
+
+    let mut runtime1 = ClusterRuntime::for_node(config.clone(), 1).unwrap();
+    runtime1.install_cluster_transport(Arc::new(GrpcTransportAdapter), TransportRuntime::Grpc);
+    let runtime1 = Arc::new(runtime1);
+
+    let mut runtime2 = ClusterRuntime::for_node(config.clone(), 2).unwrap();
+    runtime2.install_cluster_transport(Arc::new(GrpcTransportAdapter), TransportRuntime::Grpc);
+    let runtime2 = Arc::new(runtime2);
+
+    let shutdown1 = serve_runtime(runtime1.clone(), listener1).await;
+    let shutdown2 = serve_runtime(runtime2.clone(), listener2).await;
+
+    let endpoint1 = format!("http://{addr1}");
+    let endpoint2 = format!("http://{addr2}");
+
+    let mut admin1 = HyperdexAdminClient::connect(endpoint1.clone())
+        .await
+        .unwrap();
+    admin1
+        .create_space(CreateSpaceRequest {
+            schema_dsl: profiles_schema(),
+        })
+        .await
+        .unwrap();
+
+    let mut admin2 = HyperdexAdminClient::connect(endpoint2).await.unwrap();
+    admin2
+        .create_space(CreateSpaceRequest {
+            schema_dsl: profiles_schema(),
+        })
+        .await
+        .unwrap();
+
+    let key = (0..4096)
+        .map(|i| format!("conditional-user-{i}"))
+        .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
+        .expect("expected a key routed to node 2");
+
+    let mut client1 = HyperdexClientClient::connect(endpoint1).await.unwrap();
+    client1
+        .put(PutRequest {
+            space: "profiles".to_owned(),
+            key: key.as_bytes().to_vec(),
+            attributes: vec![
+                Attribute {
+                    name: "username".to_owned(),
+                    value: Some(Value {
+                        kind: Some(Kind::BytesValue(key.as_bytes().to_vec())),
+                    }),
+                },
+                Attribute {
+                    name: "first".to_owned(),
+                    value: Some(Value {
+                        kind: Some(Kind::StringValue("Ada".to_owned())),
+                    }),
+                },
+                Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Some(Value {
+                        kind: Some(Kind::IntValue(5)),
+                    }),
+                },
+            ],
+        })
+        .await
+        .unwrap();
+
+    let success = HyperdexClientService::handle(
+        runtime1.as_ref(),
+        ClientRequest::ConditionalPut {
+            space: "profiles".to_owned(),
+            key: key.as_bytes().to_vec().into(),
+            checks: vec![Check {
+                attribute: "first".to_owned(),
+                predicate: Predicate::Equal,
+                value: ModelValue::String("Ada".to_owned()),
+            }],
+            mutations: vec![Mutation::Set(ModelAttribute {
+                name: "first".to_owned(),
+                value: ModelValue::String("Grace".to_owned()),
+            })],
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(success, ClientResponse::Unit);
+
+    let compare_failed = HyperdexClientService::handle(
+        runtime1.as_ref(),
+        ClientRequest::ConditionalPut {
+            space: "profiles".to_owned(),
+            key: key.as_bytes().to_vec().into(),
+            checks: vec![Check {
+                attribute: "first".to_owned(),
+                predicate: Predicate::Equal,
+                value: ModelValue::String("Ada".to_owned()),
+            }],
+            mutations: vec![Mutation::Set(ModelAttribute {
+                name: "first".to_owned(),
+                value: ModelValue::String("Katherine".to_owned()),
+            })],
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(compare_failed, ClientResponse::ConditionFailed);
+
+    let local_probe = InternodeRequest::encode(
+        DATA_PLANE_METHOD,
+        &DataPlaneRequest::Get {
+            space: "profiles".to_owned(),
+            key: key.as_bytes().to_vec().into(),
+        },
+    )
+    .unwrap();
+    let node2_record: DataPlaneResponse = runtime2
+        .handle_internode_request(local_probe)
+        .await
+        .unwrap()
+        .decode()
+        .unwrap();
+
+    match node2_record {
+        DataPlaneResponse::Record(Some(record)) => {
+            assert_eq!(
+                record.attributes.get("first"),
+                Some(&ModelValue::String("Grace".to_owned()))
+            );
+        }
+        other => panic!("expected remote record after conditional put, got {other:?}"),
+    }
 
     shutdown1.send(()).unwrap();
     shutdown2.send(()).unwrap();
