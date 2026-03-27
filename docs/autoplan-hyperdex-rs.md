@@ -122,7 +122,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | root | None; `69d5918` already proved the fast Hyhac failure loops only through coordinator identify/bootstrap traffic on the cleaned baseline, so this workstream can pause again until another harness change is justified. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence -- --nocapture` | Hold until product or read-only comparison work needs another harness change. | `advance` |
-| `live-hyhac` | active | `019d316c-56ed-7b83-ade6-f5f83c32c7d9` (`Pauli`) | The repeated-identify mismatch is fixed and the corrected proxy probe now shows post-bootstrap `CondWait` traffic, but the direct large-object Hyhac loop still returns `Left ClientGarbage`. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow` on `live-hyhac-post-follow` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence -- --nocapture` | Capture the first daemon-side request/response or the next exact post-follow mismatch on the corrected coordinator baseline. | `advance` |
+| `live-hyhac` | active | next product worker after `hyh-040` retry | The repeated-identify mismatch is fixed and the corrected proxy probe now shows post-bootstrap `CondWait` traffic, but the direct large-object Hyhac loop still returns `Left ClientGarbage`. The first post-follow product relaunch returned only root-status narration and did no repo work. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow` on `live-hyhac-post-follow` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence -- --nocapture` | Relaunch the product worker on the clean post-follow worktree with a stricter execution shape, while the read-only comparison continues. | `retry` |
 | `coordinator-config-evidence` | active | `019d316c-58c6-7981-b76e-86a5a507a3a3` (`Nietzsche`) | `cce-013` is reconciled and `cce-014` was retired after it contradicted the corrected baseline; the new comparison starts from the observed post-bootstrap follow traffic on current `main`. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence -- --nocapture` | Name the first exact post-follow mismatch on the corrected baseline without reopening already-fixed bootstrap or interval issues. | `advance` |
 
 ## Progress
@@ -361,6 +361,10 @@ split, sequencing, or validator set needs to change.
   a fresh read-only comparison that starts from the corrected `CondWait` /
   `ClientResponse` baseline and explicitly discards the contradicted `cce-014`
   interval regression.
+- [x] (2026-03-27 23:28Z) Retired `hyh-040` as a clean retry after the product
+  fork returned only root-status narration with no repo work, and immediately
+  prepared a stricter product relaunch while keeping the read-only comparison
+  active.
 - [ ] Rerun the bounded live `hyhac` probe after the remaining large-object
   mismatch is fixed.
 
@@ -375,10 +379,12 @@ first daemon request or the exact post-follow mismatch that still blocks it.
 
 ## Next Root Move
 
-Use the corrected BusyBee proxy as the shortest coordinator-side check and let
-the two relaunched forks work from that same post-follow baseline. The next
-root action after this pass is a long wait on `Pauli` and `Nietzsche`, then
-reconcile whichever one first returns a concrete fix or exact mismatch.
+Use the corrected BusyBee proxy as the shortest coordinator-side check, keep
+the active read-only comparison running, and relaunch the product worker with a
+stricter execution shape that requires actual repo work. The next root action
+after this pass is a long wait on that relaunched product worker and
+`Nietzsche`, then reconcile whichever one first returns a concrete fix or exact
+mismatch.
 
 ## Surprises & Discoveries
 

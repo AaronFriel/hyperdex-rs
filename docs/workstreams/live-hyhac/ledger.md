@@ -1872,6 +1872,54 @@
     or the next exact post-follow mismatch
   - focused tests or probes that lock in the new reduction
 
+### Entry `hyh-040` - Outcome
+
+- Timestamp: `2026-03-27 23:28Z`
+- Kind: `outcome`
+- End commit: `2fb432c`
+- Artifact location:
+  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
+- Evidence summary:
+  - the delegated product fork returned only a root-status restatement
+  - the fresh post-follow worktree remained clean
+  - no probe result, code change, or new reduction was produced
+- Conclusion: the problem is the execution shape of the relaunch, not the
+  product surface. The next product worker must be told explicitly to do repo
+  work or return one precise blocker tied to current code and the corrected
+  post-follow probe.
+- Disposition: `retry`
+- Next move: preregister a stricter product relaunch on the same clean
+  worktree while the read-only comparison continues.
+
+### Entry `hyh-041` - Preregistration
+
+- Timestamp: `2026-03-27 23:28Z`
+- Kind: `preregister`
+- Hypothesis: a stricter relaunch that forbids root-status narration and
+  requires either repo work or one precise blocker will move the corrected
+  post-follow large-object failure forward on the clean `live-hyhac-post-follow`
+  worktree.
+- Owner: next delegated product worker
+- Start commit: `2fb432c`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
+    on `live-hyhac-post-follow`
+- Mutable surface:
+  - `crates/server/**`
+  - `crates/server/tests/**`
+  - `crates/legacy-frontend/**` only if a small focused helper is needed
+- Validator:
+  - fastest useful check:
+    `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence -- --nocapture`
+  - strong checks:
+    - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
+    - `cargo test -p server`
+- Expected artifacts:
+  - a commit that materially advances the remaining large-object failure, or
+    one precise blocker tied to current code and the corrected post-follow
+    probe
+  - focused validator evidence for the new reduction or fix
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`
