@@ -303,6 +303,66 @@ impl ClusterRuntime {
         response.decode()
     }
 
+    async fn get_from_replica(
+        &self,
+        node_id: u64,
+        space: &str,
+        key: &bytes::Bytes,
+    ) -> Result<Option<Record>> {
+        if node_id == self.local_node_id {
+            return self.data_plane.get(space, key);
+        }
+
+        match self
+            .forward_data_request(
+                node_id,
+                DataPlaneRequest::Get {
+                    space: space.to_owned(),
+                    key: key.clone(),
+                },
+            )
+            .await?
+        {
+            DataPlaneResponse::Record(record) => Ok(record),
+            DataPlaneResponse::Unit
+            | DataPlaneResponse::ConditionFailed
+            | DataPlaneResponse::SearchResult(_)
+            | DataPlaneResponse::Deleted(_) => {
+                anyhow::bail!("unexpected response to get on replica {node_id}")
+            }
+        }
+    }
+
+    async fn execute_get_with_replica_fallback(
+        &self,
+        space: String,
+        key: bytes::Bytes,
+    ) -> Result<Option<Record>> {
+        let decision = self.locate_key(&key)?;
+        let mut last_remote_error = None;
+
+        for replica in decision.replicas {
+            if replica == self.local_node_id {
+                return self.data_plane.get(&space, &key);
+            }
+
+            match self.get_from_replica(replica, &space, &key).await {
+                Ok(record) => return Ok(record),
+                Err(err) => last_remote_error = Some((replica, err)),
+            }
+        }
+
+        if let Some((replica, err)) = last_remote_error {
+            return Err(anyhow!(
+                "get failed on all replicas for space `{space}` after remote failure on replica {replica}: {err}"
+            ));
+        }
+
+        Err(anyhow!(
+            "get had no available replicas for space `{space}` and key lookup"
+        ))
+    }
+
     async fn replicate_put_to_secondaries(
         &self,
         space: &str,
@@ -1524,27 +1584,9 @@ impl HyperdexClientService for ClusterRuntime {
                     )
                 }
             }
-            ClientRequest::Get { space, key } => {
-                let primary = self.route_primary(&key)?;
-                if primary == self.local_node_id {
-                    Ok(ClientResponse::Record(self.data_plane.get(&space, &key)?))
-                } else {
-                    Ok(
-                        match self
-                            .forward_data_request(primary, DataPlaneRequest::Get { space, key })
-                            .await?
-                        {
-                            DataPlaneResponse::Record(record) => ClientResponse::Record(record),
-                            DataPlaneResponse::Unit
-                            | DataPlaneResponse::ConditionFailed
-                            | DataPlaneResponse::SearchResult(_)
-                            | DataPlaneResponse::Deleted(_) => {
-                                anyhow::bail!("unexpected write response to remote get")
-                            }
-                        },
-                    )
-                }
-            }
+            ClientRequest::Get { space, key } => Ok(ClientResponse::Record(
+                self.execute_get_with_replica_fallback(space, key).await?,
+            )),
             ClientRequest::Delete { space, key } => {
                 let primary = self.route_primary(&key)?;
                 if primary == self.local_node_id {

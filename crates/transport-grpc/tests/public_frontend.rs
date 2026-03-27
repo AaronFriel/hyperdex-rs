@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use cluster_config::{ClusterConfig, ClusterNode, TransportBackend};
 use data_model::{Attribute as ModelAttribute, Check, Mutation, Predicate, Value as ModelValue};
@@ -14,6 +15,7 @@ use server::bootstrap_runtime;
 use server::{handle_legacy_request, ClusterRuntime, TransportRuntime};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
+use tokio::time::sleep;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
 use transport_core::{DataPlaneRequest, DataPlaneResponse, InternodeRequest, DATA_PLANE_METHOD};
@@ -1409,4 +1411,123 @@ async fn distributed_count_returns_logical_matches_from_any_runtime() {
     grpc_shutdown1.send(()).unwrap();
     grpc_shutdown2.send(()).unwrap();
     grpc_shutdown3.send(()).unwrap();
+}
+
+#[tokio::test]
+async fn distributed_get_falls_back_to_local_replica_when_primary_grpc_is_down() {
+    let grpc_listener1 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let grpc_addr1 = grpc_listener1.local_addr().unwrap();
+    let grpc_listener2 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let grpc_addr2 = grpc_listener2.local_addr().unwrap();
+
+    let config = ClusterConfig {
+        nodes: vec![
+            ClusterNode {
+                id: 1,
+                host: "127.0.0.1".to_owned(),
+                control_port: grpc_addr1.port(),
+                data_port: grpc_addr1.port(),
+            },
+            ClusterNode {
+                id: 2,
+                host: "127.0.0.1".to_owned(),
+                control_port: grpc_addr2.port(),
+                data_port: grpc_addr2.port(),
+            },
+        ],
+        replicas: 2,
+        internode_transport: TransportBackend::Grpc,
+        ..ClusterConfig::default()
+    };
+
+    let mut runtime1 = ClusterRuntime::for_node(config.clone(), 1).unwrap();
+    runtime1.install_cluster_transport(Arc::new(GrpcTransportAdapter), TransportRuntime::Grpc);
+    let runtime1 = Arc::new(runtime1);
+
+    let mut runtime2 = ClusterRuntime::for_node(config.clone(), 2).unwrap();
+    runtime2.install_cluster_transport(Arc::new(GrpcTransportAdapter), TransportRuntime::Grpc);
+    let runtime2 = Arc::new(runtime2);
+
+    HyperdexAdminService::handle(
+        runtime1.as_ref(),
+        AdminRequest::CreateSpaceDsl(profiles_schema()),
+    )
+    .await
+    .unwrap();
+    HyperdexAdminService::handle(
+        runtime2.as_ref(),
+        AdminRequest::CreateSpaceDsl(profiles_schema()),
+    )
+    .await
+    .unwrap();
+
+    let grpc_shutdown1 = serve_runtime(runtime1.clone(), grpc_listener1).await;
+    let grpc_shutdown2 = serve_runtime(runtime2.clone(), grpc_listener2).await;
+
+    let key = (0..4096)
+        .map(|i| format!("fallback-get-{i}"))
+        .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
+        .expect("expected a key routed to node 2");
+
+    HyperdexClientService::handle(
+        runtime1.as_ref(),
+        ClientRequest::Put {
+            space: "profiles".to_owned(),
+            key: key.as_bytes().to_vec().into(),
+            mutations: vec![Mutation::Numeric {
+                attribute: "profile_views".to_owned(),
+                op: data_model::NumericOp::Add,
+                operand: 11,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+
+    let local_probe = InternodeRequest::encode(
+        DATA_PLANE_METHOD,
+        &DataPlaneRequest::Get {
+            space: "profiles".to_owned(),
+            key: key.as_bytes().to_vec().into(),
+        },
+    )
+    .unwrap();
+    let secondary_record: DataPlaneResponse = runtime1
+        .handle_internode_request(local_probe)
+        .await
+        .unwrap()
+        .decode()
+        .unwrap();
+    assert!(matches!(
+        secondary_record,
+        DataPlaneResponse::Record(Some(_))
+    ));
+
+    grpc_shutdown2.send(()).unwrap();
+    sleep(Duration::from_millis(100)).await;
+
+    let endpoint = format!("http://{grpc_addr1}");
+    let mut client = HyperdexClientClient::connect(endpoint).await.unwrap();
+    let record = client
+        .get(GetRequest {
+            space: "profiles".to_owned(),
+            key: key.as_bytes().to_vec(),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+
+    assert!(record.found);
+    assert!(record.attributes.iter().any(|attribute| {
+        attribute.name == "profile_views"
+            && matches!(
+                attribute
+                    .value
+                    .as_ref()
+                    .and_then(|value| value.kind.as_ref()),
+                Some(Kind::IntValue(11))
+            )
+    }));
+
+    grpc_shutdown1.send(()).unwrap();
 }
