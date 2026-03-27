@@ -20,7 +20,8 @@ use legacy_protocol::{
     AtomicRequest, AtomicResponse, CountRequest, CountResponse, GetAttribute, GetRequest,
     GetResponse, GetValue, LegacyCheck, LegacyFuncall, LegacyFuncallName, LegacyMessageType,
     LegacyPredicate, LegacyReturnCode, RequestHeader, ResponseHeader, SearchContinueRequest,
-    SearchDoneResponse, SearchItemResponse, SearchStartRequest, LEGACY_ATOMIC_FLAG_WRITE,
+    SearchDoneResponse, SearchItemResponse, SearchStartRequest, BUSYBEE_HEADER_SIZE,
+    LEGACY_ATOMIC_FLAG_WRITE, LEGACY_REQUEST_HEADER_SIZE, LEGACY_RESPONSE_HEADER_SIZE,
 };
 use serial_test::serial;
 use server::{
@@ -71,6 +72,25 @@ struct LegacyAdminProbeResult {
     tool_exit: Option<std::process::ExitStatus>,
     stdout: String,
     stderr: String,
+}
+
+#[derive(Clone, Debug, Default)]
+struct LegacyCapture {
+    events: Vec<LegacyFrameEvent>,
+}
+
+#[derive(Clone, Debug)]
+struct LegacyFrameEvent {
+    connection_id: usize,
+    direction: LegacyFrameDirection,
+    raw_prefix: String,
+    summary: String,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum LegacyFrameDirection {
+    ClientToDaemon,
+    DaemonToClient,
 }
 
 impl ReservedPort {
@@ -434,6 +454,10 @@ fn busybee_total_len(header: [u8; 4]) -> usize {
     (u32::from_be_bytes(header) & 0x00ff_ffff) as usize
 }
 
+fn legacy_total_len(header: [u8; 4]) -> usize {
+    BUSYBEE_HEADER_SIZE + u32::from_be_bytes(header) as usize
+}
+
 fn drain_busybee_frames(buffer: &mut Vec<u8>) -> Result<Vec<BusyBeeFrame>> {
     let mut frames = Vec::new();
 
@@ -452,6 +476,149 @@ fn drain_busybee_frames(buffer: &mut Vec<u8>) -> Result<Vec<BusyBeeFrame>> {
 
         let frame = BusyBeeFrame::decode(&buffer[..total_len])?;
         frames.push(frame);
+        buffer.drain(..total_len);
+    }
+}
+
+fn hex_prefix(bytes: &[u8], limit: usize) -> String {
+    bytes.iter()
+        .take(limit)
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn describe_legacy_request(header: RequestHeader, body: &[u8]) -> String {
+    match header.message_type {
+        LegacyMessageType::ReqAtomic => match AtomicRequest::decode_body(body) {
+            Ok(request) => format!(
+                "ReqAtomic flags=0x{:02x} key_len={} checks={} funcalls={} first_funcall={}",
+                request.flags,
+                request.key.len(),
+                request.checks.len(),
+                request.funcalls.len(),
+                request
+                    .funcalls
+                    .first()
+                    .map(|funcall| format!("{}::{:?}", funcall.attribute, funcall.name))
+                    .unwrap_or_else(|| "<none>".to_owned()),
+            ),
+            Err(err) => format!("ReqAtomic decode_error={err} body_len={}", body.len()),
+        },
+        LegacyMessageType::ReqGet => match GetRequest::decode_body(body) {
+            Ok(request) => format!("ReqGet key_len={}", request.key.len()),
+            Err(err) => format!("ReqGet decode_error={err} body_len={}", body.len()),
+        },
+        LegacyMessageType::ReqCount => match CountRequest::decode_body(body) {
+            Ok(request) => format!("ReqCount space={}", request.space),
+            Err(err) => format!("ReqCount decode_error={err} body_len={}", body.len()),
+        },
+        LegacyMessageType::ReqSearchStart => match SearchStartRequest::decode_body(body) {
+            Ok(request) => format!(
+                "ReqSearchStart space={} search_id={} checks={}",
+                request.space,
+                request.search_id,
+                request.checks.len()
+            ),
+            Err(err) => format!("ReqSearchStart decode_error={err} body_len={}", body.len()),
+        },
+        other => format!("{other:?} body_len={}", body.len()),
+    }
+}
+
+fn describe_legacy_response(header: ResponseHeader, body: &[u8]) -> String {
+    match header.message_type {
+        LegacyMessageType::RespAtomic => match AtomicResponse::decode_body(body) {
+            Ok(response) => format!("RespAtomic status={:?}", response.status),
+            Err(err) => format!("RespAtomic decode_error={err} body_len={}", body.len()),
+        },
+        LegacyMessageType::RespGet => match GetResponse::decode_body(body) {
+            Ok(response) => format!(
+                "RespGet status={:?} attrs={}",
+                response.status,
+                response.attributes.len()
+            ),
+            Err(err) => format!("RespGet decode_error={err} body_len={}", body.len()),
+        },
+        LegacyMessageType::RespCount => match CountResponse::decode_body(body) {
+            Ok(response) => format!("RespCount count={}", response.count),
+            Err(err) => format!("RespCount decode_error={err} body_len={}", body.len()),
+        },
+        LegacyMessageType::RespSearchItem => match SearchItemResponse::decode_body(body) {
+            Ok(response) => format!(
+                "RespSearchItem search_id={} key_len={} attrs={}",
+                response.search_id,
+                response.key.len(),
+                response.attributes.len()
+            ),
+            Err(err) => format!("RespSearchItem decode_error={err} body_len={}", body.len()),
+        },
+        LegacyMessageType::RespSearchDone => match SearchDoneResponse::decode_body(body) {
+            Ok(response) => format!("RespSearchDone search_id={}", response.search_id),
+            Err(err) => format!("RespSearchDone decode_error={err} body_len={}", body.len()),
+        },
+        LegacyMessageType::ConfigMismatch => "ConfigMismatch".to_owned(),
+        other => format!("{other:?} body_len={}", body.len()),
+    }
+}
+
+fn drain_legacy_events(
+    buffer: &mut Vec<u8>,
+    connection_id: usize,
+    direction: LegacyFrameDirection,
+) -> Result<Vec<LegacyFrameEvent>> {
+    let mut events = Vec::new();
+
+    loop {
+        if buffer.len() < BUSYBEE_HEADER_SIZE {
+            return Ok(events);
+        }
+
+        let total_len = legacy_total_len(buffer[..BUSYBEE_HEADER_SIZE].try_into().unwrap());
+        if total_len < BUSYBEE_HEADER_SIZE {
+            return Err(anyhow!("legacy frame size {total_len} is too small"));
+        }
+        if buffer.len() < total_len {
+            return Ok(events);
+        }
+
+        let raw = buffer[..total_len].to_vec();
+        let raw_prefix = hex_prefix(&raw, 24);
+        let summary = match direction {
+            LegacyFrameDirection::ClientToDaemon => match RequestHeader::decode(&raw) {
+                Ok(header) => {
+                    let body = &raw[LEGACY_REQUEST_HEADER_SIZE..];
+                    format!(
+                        "request {:?} nonce={} target_vs={} {}",
+                        header.message_type,
+                        header.nonce,
+                        header.target_virtual_server,
+                        describe_legacy_request(header, body)
+                    )
+                }
+                Err(err) => format!("request header decode_error={err} body_len={}", raw.len()),
+            },
+            LegacyFrameDirection::DaemonToClient => match ResponseHeader::decode(&raw) {
+                Ok(header) => {
+                    let body = &raw[LEGACY_RESPONSE_HEADER_SIZE..];
+                    format!(
+                        "response {:?} nonce={} target_vs={} {}",
+                        header.message_type,
+                        header.nonce,
+                        header.target_virtual_server,
+                        describe_legacy_response(header, body)
+                    )
+                }
+                Err(err) => format!("response header decode_error={err} body_len={}", raw.len()),
+            },
+        };
+
+        events.push(LegacyFrameEvent {
+            connection_id,
+            direction,
+            raw_prefix,
+            summary,
+        });
         buffer.drain(..total_len);
     }
 }
@@ -492,6 +659,46 @@ where
     }
 }
 
+async fn proxy_copy_and_capture_legacy<R, W>(
+    mut reader: R,
+    mut writer: W,
+    capture: Arc<Mutex<LegacyCapture>>,
+    connection_id: usize,
+    direction: LegacyFrameDirection,
+) -> Result<()>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut read_buf = [0_u8; 8192];
+    let mut frame_buf = Vec::new();
+
+    loop {
+        let n = reader.read(&mut read_buf).await?;
+        if n == 0 {
+            if !frame_buf.is_empty() {
+                capture.lock().unwrap().events.push(LegacyFrameEvent {
+                    connection_id,
+                    direction,
+                    raw_prefix: hex_prefix(&frame_buf, 24),
+                    summary: format!("partial frame trailing_bytes={}", frame_buf.len()),
+                });
+            }
+            writer.shutdown().await?;
+            return Ok(());
+        }
+
+        writer.write_all(&read_buf[..n]).await?;
+        frame_buf.extend_from_slice(&read_buf[..n]);
+        let events = drain_legacy_events(&mut frame_buf, connection_id, direction)?;
+        if !events.is_empty() {
+            capture.lock().unwrap().events.extend(events);
+        }
+    }
+}
+
 async fn run_busybee_proxy_capture(
     listener: tokio::net::TcpListener,
     upstream_addr: SocketAddr,
@@ -526,6 +733,51 @@ async fn run_busybee_proxy_capture(
 
         let client_result = client_task.await.context("client proxy task join")?;
         let server_result = server_task.await.context("server proxy task join")?;
+        client_result?;
+        server_result?;
+    }
+}
+
+async fn run_legacy_proxy_capture(
+    listener: tokio::net::TcpListener,
+    upstream_addr: SocketAddr,
+    capture: Arc<Mutex<LegacyCapture>>,
+    stop: Arc<AtomicBool>,
+) -> Result<()> {
+    let mut next_connection_id = 0usize;
+
+    loop {
+        let accept = tokio::time::timeout(Duration::from_millis(100), listener.accept()).await;
+        let (client_stream, _) = match accept {
+            Ok(Ok(pair)) => pair,
+            Ok(Err(err)) => return Err(err.into()),
+            Err(_) if stop.load(Ordering::Relaxed) => return Ok(()),
+            Err(_) => continue,
+        };
+        let upstream_stream = tokio::net::TcpStream::connect(upstream_addr).await?;
+        next_connection_id += 1;
+        let connection_id = next_connection_id;
+
+        let (client_reader, client_writer) = client_stream.into_split();
+        let (upstream_reader, upstream_writer) = upstream_stream.into_split();
+
+        let client_task = tokio::spawn(proxy_copy_and_capture_legacy(
+            client_reader,
+            upstream_writer,
+            Arc::clone(&capture),
+            connection_id,
+            LegacyFrameDirection::ClientToDaemon,
+        ));
+        let server_task = tokio::spawn(proxy_copy_and_capture_legacy(
+            upstream_reader,
+            client_writer,
+            Arc::clone(&capture),
+            connection_id,
+            LegacyFrameDirection::DaemonToClient,
+        ));
+
+        let client_result = client_task.await.context("legacy client proxy task join")?;
+        let server_result = server_task.await.context("legacy server proxy task join")?;
         client_result?;
         server_result?;
     }
@@ -786,6 +1038,82 @@ async fn run_hyhac_selected_tests_direct(
         exit_status,
         fs::read_to_string(stdout_path).unwrap_or_default(),
         fs::read_to_string(stderr_path).unwrap_or_default(),
+    ))
+}
+
+async fn spawn_single_daemon_cluster_with_legacy_proxy(
+) -> Result<(
+    TempDir,
+    ChildProcess,
+    ChildProcess,
+    SocketAddr,
+    tokio::task::JoinHandle<Result<()>>,
+    Arc<AtomicBool>,
+    Arc<Mutex<LegacyCapture>>,
+)> {
+    let tempdir = TempDir::new()?;
+    let mut coordinator_backend_port = ReservedPort::new()?;
+    let mut coordinator_public_port = ReservedPort::new()?;
+    let mut daemon_port = ReservedPort::new()?;
+    let mut daemon_control_port = ReservedPort::new()?;
+    let coordinator_backend_address = localhost(coordinator_backend_port.port())?;
+    let coordinator_public_address = localhost(coordinator_public_port.port())?;
+    let daemon_address = localhost(daemon_port.port())?;
+
+    coordinator_backend_port.release();
+    let mut coordinator = ChildProcess::spawn(
+        "coordinator",
+        &[
+            "coordinator".to_owned(),
+            format!("--data={}", tempdir.path().join("coordinator").display()),
+            "--listen=127.0.0.1".to_owned(),
+            format!("--listen-port={}", coordinator_backend_port.port()),
+        ],
+        tempdir.path(),
+    )?;
+    coordinator
+        .wait_for_coordinator(coordinator_backend_address)
+        .await?;
+
+    coordinator_public_port.release();
+    let proxy_listener = tokio::net::TcpListener::bind(coordinator_public_address).await?;
+    let proxy_stop = Arc::new(AtomicBool::new(false));
+    let legacy_capture = Arc::new(Mutex::new(LegacyCapture::default()));
+    let proxy_task = tokio::spawn(run_legacy_proxy_capture(
+        proxy_listener,
+        coordinator_backend_address,
+        Arc::clone(&legacy_capture),
+        Arc::clone(&proxy_stop),
+    ));
+
+    daemon_port.release();
+    daemon_control_port.release();
+    let mut daemon = ChildProcess::spawn(
+        "daemon",
+        &[
+            "daemon".to_owned(),
+            "--node-id=1".to_owned(),
+            "--threads=1".to_owned(),
+            format!("--data={}", tempdir.path().join("daemon").display()),
+            "--listen=127.0.0.1".to_owned(),
+            format!("--listen-port={}", daemon_port.port()),
+            format!("--control-port={}", daemon_control_port.port()),
+            "--coordinator=127.0.0.1".to_owned(),
+            format!("--coordinator-port={}", coordinator_backend_port.port()),
+            "--transport=grpc".to_owned(),
+        ],
+        tempdir.path(),
+    )?;
+    daemon.wait_for_daemon(daemon_address).await?;
+
+    Ok((
+        tempdir,
+        coordinator,
+        daemon,
+        coordinator_public_address,
+        proxy_task,
+        proxy_stop,
+        legacy_capture,
     ))
 }
 
@@ -1730,6 +2058,103 @@ async fn legacy_hyhac_large_object_probe_hits_clientgarbage_fast() -> Result<()>
     assert!(
         exit_status.is_some(),
         "expected the focused hyhac probe to finish before the deadline"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair() -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+    let (
+        _tempdir,
+        mut coordinator,
+        mut daemon,
+        coordinator_address,
+        proxy_task,
+        proxy_stop,
+        legacy_capture,
+    ) = spawn_single_daemon_cluster_with_legacy_proxy().await?;
+
+    let (exit_status, stdout, stderr) = run_hyhac_selected_tests_direct(
+        coordinator_address,
+        "*Can store a large object*",
+        Duration::from_secs(10),
+    )
+    .await?;
+
+    finalize_proxy_task(proxy_task, proxy_stop).await?;
+    coordinator.ensure_running()?;
+    daemon.ensure_running()?;
+
+    let capture = legacy_capture.lock().unwrap().clone();
+    let events = capture
+        .events
+        .iter()
+        .map(|event| {
+            format!(
+                "conn={} dir={:?} {} raw=[{}]",
+                event.connection_id, event.direction, event.summary, event.raw_prefix
+            )
+        })
+        .collect::<Vec<_>>();
+    eprintln!(
+        "hyhac large-object legacy proxy: coordinator_proxy_address={coordinator_address} exit_status={exit_status:?} stdout=`{stdout}` stderr=`{stderr}` events={events:?}"
+    );
+
+    assert!(
+        stdout.contains("Left ClientGarbage"),
+        "expected focused hyhac probe to report ClientGarbage"
+    );
+    assert_eq!(
+        capture.events.len(),
+        4,
+        "expected two client/server partial-frame pairs on the coordinator path"
+    );
+    assert!(
+        capture
+            .events
+            .iter()
+            .any(|event| matches!(event.direction, LegacyFrameDirection::ClientToDaemon)),
+        "expected proxy to capture at least one client-to-daemon frame"
+    );
+    assert!(
+        capture
+            .events
+            .iter()
+            .any(|event| matches!(event.direction, LegacyFrameDirection::DaemonToClient)),
+        "expected proxy to capture at least one daemon-to-client frame"
+    );
+    assert!(
+        capture.events.iter().all(|event| event.summary.starts_with("partial frame")),
+        "expected the coordinator-path proxy to observe only partial non-legacy frames: {events:?}"
+    );
+    assert!(
+        capture
+            .events
+            .iter()
+            .filter(|event| matches!(event.direction, LegacyFrameDirection::ClientToDaemon))
+            .all(|event| {
+                event.summary.contains("trailing_bytes=45")
+                    && event.raw_prefix.starts_with(
+                        "80 00 00 14 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 05"
+                    )
+            }),
+        "expected client-side coordinator frames to be 45-byte partial BusyBee-style payloads: {events:?}"
+    );
+    assert!(
+        capture
+            .events
+            .iter()
+            .filter(|event| matches!(event.direction, LegacyFrameDirection::DaemonToClient))
+            .all(|event| {
+                event.summary.contains("trailing_bytes=100")
+                    && event.raw_prefix.starts_with(
+                        "80 00 00 14 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 3c"
+                    )
+            }),
+        "expected server-side coordinator frames to be 100-byte partial BusyBee-style payloads: {events:?}"
     );
 
     Ok(())
