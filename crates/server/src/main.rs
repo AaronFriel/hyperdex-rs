@@ -11,9 +11,9 @@ use hyperdex_admin_protocol::{CoordinatorAdminRequest, CoordinatorReturnCode};
 use legacy_frontend::LegacyFrontend;
 use server::{
     coordinator_cluster_config, daemon_cluster_config, daemon_registration_node,
-    handle_coordinator_control_method, handle_legacy_request, parse_process_mode,
-    request_coordinator_control_once, sync_runtime_with_coordinator, ClusterRuntime,
-    CoordinatorControlService, ProcessMode, TransportRuntime,
+    handle_legacy_request, parse_process_mode, request_coordinator_control_once,
+    serve_coordinator_public_connection, sync_runtime_with_coordinator, ClusterRuntime,
+    ProcessMode, TransportRuntime,
 };
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
@@ -140,23 +140,32 @@ async fn main() -> Result<()> {
                 listen_host, listen_port, "hyperdex-rs coordinator bootstrapped"
             );
 
-            let control_service = CoordinatorControlService::bind(
+            let listener = TcpListener::bind(
                 format!("{listen_host}:{listen_port}")
-                    .parse()
+                    .parse::<std::net::SocketAddr>()
                     .expect("validated socket address"),
             )
             .await?;
 
             info!(
-                address = %control_service.local_addr()?,
-                "coordinator control service listening"
+                address = %listener.local_addr()?,
+                "coordinator public service listening"
             );
 
             tokio::select! {
-                result = control_service.serve_forever_with(move |method, request| {
-                    let runtime = runtime.clone();
-                    async move { handle_coordinator_control_method(runtime.as_ref(), &method, request).await }
-                }) => result?,
+                result = async {
+                    loop {
+                        let (stream, _) = listener.accept().await?;
+                        let runtime = runtime.clone();
+                        tokio::spawn(async move {
+                            if let Err(err) = serve_coordinator_public_connection(stream, runtime).await {
+                                warn!(error = %err, "coordinator public connection failed");
+                            }
+                        });
+                    }
+                    #[allow(unreachable_code)]
+                    Ok::<(), anyhow::Error>(())
+                } => result?,
                 _ = tokio::signal::ctrl_c() => {}
             }
         }

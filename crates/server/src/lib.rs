@@ -16,8 +16,8 @@ use data_plane::DataPlane;
 use engine_memory::MemoryEngine;
 use engine_rocks::RocksEngine;
 use hyperdex_admin_protocol::{
-    AdminRequest, AdminResponse, ConfigView, CoordinatorAdminRequest, CoordinatorReturnCode,
-    HyperdexAdminService, LegacyAdminRequest, LegacyAdminReturnCode, BusyBeeFrame,
+    AdminRequest, AdminResponse, BusyBeeFrame, ConfigView, CoordinatorAdminRequest,
+    CoordinatorReturnCode, HyperdexAdminService, LegacyAdminRequest, LegacyAdminReturnCode,
     ReplicantAdminRequestMessage, ReplicantCallCompletion, ReplicantConditionCompletion,
     ReplicantNetworkMsgtype, ReplicantReturnCode,
 };
@@ -36,7 +36,7 @@ use placement_core::{
 use storage_core::{StorageEngine, WriteResult};
 use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use transport_core::{
     ClusterTransport, DataPlaneRequest, DataPlaneResponse, InProcessTransport, InternodeRequest,
     InternodeResponse, RemoteNode, DATA_PLANE_METHOD,
@@ -977,7 +977,7 @@ async fn write_busybee_frame_to_stream(
 }
 
 async fn serve_coordinator_admin_connection(
-    stream: &mut tokio::net::TcpStream,
+    stream: &mut TcpStream,
     runtime: &ClusterRuntime,
     space_add_decoder: LegacySpaceAddDecoder,
     config_encoder: LegacyConfigEncoder,
@@ -1000,6 +1000,101 @@ async fn serve_coordinator_admin_connection(
     }
 
     Ok(())
+}
+
+const MAX_COORDINATOR_CONTROL_METHOD_LEN: usize = "wait_until_stable".len();
+
+fn is_coordinator_control_method(method: &str) -> bool {
+    matches!(
+        method,
+        "daemon_register" | "space_add" | "space_rm" | "wait_until_stable" | "config_get"
+    )
+}
+
+async fn classify_coordinator_public_protocol(
+    stream: &TcpStream,
+) -> Result<CoordinatorPublicProtocol> {
+    let mut probe = [0_u8; COORDINATOR_CONTROL_HEADER_SIZE + MAX_COORDINATOR_CONTROL_METHOD_LEN];
+
+    loop {
+        let read = stream.peek(&mut probe).await?;
+        if read == 0 {
+            anyhow::bail!("coordinator public connection closed before sending a request");
+        }
+
+        if read < COORDINATOR_CONTROL_HEADER_SIZE {
+            stream.readable().await?;
+            continue;
+        }
+
+        let method_len = u16::from_be_bytes([probe[0], probe[1]]) as usize;
+        if method_len == 0 || method_len > MAX_COORDINATOR_CONTROL_METHOD_LEN {
+            return Ok(CoordinatorPublicProtocol::LegacyAdmin);
+        }
+
+        let needed = COORDINATOR_CONTROL_HEADER_SIZE + method_len;
+        if read < needed {
+            stream.readable().await?;
+            continue;
+        }
+
+        let Ok(method) = std::str::from_utf8(&probe[COORDINATOR_CONTROL_HEADER_SIZE..needed])
+        else {
+            return Ok(CoordinatorPublicProtocol::LegacyAdmin);
+        };
+
+        if is_coordinator_control_method(method) {
+            return Ok(CoordinatorPublicProtocol::Control);
+        }
+
+        return Ok(CoordinatorPublicProtocol::LegacyAdmin);
+    }
+}
+
+enum CoordinatorPublicProtocol {
+    Control,
+    LegacyAdmin,
+}
+
+async fn serve_coordinator_control_connection_with<H, F>(
+    stream: &mut TcpStream,
+    handler: H,
+) -> Result<()>
+where
+    H: Fn(String, CoordinatorAdminRequest) -> F,
+    F: std::future::Future<Output = Result<CoordinatorControlResponse>>,
+{
+    let (method, request) = read_coordinator_control_request(stream).await?;
+    let response = handler(method, request).await?;
+    write_coordinator_control_response(stream, &response).await?;
+    stream.flush().await?;
+    Ok(())
+}
+
+pub async fn serve_coordinator_public_connection(
+    mut stream: TcpStream,
+    runtime: Arc<ClusterRuntime>,
+) -> Result<()> {
+    match classify_coordinator_public_protocol(&stream).await? {
+        CoordinatorPublicProtocol::Control => {
+            serve_coordinator_control_connection_with(&mut stream, move |method, request| {
+                let runtime = runtime.clone();
+                async move {
+                    handle_coordinator_control_method(runtime.as_ref(), &method, request).await
+                }
+            })
+            .await
+        }
+        CoordinatorPublicProtocol::LegacyAdmin => {
+            serve_coordinator_admin_connection(
+                &mut stream,
+                runtime.as_ref(),
+                Arc::new(default_legacy_space_add_decoder),
+                Arc::new(default_legacy_config_encoder),
+            )
+            .await
+        }
+    }
 }
 
 async fn handle_coordinator_admin_frame(
@@ -1136,11 +1231,7 @@ impl CoordinatorControlService {
         F: std::future::Future<Output = Result<CoordinatorControlResponse>>,
     {
         let (mut stream, _) = self.listener.accept().await?;
-        let (method, request) = read_coordinator_control_request(&mut stream).await?;
-        let response = handler(method, request).await?;
-        write_coordinator_control_response(&mut stream, &response).await?;
-        stream.flush().await?;
-        Ok(())
+        serve_coordinator_control_connection_with(&mut stream, handler).await
     }
 
     pub async fn serve_forever_with<H, F>(&self, handler: H) -> Result<()>
@@ -1918,9 +2009,9 @@ pub async fn handle_replicant_admin_request(
             data: Vec::new(),
         }
         .encode()),
-        CoordinatorAdminRequest::ConfigGet => anyhow::bail!(
-            "legacy admin config follow still needs HyperDex configuration encoding"
-        ),
+        CoordinatorAdminRequest::ConfigGet => {
+            anyhow::bail!("legacy admin config follow still needs HyperDex configuration encoding")
+        }
         CoordinatorAdminRequest::DaemonRegister(_) => {
             anyhow::bail!("daemon registration is not part of the legacy admin client surface")
         }
@@ -2286,8 +2377,8 @@ mod tests {
     };
     use data_model::{Attribute, Check, Mutation, Predicate, Value};
     use hyperdex_admin_protocol::{
-        AdminRequest, AdminResponse, ConfigView, CoordinatorAdminRequest, CoordinatorReturnCode,
-        HyperdexAdminService, LegacyAdminRequest, LegacyAdminReturnCode, BusyBeeFrame,
+        AdminRequest, AdminResponse, BusyBeeFrame, ConfigView, CoordinatorAdminRequest,
+        CoordinatorReturnCode, HyperdexAdminService, LegacyAdminRequest, LegacyAdminReturnCode,
         ReplicantAdminRequestMessage, ReplicantCallCompletion, ReplicantConditionCompletion,
         ReplicantReturnCode,
     };
@@ -3192,6 +3283,68 @@ mod tests {
             CoordinatorReturnCode::decode(&response).unwrap(),
             CoordinatorReturnCode::Success
         );
+    }
+
+    #[tokio::test]
+    async fn coordinator_public_port_accepts_control_while_legacy_follow_is_open() {
+        let runtime = Arc::new(bootstrap_runtime());
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let mut tasks = Vec::new();
+            for _ in 0..2 {
+                let (stream, _) = listener.accept().await.unwrap();
+                let runtime = runtime.clone();
+                tasks.push(tokio::spawn(async move {
+                    serve_coordinator_public_connection(stream, runtime)
+                        .await
+                        .unwrap();
+                }));
+            }
+
+            for task in tasks {
+                task.await.unwrap();
+            }
+        });
+
+        let mut legacy_stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        legacy_stream
+            .write_all(&ReplicantAdminRequestMessage::config_follow())
+            .await
+            .unwrap();
+        legacy_stream.flush().await.unwrap();
+
+        let initial = read_admin_response_frame(&mut legacy_stream).await;
+        let initial_follow = ReplicantConditionCompletion::decode(&initial.payload).unwrap();
+        assert_eq!(initial_follow.status, ReplicantReturnCode::Success);
+        assert_eq!(initial_follow.state, 0);
+
+        let response = request_coordinator_control_once(
+            address,
+            "space_add",
+            &CoordinatorAdminRequest::SpaceAdd(
+                parse_hyperdex_space(
+                    "space profiles\n\
+                     key username\n\
+                     attributes\n\
+                        string first,\n\
+                        int profile_views\n\
+                     tolerate 0 failures\n",
+                )
+                .unwrap(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            CoordinatorReturnCode::decode(&response).unwrap(),
+            CoordinatorReturnCode::Success
+        );
+
+        drop(legacy_stream);
+        server.await.unwrap();
     }
 
     #[tokio::test]
