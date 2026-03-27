@@ -106,20 +106,22 @@ surface.
   `space_add` payload.
 - [x] (2026-03-27 05:24Z) Raised the execution bar: the next delegated steps
   must implement the protocol rather than report more blockers.
+- [x] (2026-03-27 05:27Z) Recovered the exact `space` pack/unpack shape from
+  the original HyperDex C++ sources.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
 The first missing live contract is still the legacy coordinator admin frontend.
-The missing capabilities are now specific enough to implement directly:
-the packed `space_add` decoder and the coordinator BusyBee/Replicant service
-core that consumes it.
+The missing capabilities are still the packed `space_add` decoder and the
+coordinator BusyBee/Replicant service core, but the binary format is now
+pinned down from the original C++ implementation.
 
 ## Next Bounded Step
 
 Implement two concrete pieces in parallel:
-1. the packed `space_add` payload decoder
-2. the BusyBee/Replicant coordinator service core in `crates/server/src/lib.rs`
+1. port the packed `space` decoder from `HyperDex/common/hyperspace.cc`
+2. build the BusyBee/Replicant coordinator service core in `crates/server/src/lib.rs`
 Then reconnect them and continue to startup wiring and live probes.
 
 ## Surprises & Discoveries
@@ -194,6 +196,11 @@ Then reconnect them and continue to startup wiring and live probes.
   Evidence: `ReplicantAdminRequestMessage::space_add` still carries opaque
   bytes, and the server has no decoder for the original packed
   `hyperdex::space` format.
+- Observation: the exact binary format is now available from source, not just
+  inferred from symptoms.
+  Evidence: `HyperDex/common/hyperspace.cc` contains both `operator <<` and
+  `operator >>` for `hyperdex::space`, and `HyperDex/admin/admin.cc` shows
+  `space_add` packing with `msg->pack_at(0) << space`.
 
 ## Decision Log
 

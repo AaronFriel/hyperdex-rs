@@ -774,3 +774,26 @@
   - packed `space_add` payload decoder from the original HyperDex format
   - coordinator BusyBee/Replicant service core that consumes decoded `Space`
   - two bounded commits ready for reconciliation
+
+### Entry `hyh-018` - Outcome
+
+- Timestamp: `2026-03-27 05:27Z`
+- Kind: `outcome`
+- End commit: `962c5dd`
+- Artifact location:
+  - no code changes in
+    `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-decoder`
+  - no code changes in
+    `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Evidence summary:
+  - both parallel implementation workers were interrupted with clean worktrees
+  - the decoder-side blocker remained the missing packed `space_add` decoder
+  - the service-core side remained blocked on consuming decoded `Space`
+  - root then pinned down the exact binary format from:
+    - `/home/friel/c/aaronfriel/HyperDex/common/hyperspace.cc`
+    - `/home/friel/c/aaronfriel/HyperDex/admin/admin.cc`
+- Conclusion: the split was still right, but the workers lacked the exact
+  source-file targets for the original binary format.
+- Disposition: `retry`
+- Next move: relaunch both implementation steps with direct `hyperspace.cc`
+  and `admin.cc` source targets.

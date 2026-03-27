@@ -122,7 +122,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Hold until a new real-cluster failure requires deeper harness work. | `advance` |
-| `live-hyhac` | active | The coordinator service core is blocked on one missing decoder: the original packed `space_add` payload format. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated admin server worktree | Implement the packed `space_add` payload decoder and the matching service-core consumption path, then return to startup wiring and probes. | `retry` |
+| `live-hyhac` | active | The decoder and service core both still need code, but the original C++ pack/unpack format is now pinned down in `common/hyperspace.cc` and `admin/admin.cc`. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated admin worktrees | Implement the decoder and service core again with those exact C++ source targets, then continue to startup wiring and probes. | `retry` |
 
 ## Progress
 
@@ -193,20 +193,21 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 05:24Z) Raised the execution bar for `live-hyhac`: no more
   blocker-only iterations when the protocol can be implemented from the local
   HyperDex sources.
+- [x] (2026-03-27 05:27Z) Recovered the exact `space` pack/unpack shape from
+  `common/hyperspace.cc` and the caller path in `admin/admin.cc`.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
-Drive the next live-compatibility step as parallel implementation, not blocker
-triage. The immediate missing capabilities are now explicit enough to code:
-the packed `space_add` decoder and the coordinator BusyBee/Replicant service
-core that consumes it.
+Drive the next live-compatibility step with the binary format pinned down from
+source. The next workers do not need to infer the `space` payload layout; they
+can port it directly from the original C++ implementation.
 
 ## Next Root Move
 
-Launch two substantial implementation steps in parallel:
-1. packed `space_add` decoder from the original HyperDex format
-2. coordinator BusyBee/Replicant service core using that decoder
+Launch two substantial implementation steps in parallel again:
+1. port the packed `space` decoder from `common/hyperspace.cc`
+2. build the BusyBee/Replicant service core around that decoder
 Then reconcile both and continue to startup wiring and live probes.
 
 ## Surprises & Discoveries
