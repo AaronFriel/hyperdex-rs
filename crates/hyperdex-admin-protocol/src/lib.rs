@@ -393,6 +393,10 @@ impl ReplicantAdminRequestMessage {
         CAPTURED_INITIAL_CONFIG_FOLLOW_REQUEST.to_vec()
     }
 
+    pub fn config_follow() -> Vec<u8> {
+        Self::bootstrap_request()
+    }
+
     pub fn wait_until_stable(nonce: u64, state: u64) -> Self {
         Self::CondWait {
             nonce,
