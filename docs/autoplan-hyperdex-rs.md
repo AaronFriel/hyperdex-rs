@@ -90,10 +90,11 @@ One bounded design-or-implementation step with validation and a recorded verdict
 
 The runtime now has enough distributed substrate to start exercising real
 replication semantics instead of only request forwarding. The next useful step
-is to extend the new addressed internode path to conditional mutation behavior,
-because the legacy frontend already depends on conditional writes through the
-atomic request path. That should expose whether the distributed data-plane model
-can preserve write-result semantics instead of only basic CRUD routing.
+is to extend the addressed internode path to the next write shape used by the
+legacy atomic request flow: scalar numeric mutation. That will show whether the
+distributed path can preserve mutation semantics beyond set/delete and
+compare-and-write, without jumping yet to group operations or replication
+fanout.
 
 ## Milestones
 
@@ -174,8 +175,10 @@ can preserve write-result semantics instead of only basic CRUD routing.
   primary between separate runtimes.
 - Done: the addressed internode path now also routes delete to the remote
   primary, with a focused cross-runtime delete proof.
-- Known gap: the distributed data path still stops short of conditional writes,
-  delete-group/search distribution, and replication fanout.
+- Done: the addressed internode path now also routes `ConditionalPut` to the
+  remote primary, with a focused cross-runtime compare-and-write proof.
+- Known gap: the distributed data path still stops short of numeric atomic
+  mutations, delete-group/search distribution, and replication fanout.
 - Active: dedicated worktrees are now producing distributed control-plane,
   distributed data-plane, and multiprocess validation changes in parallel.
 - Next: broaden the distributed data path so more of the legacy request surface
@@ -183,9 +186,10 @@ can preserve write-result semantics instead of only basic CRUD routing.
 
 ## Next Bounded Iteration
 
-Extend the distributed data path to routed conditional mutation behavior:
-implement remote `ConditionalPut` over the addressed transport abstraction and
-prove the compare-and-write result semantics with a focused multi-runtime test.
+Extend the distributed data path to routed scalar numeric mutation behavior:
+implement the next mutation shape used by the legacy atomic path over the
+addressed transport abstraction and prove the remote state change with a
+focused multi-runtime test.
 
 ## Loop Ledger
 
@@ -218,3 +222,4 @@ prove the compare-and-write result semantics with a focused multi-runtime test.
 | 25 | Once the coordinator owns daemon membership, the next control-plane proof is to make daemon processes consume shared coordinator state during startup and after later config changes. | Add coordinator config synchronization into daemon startup, keep a background refresh loop alive while the daemon serves requests, add a multiprocess harness that boots one coordinator plus two daemon processes, creates a space through the coordinator, waits for daemon sync, and verifies both daemons can serve `REQ_COUNT` for that space, then revalidate the workspace. | `cargo test -p server --test dist_multiprocess_harness -- --nocapture` passes on `main`; `cargo test -p server` passes with the new process harness included; `cargo test --workspace` passes after daemon startup begins synchronizing config from the coordinator. | Confirmed. | advance | Land the first real cross-daemon data path next, starting with routed `put` / `get` between separate daemons over the transport abstraction. |
 | 26 | With shared coordinator state in place, the next bounded distributed proof is a real cross-daemon data path that routes requests to the primary instead of keeping every client request local. | Cherry-pick the data-plane worktree onto `main`, resolve the runtime merge against the newer coordinator-sync code, preserve coordinator runtimes with empty node lists, validate the new gRPC internode forwarding path plus the full workspace, and reframe the next step around broadening distributed operations beyond `put` / `get`. | Commit `02420f5` lands addressed internode forwarding on `main`; the follow-up coordinator-runtime fix keeps empty-node coordinator runtimes valid; `cargo test -p transport-grpc --test public_frontend` passes with `grpc_forwards_data_plane_requests_between_two_runtimes`; `cargo test -p server` and `cargo test --workspace` both pass after the merge. | Confirmed. | advance | Extend the addressed internode path to the next highest-value legacy operation and add tighter deterministic coverage for the distributed behavior. |
 | 27 | After routed `put` / `get`, delete is the smallest next distributed legacy operation because it uses the same primary-routing mechanism while changing remote record state. | Extend `DataPlaneRequest` with delete, route `ClientRequest::Delete` through the addressed transport abstraction, add a focused cross-runtime delete proof in the gRPC transport test, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `grpc_forwards_delete_requests_between_two_runtimes`; `cargo test -p server` passes; `cargo test --workspace` passes after routed delete lands on `main`. | Confirmed. | advance | Extend the addressed transport path to remote `ConditionalPut` next so distributed mutation semantics cover the legacy atomic compare-and-write flow. |
+| 28 | After routed delete, `ConditionalPut` is the next highest-value distributed mutation because the legacy atomic request flow already relies on compare-and-write semantics and status mapping. | Extend `DataPlaneRequest` with `ConditionalPut`, route `ClientRequest::ConditionalPut` through the addressed transport abstraction, add a focused cross-runtime compare-and-write proof in the gRPC transport test, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `grpc_forwards_conditional_put_requests_between_two_runtimes`; `cargo test -p server` passes; `cargo test --workspace` passes after routed conditional write lands on `main`. | Confirmed. | advance | Extend the addressed transport path to the next legacy atomic mutation shape, starting with scalar numeric mutation. |
