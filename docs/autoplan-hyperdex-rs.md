@@ -88,12 +88,11 @@ One bounded design-or-implementation step with validation and a recorded verdict
 
 ## Current Hypothesis
 
-The runtime now converges logical multi-record reads as well as replicated
-write and delete paths. The next limiting gap is single-key read availability,
-because `Get` still routes only to the primary even when a replica already
-holds the data, so the smallest next step is replica-serving read behavior for
-key lookups under primary failure before tackling broader read-only
-availability.
+The runtime now preserves logical single-key and multi-record read correctness
+while the cluster is healthy, and `Get` can survive primary loss by falling
+back to a replica. The next limiting gap is multi-record availability under
+daemon failure, because distributed `Search` and `Count` still require every
+node to answer even when replica coverage should allow a degraded read.
 
 ## Milestones
 
@@ -193,18 +192,19 @@ availability.
 - Done: distributed delete-group now converges across replicas too, with a
   focused proof that matching records disappear from every replica while
   non-matching records survive.
-- Known gap: single-key reads still depend on the primary instead of serving
-  from a replica set when the primary is unavailable.
+- Known gap: multi-record reads still depend on every daemon responding instead
+  of degrading across surviving replicas when one daemon is unavailable.
 - Active: dedicated worktrees are now producing distributed control-plane,
   distributed data-plane, and multiprocess validation changes in parallel.
-- Next: add replica-serving key reads with a focused failure-oriented proof,
-  then broaden simulation and the remaining read-only availability paths.
+- Next: make distributed `Search` and `Count` tolerate one unavailable daemon
+  when replica coverage still exists, then broaden simulation around degraded
+  read behavior.
 
 ## Next Bounded Iteration
 
-Serve `Get` from the replica set instead of only the primary, then prove a
-replica can satisfy a key lookup when the primary is unavailable while keeping
-the result identical to the current primary-routed path.
+Make distributed `Search` and `Count` continue across surviving replicas when
+one daemon is unavailable, then prove the logical result set and logical count
+stay correct under a single-daemon gRPC shutdown.
 
 ## Loop Ledger
 
@@ -246,3 +246,4 @@ the result identical to the current primary-routed path.
 | 34 | After single-key delete convergence, delete-group is the next missing multi-record mutation property because group deletion that only affects one replica would leave immediately visible divergence. | Add an explicit replicated-delete-group internode request, make distributed `DeleteGroup` fan out across the cluster and normalize the logical deleted count by replica factor, add a focused distributed delete-group proof in `transport-grpc`, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `distributed_delete_group_removes_matching_records_from_all_replicas`; `cargo test -p server` passes; `cargo test --workspace` passes, proving matching records now disappear from every replica while a non-matching replicated record remains. | Confirmed. | advance | Make distributed search converge across replicas and prove a multi-record query returns the same logical result set regardless of which replica handles it. |
 | 35 | After delete-group convergence, distributed search is the next missing multi-record read property because every matching record now exists on multiple replicas and an uncoordinated fanout would overcount or duplicate logical rows. | Add an internode `Search` request and response shape, make `ClientRequest::Search` fan out across cluster nodes and dedupe logical records by key, add a focused distributed search proof in `transport-grpc`, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `distributed_search_dedupes_replicated_records_across_runtimes`; `cargo test -p server` passes; `cargo test --workspace` passes, proving replicated search now returns one logical result per matching key regardless of which runtime handles the request. | Confirmed. | advance | Serve `Get` from the replica set and prove a replica can satisfy a key lookup when the primary is unavailable. |
 | 36 | After distributed search convergence, the most immediate remaining healthy-cluster read bug is `Count`, because it still reads only local state and therefore undercounts across primaries while any naive fanout would also risk double-counting replicas. | Reframe the next bounded step from primary-failure `Get` fallback to logical distributed `Count`, implement `Count` as a thin wrapper over the existing distributed search fanout and dedupe path, add a focused three-runtime proof in `transport-grpc`, correct the multiprocess harness to use real gRPC internode transport for multi-process distributed reads, and revalidate the transport tests, `server`, and the full workspace. | A scout review showed `ClientRequest::Count` still used only `self.data_plane.count(...)` while distributed search was already logical and deduped; `cargo test -p transport-grpc --test public_frontend` passes with `distributed_count_returns_logical_matches_from_any_runtime`; `cargo test -p server --test dist_multiprocess_harness coordinator_space_add_reaches_multiple_daemon_processes -- --nocapture` passes after switching that harness to `--transport=grpc`; `cargo test -p server` passes; `cargo test --workspace` passes. | Confirmed. | reframe | Return to replica-serving `Get` fallback and prove a replica can satisfy a key lookup when the primary is unavailable. |
+| 37 | After logical distributed `Count`, the next missing single-key availability property is primary-failure `Get` behavior, because a replicated record should remain readable from another daemon when the primary transport is down. | Add ordered replica fallback for `ClientRequest::Get` using the existing internode `Get` path, keep the primary-first behavior when healthy, add a focused public gRPC proof that shuts down the primary runtime and reads the replicated record through the surviving daemon, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `distributed_get_falls_back_to_local_replica_when_primary_grpc_is_down`; `cargo test -p server` passes; `cargo test --workspace` passes, proving a public `Get` can still return the replicated record after the primary daemon's gRPC service is shut down. | Confirmed. | advance | Make distributed `Search` and `Count` tolerate one unavailable daemon while preserving logical results across surviving replicas. |
