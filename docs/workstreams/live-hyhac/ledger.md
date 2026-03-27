@@ -1191,6 +1191,56 @@
   - exact first failing admin-tool surface after successful daemon join
   - the next bounded compatibility target
 
+### Entry `hyh-029` - Outcome
+
+- Timestamp: `2026-03-27 06:29Z`
+- Kind: `outcome`
+- End commit: `46fbb36`
+- Artifact location:
+  - `/tmp/hyh-029.WZxvnF/coordinator.log`
+  - `/tmp/hyh-029.WZxvnF/daemon.log`
+  - `/tmp/hyh-029.WZxvnF/admin-proxy.log`
+- Evidence summary:
+  - `cargo test -p server -- --nocapture` passed on clean `main`
+  - a free-port cluster started successfully with:
+    - coordinator public port `45035`
+    - daemon legacy frontend `44855`
+    - daemon gRPC control `45335`
+  - both `hyperdex-add-space` and `hyperdex-wait-until-stable` timed out
+    with exit `124`
+  - the captured wire shows the client sends only the 25-byte Replicant
+    bootstrap request, receives one 88-byte Rust completion response, and then
+    sends no second request before timing out
+- Conclusion: the timeout happens before `space_add` or `wait_until_stable` is
+  ever issued. The next bounded compatibility target is the exact mismatch in
+  the first `config` follow completion after bootstrap.
+- Disposition: `advance`
+- Next move: preregister the `config`-follow completion compatibility fix.
+
+### Entry `hyh-030` - Preregistration
+
+- Timestamp: `2026-03-27 06:29Z`
+- Kind: `preregister`
+- Hypothesis: the original admin client expects a different first `config`
+  follow completion shape than the current 88-byte Rust response. Narrowing and
+  fixing that exact wire-level mismatch will let the client progress to
+  `space_add` / `wait_until-stable`.
+- Owner: delegated implementation worker to be launched from `main`
+- Start commit: `46fbb36`
+- Worktree / branch:
+  - delegated worker branch from `main`
+- Mutable surface:
+  - `crates/server/src/lib.rs`
+  - `crates/server/src/main.rs` only if a tiny adjunct is strictly necessary
+- Validator:
+  - `cargo test -p server`
+  - `cargo test --workspace`
+  - free-port admin-tool probe with captured wire
+- Expected artifacts:
+  - exact fix for the first `config` follow completion mismatch
+  - a live probe that progresses beyond bootstrap, or the next narrower wire
+    mismatch
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`

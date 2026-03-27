@@ -138,19 +138,22 @@ surface.
 - [x] (2026-03-27 06:24Z) Rechecked that runtime failure on clean `main` and
   found it was not stable: daemon join succeeded on a free-port cluster, but
   both original admin tools still timed out afterward.
+- [x] (2026-03-27 06:29Z) Captured the exact first post-join timeout surface:
+  the original admin client stops after the first `config` follow completion
+  and never sends `space_add` or `wait_until-stable`.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
 The request core, session core, packed-space decoder hardening, same-port
 startup, binary config encoding, and daemon join are now on `main`. The next
-concrete gap is back on the original admin tools: they still time out after
-the cluster is fully up.
+concrete gap is the exact compatibility of the first `config` follow
+completion after bootstrap.
 
 ## Next Bounded Step
 
-Narrow the original admin-tool timeout on a live free-port cluster, then rerun
-the direct `hyhac` Cabal test if that advances.
+Fix the exact `config` follow completion mismatch, then rerun the bounded
+admin-tool probes and the direct `hyhac` Cabal test if they advance.
 
 ## Surprises & Discoveries
 
@@ -279,6 +282,11 @@ the direct `hyhac` Cabal test if that advances.
   Evidence: a fresh clean-main rerun reached a live coordinator and a live
   daemon on free ports, but both `hyperdex-add-space` and
   `hyperdex-wait-until-stable` still timed out afterward.
+- Observation: the original admin client never reaches the operation-specific
+  request path.
+  Evidence: the captured wire shows one 25-byte Replicant bootstrap request
+  and one 88-byte Rust completion response, after which the client sends no
+  second request before timing out.
 
 ## Decision Log
 
