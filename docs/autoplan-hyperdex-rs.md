@@ -205,20 +205,21 @@ delete or conditional-write behavior across runtimes.
   property for a healthy two-runtime pair.
 - Done: `simulation-harness` now includes a Hegel-backed degraded distributed
   read property for replica-backed `Get` and logical `Count`.
-- Known gap: Hegel now covers distributed delete, but it still does not cover
-  some healthy distributed generated tests through an undeclared `name`
-  attribute, so that coverage is weaker than it should be if schema
-  enforcement tightens.
+- Known gap: Hegel now covers distributed delete and conditional write with
+  schema-correct attributes, but it still does not cover routed numeric
+  mutation, which is a distinct distributed atomic behavior used by the legacy
+  frontend.
 - Active: dedicated worktrees are now producing distributed control-plane,
   distributed data-plane, and multiprocess validation changes in parallel.
-- Next: tighten the older distributed Hegel routing properties so they use
-  schema-declared attributes instead of permissive undeclared writes.
+- Next: extend Hegel coverage to routed numeric mutation so generated tests
+  cover the distributed atomic-add path as well as put, delete, and
+  conditional-write behavior.
 
 ## Next Bounded Iteration
 
-Normalize the healthy distributed Hegel routing properties in
-`simulation-harness` so they mutate and read schema-declared attributes, not
-the undeclared permissive `name` field.
+Add a Hegel-backed distributed numeric-mutation property in
+`simulation-harness` so generated tests cover routed atomic-add behavior over
+the schema-declared `profile_views` attribute.
 
 ## Loop Ledger
 
@@ -272,3 +273,4 @@ the undeclared permissive `name` field.
 | 46 | After healthy distributed routing, the next missing generated property is degraded distributed reads, because Hegel should also cover replica-backed availability after one runtime becomes unavailable. | Extend the distributed fixture to expose the shared simulated transport, add a Hegel-backed degraded distributed read property over routed `Get` and logical `Count`, revalidate `simulation-harness`, rerun the full workspace, and confirm the existing daemon-process degraded-read harness still passes. | `cargo test -p simulation-harness` passes with `hegel_distributed_runtime_preserves_degraded_get_and_count`; `timeout 120s cargo test -p server --test dist_multiprocess_harness degraded_search_and_count_survive_one_daemon_process_shutdown -- --nocapture` passes; `cargo test --workspace` passes, proving the new generated degraded-read property without regressing the existing distributed harness. | Confirmed. | advance | Extend Hegel coverage to a distributed delete property so generated tests cover a routed removal mutation across runtimes. |
 | 47 | After degraded distributed reads, the next missing generated mutation property is routed delete, because Hegel should also cover a cross-runtime operation that removes previously replicated state. | Add a Hegel-backed distributed delete property over the existing two-runtime fixture in `simulation-harness`, verify that a routed delete clears the record through both the routed client path and the primary runtime, revalidate `simulation-harness`, and rerun the full workspace. | `cargo test -p simulation-harness` passes with `hegel_distributed_runtime_routes_delete`; `cargo test --workspace` passes on a fresh run with the new generated delete property included. | Confirmed. | advance | Extend Hegel coverage to a distributed conditional-write property so generated tests cover routed compare-and-write behavior across runtimes. |
 | 48 | After distributed delete, the next missing generated mutation property is routed conditional write, because compare-and-write is part of the distributed correctness contract and should be covered alongside plain writes and deletes. | Add a Hegel-backed distributed conditional-write property over the existing two-runtime fixture in `simulation-harness`, verify both the successful routed update and a stale-check failure, keep the checks on the schema-declared `profile_views` attribute, revalidate `simulation-harness`, and rerun the full workspace. | `cargo test -p simulation-harness hegel_distributed_runtime_routes_conditional_put -- --nocapture` passes; `cargo test -p simulation-harness` passes with the new property included; `cargo test --workspace` passes on a fresh run after the schema-correct conditional-write property lands. | Confirmed. | advance | Tighten the older healthy distributed Hegel routing properties so they use schema-declared attributes instead of the undeclared permissive `name` field. |
+| 49 | After routed conditional write, the next useful cleanup is to align the older healthy distributed Hegel properties with the real schema, because undeclared permissive writes weaken what those generated tests actually prove. | Change the older healthy distributed Hegel routing properties to mutate and read the schema-declared `profile_views` attribute instead of the undeclared `name` field, revalidate the adjusted tests, rerun `simulation-harness`, and rerun the full workspace. | `cargo test -p simulation-harness hegel_distributed_runtime_routes_put_and_get -- --nocapture` passes; `cargo test -p simulation-harness hegel_distributed_runtime_preserves_degraded_get_and_count -- --nocapture` passes; `cargo test -p simulation-harness hegel_distributed_runtime_routes_delete -- --nocapture` passes; `cargo test -p simulation-harness && cargo test --workspace` both pass after the schema-correct test cleanup. | Confirmed. | advance | Extend Hegel coverage to routed numeric mutation so generated tests cover the distributed atomic-add path. |

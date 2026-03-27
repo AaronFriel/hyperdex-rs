@@ -816,7 +816,7 @@ mod tests {
                     .map(|i| format!("dist-{key_suffix}-{i}"))
                     .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
                     .expect("expected a key routed to node 2");
-                let expected_value = format!("v{value_id}");
+                let expected_value = i64::from(value_id);
 
                 let put = HyperdexClientService::handle(
                     runtime1.as_ref(),
@@ -824,8 +824,8 @@ mod tests {
                         space: "profiles".to_owned(),
                         key: Bytes::from(routed_key.clone().into_bytes()),
                         mutations: vec![Mutation::Set(Attribute {
-                            name: "name".to_owned(),
-                            value: Value::String(expected_value.clone()),
+                            name: "profile_views".to_owned(),
+                            value: Value::Int(expected_value),
                         })],
                     },
                 )
@@ -844,8 +844,8 @@ mod tests {
                 .unwrap();
                 match get {
                     ClientResponse::Record(Some(record)) => {
-                        let actual = match record.attributes.get("name") {
-                            Some(Value::String(value)) => value.clone(),
+                        let actual = match record.attributes.get("profile_views") {
+                            Some(Value::Int(value)) => *value,
                             other => panic!("unexpected record attribute: {other:?}"),
                         };
                         assert_eq!(actual, expected_value);
@@ -890,8 +890,8 @@ mod tests {
                 let (transport, runtime1, runtime2) = distributed_runtime_fixture().await;
                 let (survivor_runtime, unavailable_node, degraded_key) =
                     degraded_read_target(&runtime1, &runtime2, &format!("hegel-degraded-{degraded_suffix}"));
-                let degraded_value = format!("v{degraded_value_id}");
-                let survivor_value = format!("sv{survivor_value_id}");
+                let degraded_value = i64::from(degraded_value_id);
+                let survivor_value = i64::from(survivor_value_id);
                 let survivor_key = format!("survivor-{degraded_suffix}");
 
                 let put_degraded = HyperdexClientService::handle(
@@ -900,8 +900,8 @@ mod tests {
                         space: "profiles".to_owned(),
                         key: Bytes::from(degraded_key.clone().into_bytes()),
                         mutations: vec![Mutation::Set(Attribute {
-                            name: "name".to_owned(),
-                            value: Value::String(degraded_value.clone()),
+                            name: "profile_views".to_owned(),
+                            value: Value::Int(degraded_value),
                         })],
                     },
                 )
@@ -915,8 +915,8 @@ mod tests {
                         space: "profiles".to_owned(),
                         key: Bytes::from(survivor_key.clone().into_bytes()),
                         mutations: vec![Mutation::Set(Attribute {
-                            name: "name".to_owned(),
-                            value: Value::String(survivor_value.clone()),
+                            name: "profile_views".to_owned(),
+                            value: Value::Int(survivor_value),
                         })],
                     },
                 )
@@ -937,8 +937,8 @@ mod tests {
                 .unwrap();
                 match degraded_get {
                     ClientResponse::Record(Some(record)) => {
-                        let actual = match record.attributes.get("name") {
-                            Some(Value::String(value)) => value.clone(),
+                        let actual = match record.attributes.get("profile_views") {
+                            Some(Value::Int(value)) => *value,
                             other => panic!("unexpected record attribute: {other:?}"),
                         };
                         assert_eq!(actual, degraded_value);
@@ -981,7 +981,7 @@ mod tests {
                     .map(|i| format!("delete-{key_suffix}-{i}"))
                     .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
                     .expect("expected a key routed to node 2");
-                let expected_value = format!("v{value_id}");
+                let expected_value = i64::from(value_id);
 
                 let put = HyperdexClientService::handle(
                     runtime1.as_ref(),
@@ -989,8 +989,8 @@ mod tests {
                         space: "profiles".to_owned(),
                         key: Bytes::from(routed_key.clone().into_bytes()),
                         mutations: vec![Mutation::Set(Attribute {
-                            name: "name".to_owned(),
-                            value: Value::String(expected_value),
+                            name: "profile_views".to_owned(),
+                            value: Value::Int(expected_value),
                         })],
                     },
                 )
