@@ -1776,6 +1776,37 @@
   bootstrap acceptance against the handcrafted Rust BusyBee session behavior
   and isolate the next remaining acceptance mismatch.
 
+### Entry `hyh-039` - Preregistration
+
+- Timestamp: `2026-03-27 22:35Z`
+- Kind: `preregister`
+- Hypothesis: after the sender-id plumbing fix, the remaining focused Hyhac
+  failure is the next non-wire bootstrap acceptance mismatch between the
+  original Replicant client and the handcrafted Rust BusyBee session behavior.
+- Owner: next forked product worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object`
+- Start commit: `19fc81f`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object`
+    on `live-hyhac-large-object`
+- Mutable surface:
+  - `crates/server/**`
+  - `crates/hyperdex-admin-protocol/**`
+  - `crates/server/tests/**`
+  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+    is strictly necessary
+- Validator:
+  - fastest useful check:
+    `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence -- --nocapture`
+  - strong checks:
+    - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
+    - `cargo test -p server`
+- Expected artifacts:
+  - code or an exact reduction of the next non-wire bootstrap acceptance
+    mismatch
+  - focused validator evidence that the client either leaves bootstrap or that
+    the next exact acceptance rule is isolated
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`

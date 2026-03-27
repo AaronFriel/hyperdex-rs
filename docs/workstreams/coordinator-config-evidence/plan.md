@@ -102,23 +102,26 @@ first atomic write.
 - [x] (2026-03-27 21:46Z) Finished `cce-011` and named the remaining exact
   mismatch: the Replicant bootstrap sender-identity contract still differs from
   the original, so the client never leaves the bootstrap retry loop.
+- [x] (2026-03-27 22:35Z) Finished `cce-012` and turned that exact mismatch
+  into a concrete Rust patch/test map; after the fix landed, the remaining
+  comparison target moved one step later into non-wire bootstrap acceptance.
 
 ## Current Hypothesis
 
-The remaining exact mismatch is now known. The focused large-object path still
-does not reach daemon request handling because the Rust coordinator bootstrap
-reply does not satisfy the original Replicant client’s sender-identity
-acceptance rule, so the client never adopts config and never leaves the
-bootstrap retry loop. One downstream daemon gap is still queued behind that
-barrier: current Rust has no `ReqGetPartial -> RespGetPartial` support.
+The sender-id mismatch is fixed, but the focused large-object path still does
+not leave bootstrap. The active comparison target is now the next acceptance
+rule after wire-visible sender-id consistency: the original Replicant client’s
+anonymous-channel bootstrap handling versus the handcrafted Rust BusyBee session
+behavior. One downstream daemon gap is still queued behind that barrier:
+current Rust has no `ReqGetPartial -> RespGetPartial` support.
 
 ## Next Bounded Step
 
-Keep this workstream read-only. The next bounded step is no longer broad
-diagnosis; it is an implementation map for the exact bootstrap sender-identity
-contract: identify the current Rust sites where the BusyBee sender token and
-encoded `server.id` must line up, plus the minimal focused tests that should
-prove the client leaves the bootstrap retry loop once that is fixed.
+Keep this workstream read-only. The next bounded step is to compare the
+original Replicant client's anonymous-channel bootstrap acceptance and retry
+behavior against the current Rust BusyBee session behavior after sender-id
+consistency is fixed, and name the next exact acceptance mismatch that still
+prevents a non-bootstrap Replicant request from appearing.
 
 ## Surprises & Discoveries
 

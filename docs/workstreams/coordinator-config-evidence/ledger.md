@@ -636,3 +636,49 @@
 - Expected artifacts:
   - exact Rust patch points for the bootstrap sender-identity fix
   - exact focused tests or probes to prove the fix
+
+### Entry `cce-012` - Outcome
+
+- Timestamp: `2026-03-27 22:35Z`
+- Kind: `outcome`
+- End commit: `19fc81f`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence summary:
+  - the sender-id plumbing fix landed on `main`
+  - the focused bootstrap unit test now proves sender-id consistency across
+    identify reply, bootstrap `server.id`, and bootstrap config server list
+  - the focused BusyBee proxy still shows only bootstrap traffic on the Hyhac
+    path, so the remaining mismatch is later than that wire-visible sender-id
+    contract
+- Conclusion: the implementation map was sufficient and is no longer the active
+  read-only task. The next exact comparison target is the non-wire bootstrap
+  acceptance behavior after sender-id consistency.
+- Disposition: `advance`
+- Next move: reopen this workstream for one narrower read-only pass on the
+  original Replicant client's anonymous-channel bootstrap acceptance versus the
+  current Rust session behavior.
+
+### Entry `cce-013` - Preregistration
+
+- Timestamp: `2026-03-27 22:35Z`
+- Kind: `preregister`
+- Hypothesis: a new read-only pass focused on the original Replicant client's
+  anonymous-channel bootstrap acceptance can identify the next exact mismatch
+  that still keeps the client in bootstrap after sender-id consistency is
+  fixed.
+- Owner: next forked read-only worker
+- Start commit: `19fc81f`
+- Worktree / branch:
+  - none required; read-only evidence gathering only
+- Mutable surface:
+  - none
+- Validator:
+  - source-backed explanation of the next bootstrap acceptance rule after
+    sender-id consistency
+  - concrete mapping from that rule to the current Rust session behavior
+- Expected artifacts:
+  - the next exact non-wire bootstrap acceptance mismatch
+  - concrete producer/consumer pointers in original Replicant and current Rust
