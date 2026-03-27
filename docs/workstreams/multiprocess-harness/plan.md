@@ -85,19 +85,26 @@ waiting on the whole Haskell path every time.
 - [x] (2026-03-27 20:02Z) Reconciled `853e290` (`Capture large-object
   clientgarbage coordinator frames`), which proves the first failing exchange
   is on the coordinator connection and not yet a decodable legacy daemon frame.
+- [x] (2026-03-27 21:30Z) Reopened this workstream as an active parallel owner
+  because the multiprocess `early eof` noise is gone and the remaining
+  large-object failure still needs a tighter harness-owned explanation.
 
 ## Current Hypothesis
 
-This workstream has done its current job. The short `ClientGarbage` repro is on
-`main`, and the latest harness result proves the first failing exchange is on
-the coordinator connection, not a decodable legacy daemon frame. The next
-diagnosis now belongs to coordinator-side protocol evidence and product code,
-not more harness edits for the same path.
+`5879fab` removed the multiprocess `early eof` noise that temporarily pushed
+this workstream aside. The short `ClientGarbage` repro is still on `main`, and
+the older coordinator-frame capture is still useful, but the cleaned baseline
+makes another harness-owned pass worthwhile: the product worker and the
+read-only comparison worker still need a tighter client-visible or wire-visible
+failure summary from the same fast large-object repro, without touching product
+code.
 
 ## Next Bounded Step
 
-Hold until the product worker or a later live-cluster failure needs another
-harness change.
+Reopen the harness on the cleaned large-object baseline. The next bounded step
+is to instrument the existing fast repro so it exposes or decodes the first bad
+client-visible response or wire edge that remains after `5879fab`, while
+staying inside `crates/server/tests/**` and related harness-owned files.
 
 ## Surprises & Discoveries
 
@@ -170,5 +177,7 @@ harness change.
 - The clean replacement retry also produced no bounded harness result. The next
   attempt must return either a harness commit that exposes the first bad frame
   directly or a clean proof tied to test output that identifies the bad edge.
-- `853e290` delivered that stricter result. This workstream is ready to pause
-  again until another real harness change is justified.
+- `853e290` delivered the first stricter capture result.
+- `5879fab` cleaned the multiprocess process baseline enough that a new
+  harness-owned explanation pass is justified on the same fast large-object
+  repro.

@@ -350,3 +350,36 @@
 - Disposition: `advance`
 - Next move: hand the coordinator-frame evidence to the product worker and hold
   this workstream until a new harness change is needed.
+
+### Entry `mph-008` - Preregistration
+
+- Timestamp: `2026-03-27 21:30Z`
+- Kind: `preregister`
+- Hypothesis: on the cleaned post-`5879fab` baseline, a new harness-only pass
+  can expose or decode the first bad client-visible response or wire edge for
+  `legacy_hyhac_large_object_probe_hits_clientgarbage_fast` without touching
+  product code.
+- Owner: next forked worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire`
+- Start commit: `4902f03`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on
+    `clientgarbage-wire`
+- Mutable surface:
+  - `Cargo.toml`
+  - `crates/server/Cargo.toml`
+  - `crates/server/tests/**`
+  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+    is strictly necessary
+- Validator:
+  - fastest useful check:
+    `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
+  - strong checks:
+    - `cargo test -p server --test dist_multiprocess_harness -- --nocapture`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - a harness-only commit that exposes or decodes the next bad client-visible
+    response or wire edge on the large-object repro, or a precise clean proof
+    tied to test output that names that edge exactly
+  - clearer failure evidence for the active product and read-only workers
+  - one bounded harness-only commit ready for reconciliation
