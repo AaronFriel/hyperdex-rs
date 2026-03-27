@@ -1476,6 +1476,79 @@
     evidence
   - a shorter branch-local loop than the broader selected `hyhac` command
 
+### Entry `hyh-034` - Outcome
+
+- Timestamp: `2026-03-27 20:16Z`
+- Kind: `outcome`
+- End commit: `be0cb38`
+- Artifact location:
+  - `crates/legacy-frontend/src/lib.rs`
+  - `crates/legacy-protocol/src/lib.rs`
+  - `crates/server/src/lib.rs`
+- Evidence summary:
+  - `default_legacy_config_encoder` now packs `space.name`, attribute names,
+    and index extras as HyperDex-style varint slices instead of fixed-width
+    `u32` lengths
+  - local packed-config decoder and server tests now prove the full `profiles`
+    schema survives that encoding with the expected legacy datatype codes,
+    including list, set, and map forms
+  - the legacy daemon and frontend tests are now aligned to the actual
+    nonce-prefixed BusyBee body shape rather than the earlier simplified body
+  - `cargo test -p legacy-frontend -- --nocapture` passed
+  - `cargo test -p server legacy_config_encoder_preserves_profiles_attribute_names_and_types -- --nocapture` passed
+  - `cargo test -p server replicant_config_get_maps_to_packed_condition_completion -- --nocapture` passed
+  - `cargo test -p server coordinator_admin_legacy_service_space_add_triggers_follow_update -- --nocapture` passed
+  - on integrated `main`, `cargo test --workspace` passed
+  - the shared fast public loop still reproduces `Left ClientGarbage`
+- Conclusion: the packed coordinator config contract advanced materially, and
+  the original client now sees the correct legacy datatype codes across the
+  full `profiles` schema. The next mismatch is deeper inside the packed
+  `hyperdex::configuration` / `hyperdex::space` body after string-slice
+  encoding, not in bootstrap and not in the daemon request path.
+- Disposition: `advance`
+- Next move: preregister the next product-owned step on the same worktree to
+  compare and fix the remaining `configuration` / `space` body mismatch after
+  string-slice encoding, with the fast large-object repro still as the public
+  loop.
+
+### Entry `hyh-035` - Preregistration
+
+- Timestamp: `2026-03-27 20:16Z`
+- Kind: `preregister`
+- Hypothesis: a follow-up worker on the same `live-hyhac-data-plane` worktree
+  can use the now-correct string-slice and datatype encoding as a base to find
+  and fix the next mismatch inside the packed `hyperdex::configuration` /
+  `hyperdex::space` body for the full `profiles` schema, moving the focused
+  large-object path forward again.
+- Owner: resumed forked worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane`
+- Start commit: `be0cb38`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on
+    `live-hyhac-data-plane`
+- Mutable surface:
+  - `crates/legacy-protocol/**`
+  - `crates/legacy-frontend/**`
+  - `crates/hyperdex-admin-protocol/**`
+  - `crates/hyperdex-client-protocol/**`
+  - `crates/server/**`
+  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if launcher wiring is
+    strictly necessary for the focused probe
+- Validator:
+  - fastest useful check:
+    - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
+  - strong checks:
+    - `cargo test -p legacy-frontend -- --nocapture`
+    - `cargo test -p server`
+    - `cargo test --workspace`
+    - focused manual cluster probe for `*Can store a large object*`
+- Expected artifacts:
+  - code and tests that move the focused large-object path past the next packed
+    config mismatch
+  - or a tighter `configuration` / `space` body mismatch tied to concrete
+    packet or source evidence
+  - a shorter branch-local loop than the broader selected `hyhac` command
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`

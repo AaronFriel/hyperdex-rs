@@ -165,6 +165,10 @@ stronger live probe before returning control.
   large-object failure still happens before the daemon sees `REQ_ATOMIC`, so
   the next product target is the packed coordinator config and client-side
   request-preparation contract for the full `profiles` schema.
+- [x] (2026-03-27 20:16Z) Reconciled `be0cb38` (`Align legacy config and
+  daemon protocol encoding`), which fixes string-slice encoding for the packed
+  config path and restores the correct legacy datatype codes across the full
+  `profiles` schema.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
@@ -175,16 +179,17 @@ compatibility are now on `main`. The focused large-object failure is still the
 right public loop, but it no longer points at the daemon request decoder: the
 daemon never sees `REQ_ATOMIC` for this path, and the harness now shows the
 first captured exchange is still on the coordinator connection. The next
-concrete gap is the packed coordinator config and client-side request-
-preparation contract for the full `profiles` schema.
+concrete gap is deeper inside the packed `hyperdex::configuration` /
+`hyperdex::space` body for the full `profiles` schema, after string-slice
+encoding and legacy datatype codes were corrected.
 
 ## Next Bounded Step
 
-Own the packed coordinator config and client-side request-preparation contract
-for the full `profiles` schema through the focused large-object `ClientGarbage`
-repro until that path clears or yields the next exact coordinator-side
-mismatch. Only widen back to broader pooled operations after this focused path
-moves forward.
+Own the remaining packed `hyperdex::configuration` / `hyperdex::space` body
+mismatch for the full `profiles` schema through the focused large-object
+`ClientGarbage` repro until that path clears or yields the next exact
+coordinator-side mismatch. Only widen back to broader pooled operations after
+this focused path moves forward.
 
 ## Surprises & Discoveries
 
@@ -236,6 +241,12 @@ moves forward.
   `legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair`, and
   that test captures partial BusyBee-style frames with `trailing_bytes=45` and
   `trailing_bytes=100` on the coordinator path.
+- Observation: correcting string-slice encoding and legacy datatype codes moved
+  the packed config contract forward, but did not clear the first public
+  `ClientGarbage` failure.
+  Evidence: `be0cb38` now preserves the expected legacy datatype codes across
+  the full `profiles` schema and keeps focused config tests green, while the
+  shared fast large-object repro still fails.
 - Observation: even after splitting writes into "codec" and "server
   integration", the workers still did not start editing.
   Evidence: both dedicated worktrees stayed clean at `801d20f` until the

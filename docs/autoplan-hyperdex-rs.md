@@ -122,7 +122,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` | Hold until the product worker needs another harness change. | `advance` |
-| `live-hyhac` | active | forked worker in `live-hyhac-data-plane` worktree | The focused large-object `ClientGarbage` failure still occurs before the daemon sees `REQ_ATOMIC`, so the next product target is the packed coordinator config and client-side request-preparation contract for the full `profiles` schema. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on `live-hyhac-data-plane` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused manual cluster probes | Own the packed coordinator config and client-side request-preparation contract for the full `profiles` schema until the focused large-object path clears or yields the next exact mismatch. | `reframe` |
+| `live-hyhac` | active | resumed forked worker in `live-hyhac-data-plane` worktree | The focused large-object path still fails after string-slice and datatype encoding were corrected, so the next product target is the remaining mismatch deeper inside the packed `hyperdex::configuration` / `hyperdex::space` body for the full `profiles` schema. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on `live-hyhac-data-plane` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused manual cluster probes | Own the remaining packed `configuration` / `space` body mismatch until the focused large-object path clears or yields the next exact coordinator-side mismatch. | `advance` |
 | `coordinator-config-evidence` | active | delegated read-only worker | Depends on the harness capture in `853e290`; should not overlap with the product worker’s write surface. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required for the bounded step | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` plus source-backed config-body comparison | Compare Rust `default_legacy_config_encoder` output against the original HyperDex `configuration` / `space` packing rules on a live `profiles` config body. | `advance` |
 
 ## Progress
@@ -278,24 +278,26 @@ split, sequencing, or validator set needs to change.
   for a second read-only step: direct comparison of the Rust packed-config body
   against the original HyperDex `configuration` / `space` packing rules on a
   live `profiles` config body.
+- [x] (2026-03-27 20:16Z) Reconciled `be0cb38` (`Align legacy config and
+  daemon protocol encoding`), which corrects string-slice encoding and legacy
+  datatype codes across the full `profiles` schema but still leaves the fast
+  large-object public loop failing.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
-Drive the next live compatibility step around the coordinator-side contract
-that still blocks the large-object path before `REQ_ATOMIC`. The product worker
-now owns the packed coordinator config and client-side request-preparation
-contract for the full `profiles` schema, while a separate read-only evidence
-worker now compares the Rust packed-config body against the original HyperDex
-`configuration` / `space` packing rules for the same live `profiles` config
-body. The admin/bootstrap layer and the daemon atomic decoder are no longer the
-leading targets for this path.
+Drive the next live compatibility step around the remaining mismatch inside the
+packed `hyperdex::configuration` / `hyperdex::space` body for the full
+`profiles` schema. The product worker now owns the next code change on top of
+the corrected string-slice and datatype encoding, while the read-only evidence
+worker compares the Rust packed-config body directly against the original
+HyperDex packing rules for the same live `profiles` config body.
 
 ## Next Root Move
 
-Close the completed first evidence worker, launch the second read-only
-coordinator-config comparison step, and hand that exact follow-up to the
-product worker while keeping the multiprocess harness parked.
+Keep the read-only config-body comparison worker active, resume the product
+worker on top of `be0cb38`, and reconcile whichever branch returns the next
+exact packed-config mismatch first.
 
 ## Surprises & Discoveries
 
@@ -409,6 +411,10 @@ product worker while keeping the multiprocess harness parked.
   `IDENTIFY` plus a 5-byte `REPLNET_BOOTSTRAP` request frame and maps the
   100-byte stream to BusyBee `IDENTIFY` plus a 60-byte bootstrap response
   frame.
+- Observation: correcting string-slice encoding and legacy datatype codes is
+  necessary but not sufficient for the large-object path.
+  Evidence: `be0cb38` is on `main`, the focused config tests pass, but the fast
+  large-object repro still reports `Left ClientGarbage`.
 - Observation: the packed-space and request-core gap is now closed.
   Evidence: `df633ac` adds `decode_packed_hyperdex_space`,
   `ReplicantAdminRequestMessage::into_coordinator_request`, focused protocol
