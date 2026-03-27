@@ -122,7 +122,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Hold until a new real-cluster failure requires deeper harness work. | `advance` |
-| `live-hyhac` | active | The decoder and service core both still need code, but the original C++ pack/unpack format is now pinned down in `common/hyperspace.cc` and `admin/admin.cc`. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated admin worktrees | Implement the decoder and service core again with those exact C++ source targets, then continue to startup wiring and probes. | `retry` |
+| `live-hyhac` | active | The request core is now implemented, but the live coordinator still lacks the BusyBee/Replicant session layer that the original admin client expects before it reaches `space_add` or `wait_until_stable`. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated admin worktrees | Implement the minimal live BusyBee/Replicant coordinator session: bootstrap, Replicant condition follows, HyperDex `config`/`stable` conditions, then rerun the admin probes. | `advance` |
 
 ## Progress
 
@@ -195,20 +195,28 @@ split, sequencing, or validator set needs to change.
   HyperDex sources.
 - [x] (2026-03-27 05:27Z) Recovered the exact `space` pack/unpack shape from
   `common/hyperspace.cc` and the caller path in `admin/admin.cc`.
+- [x] (2026-03-27 05:39Z) Landed `df633ac` (`Decode packed legacy admin space
+  requests`), which ports the packed `hyperdex::space` decoder, maps
+  Replicant admin requests into coordinator requests, and emits real Replicant
+  completions for `space_add`, `space_rm`, and `wait_until_stable`.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
-Drive the next live-compatibility step with the binary format pinned down from
-source. The next workers do not need to infer the `space` payload layout; they
-can port it directly from the original C++ implementation.
+Drive the live coordinator session layer that still stands between the original
+admin client and the now-implemented request core. The next code should make a
+real connection survive long enough to finish bootstrap, condition-follow
+setup, and at least one admin operation.
 
 ## Next Root Move
 
-Launch two substantial implementation steps in parallel again:
-1. port the packed `space` decoder from `common/hyperspace.cc`
-2. build the BusyBee/Replicant service core around that decoder
-Then reconcile both and continue to startup wiring and live probes.
+Implement the smallest live BusyBee/Replicant session that can satisfy the
+original admin client:
+1. send a valid Replicant bootstrap reply
+2. answer the required Replicant condition follows
+3. answer HyperDex `config` and `stable` waits using correctly encoded
+   condition-completion messages
+Then rerun `hyperdex-add-space` and `hyperdex-wait-until-stable`.
 
 ## Surprises & Discoveries
 
@@ -252,8 +260,19 @@ Then reconcile both and continue to startup wiring and live probes.
 - Observation: the remaining transport ambiguity is gone.
   Evidence: the delegated evidence steps recovered both the BusyBee size-header
   framing and the Replicant request and response layouts, and the dynamic
-  capture confirmed that both admin tools first emit the same 25-byte `config`
-  follow request before any operation-specific traffic.
+  capture confirmed that both admin tools first emit the same 25-byte
+  bootstrap packet before any operation-specific traffic.
+- Observation: that earlier interpretation of the first 25-byte packet was too
+  coarse; it is Replicant bootstrap, not the HyperDex `config` follow itself.
+  Evidence: `Replicant/common/bootstrap.cc` emits `REPLNET_BOOTSTRAP` as the
+  single-byte BusyBee payload `0x1c`, and `Replicant/client/client.cc` handles
+  `REPLNET_BOOTSTRAP` as the bootstrap-install path before condition-follow
+  traffic proceeds.
+- Observation: the packed-space and request-core gap is now closed.
+  Evidence: `df633ac` adds `decode_packed_hyperdex_space`,
+  `ReplicantAdminRequestMessage::into_coordinator_request`, focused protocol
+  tests, and `handle_replicant_admin_request`, with `cargo test --workspace`
+  passing afterward.
 - Observation: even with complete framing evidence, a single worker still did
   not start code changes.
   Evidence: the third implementation thread reported no touched files and named

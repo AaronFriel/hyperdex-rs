@@ -108,21 +108,31 @@ surface.
   must implement the protocol rather than report more blockers.
 - [x] (2026-03-27 05:27Z) Recovered the exact `space` pack/unpack shape from
   the original HyperDex C++ sources.
+- [x] (2026-03-27 05:39Z) Landed `df633ac` (`Decode packed legacy admin space
+  requests`), which ports the packed `hyperdex::space` decoder, maps Replicant
+  admin requests into coordinator requests, and emits real Replicant
+  completions for `space_add`, `space_rm`, and `wait_until_stable`.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
-The first missing live contract is still the legacy coordinator admin frontend.
-The missing capabilities are still the packed `space_add` decoder and the
-coordinator BusyBee/Replicant service core, but the binary format is now
-pinned down from the original C++ implementation.
+The packed `space_add` and Replicant request-core work is no longer the gap.
+The remaining live contract is the session layer around it: the original admin
+client still needs Replicant bootstrap, persistent Replicant condition follows,
+and HyperDex `config` condition responses before it can reach the now-implemented
+`space_add` / `wait_until_stable` request handling.
 
 ## Next Bounded Step
 
-Implement two concrete pieces in parallel:
-1. port the packed `space` decoder from `HyperDex/common/hyperspace.cc`
-2. build the BusyBee/Replicant coordinator service core in `crates/server/src/lib.rs`
-Then reconnect them and continue to startup wiring and live probes.
+Implement the minimal live BusyBee/Replicant coordinator session in one bounded
+step:
+1. reply to Replicant bootstrap with a valid one-coordinator bootstrap message
+2. serve the required Replicant condition follows for `replicant/tick` and
+   `replicant/configuration`
+3. serve HyperDex `config` and `stable` condition responses on top of the new
+   request core
+Then rerun the bounded `hyperdex-add-space` and `hyperdex-wait-until-stable`
+probes.
 
 ## Surprises & Discoveries
 
@@ -152,11 +162,12 @@ Then reconnect them and continue to startup wiring and live probes.
   Evidence: the second implementation thread reported no touched files and
   named missing concrete Replicant framing as the only blocker.
 - Observation: both admin tools send the same first 25-byte packet because they
-  both start by following the coordinator `config` condition before reaching
-  operation-specific traffic.
+  both start with Replicant bootstrap before reaching HyperDex-specific
+  condition follows or operation traffic.
   Evidence: the dynamic-capture pass observed the same 25-byte first packet for
-  both tools, and the source-level pass ties that to `maintain_coord_connection`
-  issuing `replicant_client_cond_follow(..., \"hyperdex\", \"config\", ...)`.
+  both tools, and `Replicant/common/bootstrap.cc` plus
+  `Replicant/client/client.cc` show that `0x1c` is the bootstrap request that
+  installs the coordinator set before condition follows proceed.
 - Observation: complete protocol evidence was still not enough for one broad
   implementation worker to start editing.
   Evidence: the third implementation thread again reported no touched files and
@@ -201,6 +212,12 @@ Then reconnect them and continue to startup wiring and live probes.
   Evidence: `HyperDex/common/hyperspace.cc` contains both `operator <<` and
   `operator >>` for `hyperdex::space`, and `HyperDex/admin/admin.cc` shows
   `space_add` packing with `msg->pack_at(0) << space`.
+- Observation: the first 25-byte packet from the original admin tools is
+  Replicant bootstrap, not the HyperDex `config` follow itself.
+  Evidence: `Replicant/common/bootstrap.cc` packs `REPLNET_BOOTSTRAP` as a
+  single-byte BusyBee payload `0x1c`, and `Replicant/client/client.cc` treats
+  `REPLNET_BOOTSTRAP` as the special message that installs the coordinator set
+  before any condition follows are processed.
 
 ## Decision Log
 

@@ -389,7 +389,7 @@ impl ReplicantReturnCode {
 }
 
 impl ReplicantAdminRequestMessage {
-    pub fn config_follow() -> Vec<u8> {
+    pub fn bootstrap_request() -> Vec<u8> {
         CAPTURED_INITIAL_CONFIG_FOLLOW_REQUEST.to_vec()
     }
 
@@ -1088,8 +1088,8 @@ mod tests {
     }
 
     #[test]
-    fn captured_config_follow_request_matches_original_tool_bytes() {
-        let encoded = ReplicantAdminRequestMessage::config_follow();
+    fn captured_bootstrap_request_matches_original_tool_bytes() {
+        let encoded = ReplicantAdminRequestMessage::bootstrap_request();
 
         assert_eq!(encoded, CAPTURED_INITIAL_CONFIG_FOLLOW_REQUEST);
 

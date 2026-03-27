@@ -253,9 +253,9 @@
     the outer timeout kills them
   - neither tool waits for a server banner before sending
   - the source path explains the identical first packet: both operations first
-    follow coordinator `config`
+    perform Replicant bootstrap
 - Conclusion: the replacement frontend must satisfy the initial `config`
-  follow before it can ever see operation-specific `space_add` or
+  bootstrap before it can ever see operation-specific `space_add` or
   `wait_until_stable` traffic.
 - Disposition: `advance`
 - Next move: relaunch the implementation worker with this initial handshake
@@ -468,7 +468,7 @@
   - the landed code adds BusyBee frame helpers, Replicant admin request and
     response codecs, varint slice helpers, and targeted protocol tests
   - `cargo test -p hyperdex-admin-protocol` passed
-  - the captured 25-byte config-follow request is now covered by an exact byte
+  - the captured 25-byte bootstrap request is now covered by an exact byte
     assertion and BusyBee stream round-trip
 - Conclusion: the protocol foundation is now strong enough to stop splitting
   prep work and move directly into server implementation.
@@ -822,3 +822,31 @@
   - Replicant admin request to coordinator-request mapping
   - focused tests proving `space_add`, `space_rm`, and `wait_until_stable`
     semantics through the new mapping layer
+
+### Entry `hyh-019` - Outcome
+
+- Timestamp: `2026-03-27 05:39Z`
+- Kind: `outcome`
+- End commit: `df633ac`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+- Evidence summary:
+  - `decode_packed_hyperdex_space` now ports the original
+    `hyperdex::space` binary layout into the Rust `Space` model, including
+    key-attribute handling, subspace translation, partition recovery, and
+    HyperDex datatype mapping
+  - `ReplicantAdminRequestMessage::into_coordinator_request` now maps
+    `space_add`, `space_rm`, `wait_until_stable`, and `config` condition waits
+    into coordinator-facing request values
+  - `handle_replicant_admin_request` now emits real Replicant call and
+    condition completions for `space_add`, `space_rm`, and `wait_until_stable`
+  - `cargo test -p hyperdex-admin-protocol`, `cargo test -p server`, and
+    `cargo test --workspace` all passed
+- Conclusion: the packed-space and request-core gap is closed. The remaining
+  live admin gap is now the session layer: bootstrap, Replicant persistent
+  condition follows, and HyperDex configuration-condition encoding.
+- Disposition: `advance`
+- Next move: implement the minimal live BusyBee/Replicant coordinator session
+  around this new request core, starting with bootstrap and condition-follow
+  responses.
