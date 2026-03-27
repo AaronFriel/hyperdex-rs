@@ -22,3 +22,70 @@
   - a decoded or source-mapped interpretation of the `trailing_bytes=45` and
     `trailing_bytes=100` partial BusyBee-style frames
   - a concrete coordinator-side contract target for the product worker
+
+### Entry `cce-001` - Outcome
+
+- Timestamp: `2026-03-27 20:43Z`
+- Kind: `outcome`
+- End commit: `d8ac0ad`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md`
+- Evidence summary:
+  - The captured client-side `trailing_bytes=45` stream matches a BusyBee
+    `IDENTIFY` frame (`0x80000014`, 20 bytes) plus a Replicant bootstrap
+    request frame (`0x00000005 0x1c`, 5 bytes), with another 20-byte BusyBee
+    identify frame worth of bytes still in the stream. This matches the Rust
+    captured bootstrap request constant and the original Replicant
+    `start_bootstrap` request size.
+  - The captured server-side `trailing_bytes=100` stream starts with the same
+    20-byte BusyBee `IDENTIFY` frame shape, followed by a normal 60-byte
+    Replicant bootstrap response frame (`0x0000003c`) and another 20-byte
+    BusyBee identify frame worth of bytes. The 60-byte middle frame size is the
+    exact size of the Rust `ReplicantBootstrapResponse` for one bootstrap
+    server and also matches the original Replicant bootstrap decode path.
+  - The original HyperDex client does not build `REQ_ATOMIC` until
+    `client::maintain_coord_connection` has completed
+    `replicant_client_cond_follow("hyperdex", "config", ...)` and unpacked the
+    returned bytes as `hyperdex::configuration`.
+- Conclusion:
+  - The focused large-object repro is not blocked on the first BusyBee or
+    Replicant bootstrap exchange. That capture is healthy bootstrap traffic.
+  - The next coordinator-side contract that matters is the packed
+    `hyperdex::configuration` body returned by the `hyperdex/config` follow
+    reply. That payload must satisfy the original HyperDex unpackers for
+    `configuration`, `space`, `subspace`, `region`, `replica`, and the full
+    container-heavy `profiles` schema before the client can call `get_schema`,
+    `point_leader`, `prepare_funcs`, and finally send `REQ_ATOMIC`.
+- Disposition: `advance`
+- Next move:
+  - Keep the product worker focused on the `hyperdex/config` follow payload,
+    not bootstrap.
+  - Compare the Rust `default_legacy_config_encoder` output against the
+    original HyperDex `configuration` / `space` packing rules on a live
+    `profiles` config body.
+
+### Entry `cce-002` - Preregistration
+
+- Timestamp: `2026-03-27 20:14Z`
+- Kind: `preregister`
+- Hypothesis: a second read-only pass that compares the Rust
+  `default_legacy_config_encoder` output against the original HyperDex
+  `configuration` / `space` packing rules on a live `profiles` config body
+  will identify the first concrete mismatch, if any, in the `hyperdex/config`
+  follow payload that the client consumes before it prepares the first atomic
+  write.
+- Owner: next delegated read-only worker
+- Start commit: `d8ac0ad`
+- Worktree / branch:
+  - none required for the bounded step
+- Mutable surface:
+  - none; read-only evidence gathering only
+- Validator:
+  - source-backed comparison between Rust packed-config bytes and the original
+    HyperDex `configuration` / `space` packing rules
+  - a concrete mismatch if one exists, or a concrete statement that the next
+    contract boundary lies later in the same follow path
+- Expected artifacts:
+  - exact comparison of Rust `default_legacy_config_encoder` output versus the
+    original HyperDex packing contract for a live `profiles` config body
+  - a tighter product target for `hyh-034`

@@ -123,7 +123,7 @@ split, sequencing, or validator set needs to change.
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` | Hold until the product worker needs another harness change. | `advance` |
 | `live-hyhac` | active | forked worker in `live-hyhac-data-plane` worktree | The focused large-object `ClientGarbage` failure still occurs before the daemon sees `REQ_ATOMIC`, so the next product target is the packed coordinator config and client-side request-preparation contract for the full `profiles` schema. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on `live-hyhac-data-plane` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused manual cluster probes | Own the packed coordinator config and client-side request-preparation contract for the full `profiles` schema until the focused large-object path clears or yields the next exact mismatch. | `reframe` |
-| `coordinator-config-evidence` | active | delegated read-only worker | Depends on the harness capture in `853e290`; should not overlap with the product worker’s write surface. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none for the first bounded step | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` plus source inspection | Decode the coordinator-side BusyBee/Replicant exchange and map it to the packed config or schema contract the original client still expects before it prepares the first atomic write. | `advance` |
+| `coordinator-config-evidence` | active | delegated read-only worker | Depends on the harness capture in `853e290`; should not overlap with the product worker’s write surface. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required for the bounded step | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` plus source-backed config-body comparison | Compare Rust `default_legacy_config_encoder` output against the original HyperDex `configuration` / `space` packing rules on a live `profiles` config body. | `advance` |
 
 ## Progress
 
@@ -271,6 +271,13 @@ split, sequencing, or validator set needs to change.
   handler to the packed coordinator config and client-side request-preparation
   contract for the full `profiles` schema, based on the product worker’s
   direct live-cluster probe and the new harness capture.
+- [x] (2026-03-27 20:43Z) Finished the first read-only coordinator-config
+  evidence step and proved the captured coordinator frames are healthy BusyBee
+  identify plus Replicant bootstrap traffic, not the active mismatch.
+- [x] (2026-03-27 20:14Z) Reopened the coordinator-config evidence workstream
+  for a second read-only step: direct comparison of the Rust packed-config body
+  against the original HyperDex `configuration` / `space` packing rules on a
+  live `profiles` config body.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
@@ -279,16 +286,16 @@ Drive the next live compatibility step around the coordinator-side contract
 that still blocks the large-object path before `REQ_ATOMIC`. The product worker
 now owns the packed coordinator config and client-side request-preparation
 contract for the full `profiles` schema, while a separate read-only evidence
-worker decodes the coordinator-side BusyBee/Replicant exchange that the harness
-captured. The admin/bootstrap layer and the daemon atomic decoder are no longer
-the leading targets for this path.
+worker now compares the Rust packed-config body against the original HyperDex
+`configuration` / `space` packing rules for the same live `profiles` config
+body. The admin/bootstrap layer and the daemon atomic decoder are no longer the
+leading targets for this path.
 
 ## Next Root Move
 
-Launch the read-only coordinator-config evidence worker, hand the new
-coordinator-frame capture and pre-daemon blocker to the relaunched product
-worker, and hold the multiprocess harness until another harness change is
-justified.
+Close the completed first evidence worker, launch the second read-only
+coordinator-config comparison step, and hand that exact follow-up to the
+product worker while keeping the multiprocess harness parked.
 
 ## Surprises & Discoveries
 
@@ -396,6 +403,12 @@ justified.
   `legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair`, which
   captures only partial BusyBee-style frames with `trailing_bytes=45` and
   `trailing_bytes=100` on the coordinator connection.
+- Observation: those captured coordinator frames are healthy BusyBee identify
+  plus Replicant bootstrap traffic, not the active contract failure.
+  Evidence: the completed `cce-001` step maps the 45-byte stream to BusyBee
+  `IDENTIFY` plus a 5-byte `REPLNET_BOOTSTRAP` request frame and maps the
+  100-byte stream to BusyBee `IDENTIFY` plus a 60-byte bootstrap response
+  frame.
 - Observation: the packed-space and request-core gap is now closed.
   Evidence: `df633ac` adds `decode_packed_hyperdex_space`,
   `ReplicantAdminRequestMessage::into_coordinator_request`, focused protocol

@@ -57,19 +57,32 @@ first atomic write.
 - [x] (2026-03-27 20:04Z) Created this workstream after the harness and product
   worker both showed that the large-object failure still occurs before the
   daemon sees `REQ_ATOMIC`.
+- [x] (2026-03-27 20:43Z) Decoded the captured coordinator bytes as BusyBee
+  identify plus Replicant bootstrap traffic and tied the next product target
+  to the packed `hyperdex::configuration` body behind the `hyperdex/config`
+  follow reply.
+- [x] (2026-03-27 20:14Z) Reopened this workstream for a second read-only step
+  that compares the Rust `default_legacy_config_encoder` output against the
+  original HyperDex `configuration` / `space` packing rules on a live
+  `profiles` config body.
 
 ## Current Hypothesis
 
-The focused large-object path is still blocked by a coordinator-side contract,
-not by the daemon request decoder. The likely fault line is packed config or
-schema metadata for the full `profiles` space, especially container and map
-datatype encoding.
+The focused large-object path is still blocked by the coordinator-side packed
+`hyperdex::configuration` body that the HyperDex client consumes after
+`replicant_client_cond_follow("hyperdex", "config", ...)`. The first captured
+pair is only bootstrap traffic. The next likely mismatch is now specific
+enough to compare directly: the bytes produced by Rust
+`default_legacy_config_encoder` for the live `profiles` schema may not satisfy
+the original HyperDex `configuration` and `space` unpackers, especially around
+container and map datatype encoding.
 
 ## Next Bounded Step
 
-Decode the first captured coordinator frame pair against the original
-HyperDex/Replicant sources and the current Rust packed-config path, then state
-the exact coordinator-side contract the client is still missing.
+Keep this workstream read-only. Compare the Rust `default_legacy_config_encoder`
+output against the original HyperDex `configuration` / `space` packing rules on
+a live `profiles` config body, then state the first concrete mismatch if one
+exists.
 
 ## Surprises & Discoveries
 
@@ -77,6 +90,17 @@ the exact coordinator-side contract the client is still missing.
   decodable legacy daemon frame.
   Evidence: `853e290` captures only partial BusyBee-style coordinator frames
   on the focused large-object repro.
+- Observation: the captured `trailing_bytes=45` and `trailing_bytes=100` values
+  are not malformed single frames.
+  Evidence: they decompose cleanly into BusyBee identify and Replicant
+  bootstrap traffic sizes from the original BusyBee and Replicant sources.
+- Observation: the HyperDex client cannot prepare the first atomic write until
+  it has successfully unpacked the coordinator's `hyperdex/config` follow
+  payload as `hyperdex::configuration`.
+  Evidence: `client::maintain_coord_connection` blocks on
+  `replicant_client_cond_follow("hyperdex", "config", ...)`, then unpacks
+  `m_config_data` into `configuration` before `get_schema`, `point_leader`,
+  and `prepare_funcs` are used.
 
 ## Decision Log
 
@@ -84,8 +108,19 @@ the exact coordinator-side contract the client is still missing.
   Rationale: the highest-value missing information is exact coordinator-side
   evidence, and the active product worker already owns the code surface.
   Date/Author: 2026-03-27 / root
+- Decision: keep the second bounded step read-only as well.
+  Rationale: the next question is still contract comparison, not product-code
+  ownership, and the product worker already owns the code surface where fixes
+  will land.
+  Date/Author: 2026-03-27 / root
 
 ## Outcomes & Retrospective
 
-- None yet. This workstream starts from the harness result in `853e290` and the
-  product blocker recorded in `hyh-033`.
+- The first bounded read-only step finished with a concrete source-backed
+  target: the product worker should stop treating the coordinator bootstrap as
+  the active mismatch and should instead verify the packed
+  `hyperdex::configuration` body returned by the `hyperdex/config` follow reply
+  for the full `profiles` schema.
+- The second bounded step is now narrower and more useful than generic packet
+  decoding: directly compare the Rust packed-config bytes against the original
+  HyperDex unpacking rules for the same live `profiles` body.
