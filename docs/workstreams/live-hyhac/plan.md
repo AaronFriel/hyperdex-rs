@@ -51,7 +51,9 @@ Start a live `hyperdex-rs` coordinator and daemon directly from the Rust
 binary, run `hyhac` through `scripts/cabal.sh test ...` instead of the checked-in
 `scripts/test-with-hyperdex.sh` wrapper, record the first failing operation or
 return-code mismatch, and narrow the next compatibility change to that observed
-surface.
+surface. The current owner should treat this as a large fork-owned step rather
+than a short patch attempt: use the fastest useful checks first, then rerun the
+stronger live probe before returning control.
 
 ## Progress
 
@@ -144,6 +146,9 @@ surface.
 - [x] (2026-03-27 06:35Z) Narrowed that wire result one step further: the
   first Rust reply is not merely the wrong `config` completion shape, it is
   the wrong Replicant frame type for the bootstrap path.
+- [x] (2026-03-27 07:10Z) Reframed the next step around larger fork ownership:
+  one worker should own the bootstrap fix end to end with its own fast checks
+  and live probe loop, not hand back another tiny partial result.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
@@ -151,12 +156,16 @@ surface.
 The request core, session core, packed-space decoder hardening, same-port
 startup, binary config encoding, and daemon join are now on `main`. The next
 concrete gap is the exact compatibility of the first Replicant bootstrap
-response.
+response, and the fastest useful measurement is a focused server bootstrap test
+plus a bounded captured-wire `hyperdex-add-space` probe rather than a full
+`hyhac` run.
 
 ## Next Bounded Step
 
-Fix the exact Replicant bootstrap-response mismatch, then rerun the bounded
-admin-tool probes and the direct `hyhac` Cabal test if they advance.
+Own the bootstrap-response fix through focused server tests and the bounded
+captured-wire admin probe until the client either sends a second request or the
+next exact mismatch is identified. Only then rerun the direct `hyhac` Cabal
+test if the admin probes advance.
 
 ## Surprises & Discoveries
 
@@ -248,6 +257,11 @@ admin-tool probes and the direct `hyhac` Cabal test if they advance.
   Evidence: the captured 88-byte reply decodes as
   `REPLNET_CLIENT_RESPONSE`, while `/home/friel/HyperDex/Replicant/client/client.cc`
   expects `REPLNET_BOOTSTRAP` on the first successful receive for that path.
+- Observation: the previous ownership shape was too granular for the updated
+  `autoplan` rules.
+  Evidence: the prior step stopped after narrowing the mismatch, but no forked
+  worker stayed in control long enough to both patch the bootstrap reply and
+  drive the live probe loop to the next concrete result.
 - Observation: the service-core portion of that session layer is no longer
   hypothetical; it is on `main` and validated locally.
   Evidence: `78162d5` adds `CoordinatorAdminLegacyService`, focused server

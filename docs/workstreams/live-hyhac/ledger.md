@@ -1295,6 +1295,60 @@
   - a live probe that sends a second client request after bootstrap, or the
     next narrower wire mismatch
 
+### Entry `hyh-031` - Outcome
+
+- Timestamp: `2026-03-27 07:10Z`
+- Kind: `outcome`
+- End commit: `4ccf113`
+- Artifact location:
+  - root coordination only; no code diff from a worker-owned bootstrap fix
+- Evidence summary:
+  - the originally intended implementation worker was closed by user request
+    before any product-code result was reconciled
+  - the durable files now need a larger fork-owned step that carries the
+    bootstrap fix through its own verification loop instead of another
+    short-lived handoff
+- Conclusion: the technical target is unchanged, but the execution shape
+  should shift to a larger fork-owned step with explicit fast and strong
+  validators.
+- Disposition: `reframe`
+- Next move: preregister a larger bootstrap-compatibility fork and launch it
+  alongside a parallel fast admin-probe harness worker.
+
+### Entry `hyh-032` - Preregistration
+
+- Timestamp: `2026-03-27 07:10Z`
+- Kind: `preregister`
+- Hypothesis: a forked worker that owns the full bootstrap-compatibility step
+  from product-code patching through focused tests and a bounded captured-wire
+  admin probe will either make the C admin client send a second request or
+  expose the next exact wire mismatch with stronger evidence than another
+  narrow substep.
+- Owner: forked worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-bootstrap`
+- Start commit: `4ccf113`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-bootstrap` on
+    `live-hyhac-bootstrap`
+- Mutable surface:
+  - `crates/server/src/lib.rs`
+  - `crates/server/src/main.rs` only if a small bootstrap-path adjunct is
+    strictly necessary
+  - `crates/hyperdex-admin-protocol/**` only if small codec support is
+    strictly necessary
+- Validator:
+  - fastest useful check: focused server bootstrap tests
+  - strong checks:
+    - `cargo test -p server`
+    - `cargo test --workspace`
+    - free-port captured-wire admin probe with `hyperdex-add-space` and
+      `hyperdex-wait-until-stable`
+- Expected artifacts:
+  - exact fix for the first Replicant bootstrap response
+  - focused tests that keep the fast loop short
+  - a live probe that sends a second client request after bootstrap, or the
+    next narrower wire mismatch
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`

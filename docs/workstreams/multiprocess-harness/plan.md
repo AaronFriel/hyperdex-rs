@@ -21,6 +21,8 @@ runs can trust its failures and successes.
 
 ## Acceptance Evidence
 
+- A focused coordinator-plus-daemon admin probe harness test runs quickly
+  enough to act as the fast proxy loop for live compatibility work.
 - `cargo test -p server --test dist_multiprocess_harness -- --nocapture`
   passes.
 - `cargo test --workspace` passes after harness changes.
@@ -31,21 +33,23 @@ runs can trust its failures and successes.
 
 - `Cargo.toml`
 - `crates/server/Cargo.toml`
-- `crates/server/tests/dist_multiprocess_harness.rs`
+- `crates/server/tests/**`
 - `crates/server/src/main.rs` only if a readiness-protocol change becomes
   necessary after the current bounded step
 
 ## Dependencies / Blockers
 
-- None for the current serialization fix.
-- A follow-up protocol-based readiness change will depend on whether the
-  current serial containment fix is sufficient for stable workspace runs.
+- None for the current fast-probe step.
+- This workstream should avoid product-code overlap with `live-hyhac`; it owns
+  the test and harness side of the loop, not the server/bootstrap fix itself.
 
 ## Plan Of Work
 
-First reconcile the already-tested serial containment fix that is sitting in the
-root checkout and in the paused worktree. Then replace the remaining brittle
-parts one at a time: ephemeral port reuse, then log-text waits.
+Keep the existing multiprocess harness trustworthy, then use it to shorten the
+feedback loop for live compatibility work. The current bounded step is to add a
+fast free-port coordinator-plus-daemon admin probe harness that captures
+whether the original C admin client progresses beyond bootstrap, so product
+changes can be judged without waiting on a full `hyhac` run.
 
 ## Progress
 
@@ -56,16 +60,21 @@ parts one at a time: ephemeral port reuse, then log-text waits.
 - [x] (2026-03-27 04:33Z) Replaced ephemeral port reuse and log-text waits
   with protocol-based readiness in `faa6cb6`
   (`Use protocol readiness in multiprocess harness`).
+- [x] (2026-03-27 07:10Z) Reopened this workstream as an active parallel owner
+  because the live admin path needs a faster cluster-plus-admin proxy loop than
+  the current manual probe sequence.
 
 ## Current Hypothesis
 
-The harness is in a good holding state now. The next change here should be
-driven by a newly observed cluster-validation failure, not by another
-speculative cleanup pass.
+The current product thread is blocked on a low-level admin wire mismatch, but
+its strongest validator is still too slow and too manual. A targeted harness
+test that boots the real Rust processes and drives one real admin probe should
+shorten that loop without overlapping the product-code fix.
 
 ## Next Bounded Step
 
-Wait for the next real-cluster failure that requires another harness change.
+Build the fast free-port coordinator-plus-daemon admin probe harness and prove
+that it can tell whether the original C admin client advances beyond bootstrap.
 
 ## Surprises & Discoveries
 
@@ -73,6 +82,11 @@ Wait for the next real-cluster failure that requires another harness change.
   one test, not just cross-test interference.
   Evidence: its reported logs showed `Address already in use (os error 98)` and
   a case where `daemon-two control_port == coordinator_port`.
+- Observation: the current live compatibility path still leans on a manual
+  probe loop that is slower than it needs to be.
+  Evidence: the most recent legacy-admin narrowing came from an external
+  captured-wire run rather than a quick repeatable test under
+  `dist_multiprocess_harness`.
 
 ## Decision Log
 
@@ -89,3 +103,6 @@ Wait for the next real-cluster failure that requires another harness change.
   process-spawning multiprocess tests without touching product code.
 - `faa6cb6` replaced ephemeral port reuse and log-text waits with held port
   reservations plus protocol-based readiness checks.
+- The next useful outcome here is not more generic cleanup. It is a fast live
+  admin probe loop that the product worker can trust while iterating on the
+  bootstrap reply.

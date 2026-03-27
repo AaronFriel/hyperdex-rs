@@ -83,3 +83,35 @@
 - Disposition: `advance`
 - Next move: hold until a new real-cluster failure requires another harness
   change.
+
+### Entry `mph-003` - Preregistration
+
+- Timestamp: `2026-03-27 07:10Z`
+- Kind: `preregister`
+- Hypothesis: a targeted coordinator-plus-daemon admin probe harness test can
+  give the live compatibility workstream a much faster and more repeatable
+  signal than the current manual free-port probe sequence, without touching
+  product code.
+- Owner: forked worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-probe-harness`
+- Start commit: `4ccf113`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-probe-harness` on
+    `admin-probe-harness`
+- Mutable surface:
+  - `Cargo.toml`
+  - `crates/server/Cargo.toml`
+  - `crates/server/tests/**`
+  - `crates/server/src/main.rs` only if the harness truly needs a small
+    readiness adjunct
+- Validator:
+  - fastest useful check: focused `dist_multiprocess_harness` target for the
+    new admin probe
+  - strong checks:
+    - `cargo test -p server --test dist_multiprocess_harness -- --nocapture`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - a fast coordinator-plus-daemon admin probe harness
+  - captured evidence about whether the C admin client advances beyond
+    bootstrap
+  - one bounded commit ready for reconciliation
