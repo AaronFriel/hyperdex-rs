@@ -115,3 +115,25 @@
   - captured evidence about whether the C admin client advances beyond
     bootstrap
   - one bounded commit ready for reconciliation
+
+### Entry `mph-003` - Outcome
+
+- Timestamp: `2026-03-27 07:20Z`
+- Kind: `outcome`
+- End commit: `6f061b3`
+- Artifact location:
+  - `crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence summary:
+  - `cargo test -p server --test dist_multiprocess_harness legacy_admin_wait_until_stable_probe_reports_bootstrap_progress -- --nocapture` passed
+  - the focused test reports `advanced=false` on current `main`
+  - the captured frame summary from that test shows the first meaningful
+    server reply is still `ClientResponse`
+  - `cargo test -p server --test dist_multiprocess_harness -- --nocapture`
+    passed
+  - `cargo test --workspace` passed
+- Conclusion: the fast admin-probe harness is now on `main`, and it provides
+  the shortest trustworthy check for whether the original C admin client
+  progresses beyond bootstrap.
+- Disposition: `advance`
+- Next move: hold until the product worker or another real-cluster failure
+  needs more harness work.

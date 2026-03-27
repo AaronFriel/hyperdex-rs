@@ -121,8 +121,8 @@ split, sequencing, or validator set needs to change.
 | Workstream | Status | Owner | Dependencies / Blockers | Plan | Ledger | Worktree / Branch | Fastest Useful Check | Next Step | Latest Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
-| `multiprocess-harness` | active | forked worker in `admin-probe-harness` worktree | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-probe-harness` on `admin-probe-harness` | focused `dist_multiprocess_harness` target for the new admin-probe loop | Build a fast free-port coordinator-plus-daemon admin probe harness that captures whether the C admin client advances beyond bootstrap. | `advance` |
-| `live-hyhac` | active | forked worker in `live-hyhac-bootstrap` worktree | The request core, service core, decoder hardening, same-port startup, binary config payload encoding, and daemon join are now all working on `main`, but the original admin client still stops at the first Replicant bootstrap response because Rust replies with a condition-completion frame where the client expects a Replicant bootstrap frame. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-bootstrap` on `live-hyhac-bootstrap` | focused server bootstrap tests plus a captured-wire `hyperdex-add-space` probe | Own the bootstrap-response fix through targeted tests and live admin probes until the client sends a second request or the next exact mismatch is captured. | `advance` |
+| `multiprocess-harness` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-probe-harness` on `admin-probe-harness` | `cargo test -p server --test dist_multiprocess_harness legacy_admin_wait_until_stable_probe_reports_bootstrap_progress -- --nocapture` | Hold until the product worker or another live-cluster failure needs more harness work. | `advance` |
+| `live-hyhac` | active | forked worker in `live-hyhac-bootstrap` worktree | The request core, service core, decoder hardening, same-port startup, binary config payload encoding, and daemon join are now all working on `main`, but the original admin client still stops at the first Replicant bootstrap response because Rust replies with a condition-completion frame where the client expects a Replicant bootstrap frame. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-bootstrap` on `live-hyhac-bootstrap` | `cargo test -p server --test dist_multiprocess_harness legacy_admin_wait_until_stable_probe_reports_bootstrap_progress -- --nocapture` plus focused server bootstrap tests | Own the bootstrap-response fix through targeted tests and the new fast admin probe until the client sends a second request or the next exact mismatch is captured. | `advance` |
 
 ## Progress
 
@@ -233,22 +233,25 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 07:10Z) Reread the refreshed `autoplan` references and
   updated the effort to favor larger fork-owned work with explicit fast proxy
   validators instead of single short-lived implementation passes.
-- [ ] Relaunch the effort with parallel fork owners for the bootstrap fix and
-  the fast admin probe harness, while a watchdog supervises the root files.
+- [x] (2026-03-27 07:15Z) Rearmed the watchdog, launched two larger fork-owned
+  workstreams in parallel, and let them run long enough to manage their own
+  loops.
+- [x] (2026-03-27 07:20Z) Reconciled `6f061b3` (`Add legacy admin bootstrap
+  probe harness`), which puts a fast live-admin progress check on `main` while
+  the product worker continues on the bootstrap fix.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
-Keep more than one meaningful owner active at once. The main product thread is
-still the legacy bootstrap-response mismatch, but root also needs a faster
-cluster-plus-admin probe loop so the product worker can measure changes
-without waiting on the full workspace or `hyhac`.
+Keep the product worker moving on the bootstrap-response fix while the new fast
+admin-probe harness on `main` acts as the shortest trustworthy signal for
+whether the C admin client advances.
 
 ## Next Root Move
 
-Arm the watchdog, launch the larger live bootstrap worker and the parallel
-admin-probe-harness worker, and then reconcile the first completed result
-without letting the other owner go idle.
+Reconcile the live bootstrap worker as soon as it returns a real code result,
+using the new fast admin-probe harness as the first check before falling back
+to broader validation and `hyhac`.
 
 ## Surprises & Discoveries
 
@@ -312,6 +315,11 @@ without letting the other owner go idle.
   `autoplan` guidance.
   Evidence: only one workstream was marked active, the board lacked an owner
   column, and the fast proxy loop for the live admin path was not named.
+- Observation: the new multiprocess harness result shortens the live admin
+  measurement path materially.
+  Evidence: `6f061b3` adds a targeted test that boots real Rust processes,
+  drives the original admin client, and reports `advanced=false` in one fast
+  command instead of a manual captured-wire sequence.
 - Observation: the packed-space and request-core gap is now closed.
   Evidence: `df633ac` adds `decode_packed_hyperdex_space`,
   `ReplicantAdminRequestMessage::into_coordinator_request`, focused protocol

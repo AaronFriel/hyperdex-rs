@@ -63,18 +63,20 @@ changes can be judged without waiting on a full `hyhac` run.
 - [x] (2026-03-27 07:10Z) Reopened this workstream as an active parallel owner
   because the live admin path needs a faster cluster-plus-admin proxy loop than
   the current manual probe sequence.
+- [x] (2026-03-27 07:20Z) Reconciled `6f061b3` (`Add legacy admin bootstrap
+  probe harness`), which adds a focused process-level admin progress test to
+  `dist_multiprocess_harness`.
 
 ## Current Hypothesis
 
-The current product thread is blocked on a low-level admin wire mismatch, but
-its strongest validator is still too slow and too manual. A targeted harness
-test that boots the real Rust processes and drives one real admin probe should
-shorten that loop without overlapping the product-code fix.
+The fast admin-probe harness is now on `main`, so this workstream is back in a
+good holding state. The next change here should come from a newly observed
+cluster-validation problem rather than more speculative harness growth.
 
 ## Next Bounded Step
 
-Build the fast free-port coordinator-plus-daemon admin probe harness and prove
-that it can tell whether the original C admin client advances beyond bootstrap.
+Hold until the product worker or a new real-cluster failure requires another
+harness change.
 
 ## Surprises & Discoveries
 
@@ -87,6 +89,10 @@ that it can tell whether the original C admin client advances beyond bootstrap.
   Evidence: the most recent legacy-admin narrowing came from an external
   captured-wire run rather than a quick repeatable test under
   `dist_multiprocess_harness`.
+- Observation: the new harness confirms the current bug directly from a fast
+  test.
+  Evidence: the targeted test prints `advanced=false` and captures
+  `first_server=ClientResponse` after the bootstrap exchange.
 
 ## Decision Log
 
@@ -103,6 +109,5 @@ that it can tell whether the original C admin client advances beyond bootstrap.
   process-spawning multiprocess tests without touching product code.
 - `faa6cb6` replaced ephemeral port reuse and log-text waits with held port
   reservations plus protocol-based readiness checks.
-- The next useful outcome here is not more generic cleanup. It is a fast live
-  admin probe loop that the product worker can trust while iterating on the
-  bootstrap reply.
+- `6f061b3` adds that fast live admin probe loop, and the strongest next use of
+  this workstream is to wait until another real harness gap appears.

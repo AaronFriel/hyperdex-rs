@@ -149,6 +149,9 @@ stronger live probe before returning control.
 - [x] (2026-03-27 07:10Z) Reframed the next step around larger fork ownership:
   one worker should own the bootstrap fix end to end with its own fast checks
   and live probe loop, not hand back another tiny partial result.
+- [x] (2026-03-27 07:20Z) The fast proxy loop is now on `main`:
+  `6f061b3` adds a focused admin bootstrap-progress harness test that reports
+  `advanced=false` on current `main`.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
@@ -156,9 +159,9 @@ stronger live probe before returning control.
 The request core, session core, packed-space decoder hardening, same-port
 startup, binary config encoding, and daemon join are now on `main`. The next
 concrete gap is the exact compatibility of the first Replicant bootstrap
-response, and the fastest useful measurement is a focused server bootstrap test
-plus a bounded captured-wire `hyperdex-add-space` probe rather than a full
-`hyhac` run.
+response, and the fastest useful measurement is now the focused
+`dist_multiprocess_harness` bootstrap-progress test plus server bootstrap tests
+rather than a full `hyhac` run.
 
 ## Next Bounded Step
 
@@ -262,6 +265,11 @@ test if the admin probes advance.
   Evidence: the prior step stopped after narrowing the mismatch, but no forked
   worker stayed in control long enough to both patch the bootstrap reply and
   drive the live probe loop to the next concrete result.
+- Observation: the faster proxy loop now reproduces the current bug from a
+  single test target on `main`.
+  Evidence: `6f061b3` adds
+  `legacy_admin_wait_until_stable_probe_reports_bootstrap_progress`, and it
+  reports `advanced=false` with `first_server=ClientResponse`.
 - Observation: the service-core portion of that session layer is no longer
   hypothetical; it is on `main` and validated locally.
   Evidence: `78162d5` adds `CoordinatorAdminLegacyService`, focused server
