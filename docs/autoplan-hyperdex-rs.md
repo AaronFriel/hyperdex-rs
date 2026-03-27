@@ -91,8 +91,9 @@ One bounded design-or-implementation step with validation and a recorded verdict
 The runtime now preserves logical degraded reads in fixed integration tests, in
 one deterministic `turmoil` simulation, and in one deterministic `madsim`
 simulation. The requested Hegel path is now viable and integrated for one real
-memory-engine sequence model, so the next limiting gap is scope: Hegel still
-does not exercise the higher-level single-node client runtime surface.
+memory-engine sequence model and the single-node runtime client surface, so the
+next limiting gap is distributed scope: Hegel still does not exercise the
+multi-runtime routing and replication path.
 
 ## Milestones
 
@@ -197,19 +198,21 @@ does not exercise the higher-level single-node client runtime surface.
   Hegel's `uv` requirement.
 - Done: `simulation-harness` now includes a Hegel-backed stateful operation
   sequence over put/delete/get transitions in the memory engine.
-- Known gap: Hegel still does not cover the higher-level single-node
-  `ClusterRuntime` client surface, so property coverage above the raw memory
-  engine remains shallow.
+- Done: `simulation-harness` now includes a Hegel-backed single-node
+  `ClusterRuntime` sequence model for put/get/delete/count behavior.
+- Known gap: Hegel still does not cover distributed runtime behavior, so the
+  routing and replication path remains validated only by fixed tests plus the
+  deterministic scheduler simulations.
 - Active: dedicated worktrees are now producing distributed control-plane,
   distributed data-plane, and multiprocess validation changes in parallel.
-- Next: extend Hegel coverage from the memory engine to the single-node client
-  runtime surface in `simulation-harness`.
+- Next: extend Hegel coverage from the single-node runtime to a small
+  distributed multi-runtime routing property in `simulation-harness`.
 
 ## Next Bounded Iteration
 
-Add a Hegel-backed single-node `ClusterRuntime` operation-sequence property in
-`simulation-harness` so Hegel covers put/get/delete/count behavior one layer
-above the raw memory engine.
+Add a Hegel-backed distributed multi-runtime property in `simulation-harness`
+so Hegel covers routed put/get behavior one layer above the single-node
+runtime.
 
 ## Loop Ledger
 
@@ -258,3 +261,4 @@ above the raw memory engine.
 | 41 | After the `turmoil` proof, the next missing simulation surface is `madsim`, because the user explicitly asked for both deterministic schedulers and the degraded-read proof should survive the second runtime as well. | Add a cfg-gated `madsim` degraded-read proof to `simulation-harness`, keep default workspace builds clean by registering `cfg(madsim)` with Cargo check-cfg, generalize the degraded-read target selection so it follows actual placement instead of assuming one fixed primary, and revalidate the default harness, the explicit `madsim` path, `server`, and the full workspace. | `cargo test -p simulation-harness` passes; `RUSTFLAGS='--cfg madsim' cargo test -p simulation-harness madsim_preserves_degraded_read_correctness_after_one_node_loss -- --nocapture` passes; `cargo test -p server` passes; `cargo test --workspace` passes, proving the degraded `Get`, `Search`, and `Count` path under both deterministic simulation runtimes plus the existing process harness. | Confirmed. | advance | Confirm the requested Hegel property-testing path and either land a first property check with it or record an evidence-backed reframe if no practical Rust Hegel crate exists. |
 | 42 | After the `madsim` proof, the next open testing request is the Hegel property path, because the user asked for it explicitly and the harness still relied on `proptest` alone for property-level confidence. | Confirm the practical Rust Hegel crate and host prerequisites, add `hegeltest` as a dev dependency under the exported crate name `hegel`, land one generated latest-write-wins property in `simulation-harness`, and revalidate the targeted Hegel test, the full harness crate, and the full workspace. | `cargo search hegel --limit 10` shows `hegeltest` as the Rust property-testing crate; `cargo info hegeltest` reports version `0.2.6`; `uv --version` returns `uv 0.6.6`; `cargo test -p simulation-harness hegel_memory_engine_tracks_latest_write_per_key -- --nocapture` passes; `cargo test -p simulation-harness` passes; `cargo test --workspace` passes. | Confirmed. | advance | Extend Hegel coverage to a stateful operation-sequence model so it overlaps the existing `proptest` model instead of remaining a single-property smoke test. |
 | 43 | After the first Hegel smoke test, the next missing depth is a real stateful sequence model, because one generated write property still left the richer evolving-key behavior to `proptest` alone. | Replace the write-only Hegel check with a stateful put/delete/get sequence model, make Hegel use an explicit `HEGEL_SERVER_COMMAND` pinned to a temp-installed `hegel-core` binary instead of relying on the crate-local bootstrap path, revalidate `simulation-harness`, and rerun the full workspace. | `cargo test -p simulation-harness` passes with `hegel_memory_engine_matches_stateful_sequence_model`; `cargo test --workspace` passes; the Hegel server bootstrap now installs to `/tmp/hyperdex-rs-hegel-core-0.2.3/venv` and no longer depends on a fragile crate-local `.hegel/venv` bootstrap. | Confirmed. | advance | Extend Hegel coverage to the single-node `ClusterRuntime` client surface so property checks move one layer above the raw memory engine. |
+| 44 | After the Hegel memory-engine sequence model, the next missing scope is the single-node runtime surface, because property checks should also cover the client API layer that maps requests into the runtime and storage engine. | Add a single-node runtime fixture to `simulation-harness`, land a Hegel-backed put/get/delete/count sequence property over `HyperdexClientService::handle`, revalidate `simulation-harness`, and rerun the full workspace. | `cargo test -p simulation-harness` passes with `hegel_single_node_runtime_matches_sequence_model`; `cargo test --workspace` passes; the Hegel-backed sequence now covers both the raw memory engine and the single-node runtime client surface. | Confirmed. | advance | Extend Hegel coverage to a small distributed multi-runtime routing property so routed client behavior is also covered by generated tests. |
