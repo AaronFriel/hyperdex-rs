@@ -6,6 +6,9 @@ version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(madsim)"] }
+
 [dependencies]
 bytes.workspace = true
 cluster-config = { path = "../cluster-config" }
@@ -23,6 +26,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 hyperdex-admin-protocol = { path = "../hyperdex-admin-protocol" }
 hyperdex-client-protocol = { path = "../hyperdex-client-protocol" }
+madsim = "0.2.34"
 proptest.workspace = true
 server = { path = "../server" }
 transport-core = { path = "../transport-core" }

@@ -127,6 +127,21 @@ mod tests {
         }
     }
 
+    fn degraded_read_target(
+        runtime1: &Arc<ClusterRuntime>,
+        runtime2: &Arc<ClusterRuntime>,
+        prefix: &str,
+    ) -> (Arc<ClusterRuntime>, u64, String) {
+        (0..65536)
+            .map(|i| format!("{prefix}-{i}"))
+            .find_map(|key| match runtime1.route_primary(key.as_bytes()).unwrap() {
+                1 => Some((runtime2.clone(), 1, key)),
+                2 => Some((runtime1.clone(), 2, key)),
+                _ => None,
+            })
+            .expect("expected a key routed to either cluster node")
+    }
+
     #[async_trait]
     impl ClusterTransport for SimTransport {
         async fn send(
@@ -257,10 +272,8 @@ mod tests {
             .await
             .unwrap();
 
-            let degraded_key = (0..4096)
-                .map(|i| format!("sim-degraded-{i}"))
-                .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
-                .expect("expected a key routed to node 2");
+            let (survivor_runtime, unavailable_node, degraded_key) =
+                degraded_read_target(&runtime1, &runtime2, "sim-degraded");
 
             for (key, views) in [
                 (degraded_key.clone(), 11_i64),
@@ -286,11 +299,11 @@ mod tests {
             }
 
             tokio::time::sleep(Duration::from_millis(5)).await;
-            transport.set_unavailable(2, true).await;
+            transport.set_unavailable(unavailable_node, true).await;
             tokio::time::sleep(Duration::from_millis(5)).await;
 
             let get = HyperdexClientService::handle(
-                runtime1.as_ref(),
+                survivor_runtime.as_ref(),
                 ClientRequest::Get {
                     space: "profiles".to_owned(),
                     key: Bytes::from(degraded_key.clone().into_bytes()),
@@ -301,7 +314,7 @@ mod tests {
             assert!(matches!(get, ClientResponse::Record(Some(_))));
 
             let search = HyperdexClientService::handle(
-                runtime1.as_ref(),
+                survivor_runtime.as_ref(),
                 ClientRequest::Search {
                     space: "profiles".to_owned(),
                     checks: vec![Check {
@@ -332,7 +345,7 @@ mod tests {
             );
 
             let count = HyperdexClientService::handle(
-                runtime1.as_ref(),
+                survivor_runtime.as_ref(),
                 ClientRequest::Count {
                     space: "profiles".to_owned(),
                     checks: vec![Check {
@@ -350,6 +363,147 @@ mod tests {
         });
 
         sim.run().unwrap();
+    }
+
+    #[cfg(madsim)]
+    #[test]
+    fn madsim_preserves_degraded_read_correctness_after_one_node_loss() {
+        let runtime = madsim::runtime::Runtime::with_seed_and_config(7, madsim::Config::default());
+
+        runtime.block_on(async move {
+            let config = ClusterConfig {
+                nodes: vec![
+                    ClusterNode {
+                        id: 1,
+                        host: "node1".to_owned(),
+                        control_port: 1001,
+                        data_port: 2001,
+                    },
+                    ClusterNode {
+                        id: 2,
+                        host: "node2".to_owned(),
+                        control_port: 1002,
+                        data_port: 2002,
+                    },
+                ],
+                replicas: 2,
+                internode_transport: TransportBackend::Grpc,
+                ..ClusterConfig::default()
+            };
+
+            let transport = Arc::new(SimTransport::default());
+
+            let mut runtime1 = ClusterRuntime::for_node(config.clone(), 1).unwrap();
+            runtime1.install_cluster_transport(transport.clone(), TransportRuntime::Grpc);
+            let runtime1 = Arc::new(runtime1);
+
+            let mut runtime2 = ClusterRuntime::for_node(config.clone(), 2).unwrap();
+            runtime2.install_cluster_transport(transport.clone(), TransportRuntime::Grpc);
+            let runtime2 = Arc::new(runtime2);
+
+            transport.register(1, runtime1.clone()).await;
+            transport.register(2, runtime2.clone()).await;
+
+            HyperdexAdminService::handle(
+                runtime1.as_ref(),
+                AdminRequest::CreateSpaceDsl(profiles_schema()),
+            )
+            .await
+            .unwrap();
+            HyperdexAdminService::handle(
+                runtime2.as_ref(),
+                AdminRequest::CreateSpaceDsl(profiles_schema()),
+            )
+            .await
+            .unwrap();
+
+            let (survivor_runtime, unavailable_node, degraded_key) =
+                degraded_read_target(&runtime1, &runtime2, "madsim-degraded");
+
+            for (key, views) in [
+                (degraded_key.clone(), 11_i64),
+                ("madsim-search-a".to_owned(), 7_i64),
+                ("madsim-search-b".to_owned(), 9_i64),
+                ("madsim-search-survivor".to_owned(), 1_i64),
+            ] {
+                let response = HyperdexClientService::handle(
+                    runtime1.as_ref(),
+                    ClientRequest::Put {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(key.into_bytes()),
+                        mutations: vec![Mutation::Numeric {
+                            attribute: "profile_views".to_owned(),
+                            op: data_model::NumericOp::Add,
+                            operand: views,
+                        }],
+                    },
+                )
+                .await
+                .unwrap();
+                assert_eq!(response, ClientResponse::Unit);
+            }
+
+            madsim::time::sleep(Duration::from_millis(5)).await;
+            transport.set_unavailable(unavailable_node, true).await;
+            madsim::time::sleep(Duration::from_millis(5)).await;
+
+            let get = HyperdexClientService::handle(
+                survivor_runtime.as_ref(),
+                ClientRequest::Get {
+                    space: "profiles".to_owned(),
+                    key: Bytes::from(degraded_key.clone().into_bytes()),
+                },
+            )
+            .await
+            .unwrap();
+            assert!(matches!(get, ClientResponse::Record(Some(_))));
+
+            let search = HyperdexClientService::handle(
+                survivor_runtime.as_ref(),
+                ClientRequest::Search {
+                    space: "profiles".to_owned(),
+                    checks: vec![Check {
+                        attribute: "profile_views".to_owned(),
+                        predicate: Predicate::GreaterThanOrEqual,
+                        value: Value::Int(5),
+                    }],
+                },
+            )
+            .await
+            .unwrap();
+            let ClientResponse::SearchResult(records) = search else {
+                panic!("expected search results");
+            };
+
+            let mut keys: Vec<Vec<u8>> = records
+                .into_iter()
+                .map(|record| record.key.to_vec())
+                .collect();
+            keys.sort();
+            assert_eq!(
+                keys,
+                vec![
+                    degraded_key.as_bytes().to_vec(),
+                    b"madsim-search-a".to_vec(),
+                    b"madsim-search-b".to_vec()
+                ]
+            );
+
+            let count = HyperdexClientService::handle(
+                survivor_runtime.as_ref(),
+                ClientRequest::Count {
+                    space: "profiles".to_owned(),
+                    checks: vec![Check {
+                        attribute: "profile_views".to_owned(),
+                        predicate: Predicate::GreaterThanOrEqual,
+                        value: Value::Int(5),
+                    }],
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(count, ClientResponse::Count(3));
+        });
     }
 
     proptest! {
