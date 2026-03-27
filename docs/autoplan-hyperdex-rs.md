@@ -121,7 +121,7 @@ split, sequencing, or validator set needs to change.
 | Workstream | Status | Owner | Dependencies / Blockers | Plan | Ledger | Worktree / Branch | Fastest Useful Check | Next Step | Latest Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
-| `multiprocess-harness` | active | forked worker in `clientgarbage-probe` worktree | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-probe` on `clientgarbage-probe` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` | Capture the first bad daemon-path request/response pair around the large-object repro so the product worker gets wire-level evidence, not only a smaller failing subset. | `advance` |
+| `multiprocess-harness` | active | forked worker in `clientgarbage-wire` worktree | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` | Capture the first bad daemon-path request/response pair around the large-object repro so the product worker gets wire-level evidence, not only a smaller failing subset. | `retry` |
 | `live-hyhac` | active | forked worker in `live-hyhac-data-plane` worktree | Coordinator bootstrap and admin compatibility are now working on `main`, but the legacy daemon request/response path still returns `ClientGarbage` once `hyhac` reaches pooled roundtrips and richer client operations. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on `live-hyhac-data-plane` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused server tests | Own the legacy daemon data-path compatibility step until the large-object `ClientGarbage` failure and the earlier pooled/client operations stop failing, or the next exact mismatch is captured. | `advance` |
 
 ## Progress
@@ -251,6 +251,10 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 07:50Z) Reopened the harness workstream immediately so the
   daemon-path fix still has two active owners: one on product code, one on
   wire-level repro evidence around the new fast large-object failure.
+- [x] (2026-03-27 19:49Z) Retired the first wire-capture harness retry after
+  the interrupted worker left unrelated product files dirty in the old
+  worktree, then preregistered a fresh harness owner on a clean replacement
+  worktree.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
@@ -263,8 +267,9 @@ admin/bootstrap layer is no longer the blocker.
 ## Next Root Move
 
 Keep both daemon-path owners active: the product worker should use the new fast
-large-object `ClientGarbage` repro first, and the harness worker should return
-wire-level evidence for the first bad request/response pair on that path.
+large-object `ClientGarbage` repro first, and the replacement harness worker in
+`clientgarbage-wire` should return wire-level evidence for the first bad
+request/response pair on that path.
 
 ## Surprises & Discoveries
 
@@ -343,6 +348,14 @@ wire-level evidence for the first bad request/response pair on that path.
   the earlier selected `hyhac` command suggested.
   Evidence: `0b2379d` shows `*Can store a large object*` is enough to reproduce
   `Left ClientGarbage`, and that failure appears before later pooled failures.
+- Observation: the first wire-capture harness retry drifted outside its owned
+  surface and could not be reconciled safely.
+  Evidence: `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-probe`
+  now has unrelated edits in `crates/consensus-core/src/lib.rs`,
+  `crates/data-model/src/lib.rs`, `crates/engine-memory/src/lib.rs`,
+  `crates/hyperdex-admin-protocol/src/lib.rs`, `crates/legacy-frontend/src/lib.rs`,
+  `crates/legacy-protocol/src/lib.rs`, `crates/server/src/lib.rs`, and
+  `crates/simulation-harness/src/lib.rs`.
 - Observation: the packed-space and request-core gap is now closed.
   Evidence: `df633ac` adds `decode_packed_hyperdex_space`,
   `ReplicantAdminRequestMessage::into_coordinator_request`, focused protocol

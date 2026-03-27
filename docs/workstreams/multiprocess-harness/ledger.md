@@ -219,3 +219,54 @@
   - a fast repro that also reports the first bad request/response edge
   - clearer evidence for the daemon-path product worker
   - one bounded commit ready for reconciliation
+
+### Entry `mph-005` - Outcome
+
+- Timestamp: `2026-03-27 19:49Z`
+- Kind: `outcome`
+- End commit: `d12c23c`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-probe`
+- Evidence summary:
+  - the interrupted worker is no longer active
+  - `git status --short --branch` in the old worktree shows unrelated edits in
+    `crates/consensus-core/src/lib.rs`, `crates/data-model/src/lib.rs`,
+    `crates/engine-memory/src/lib.rs`, `crates/hyperdex-admin-protocol/src/lib.rs`,
+    `crates/legacy-frontend/src/lib.rs`, `crates/legacy-protocol/src/lib.rs`,
+    `crates/server/src/lib.rs`, and `crates/simulation-harness/src/lib.rs`
+  - no bounded harness-only commit was produced
+- Conclusion: the first wire-capture retry did not stay inside its owned
+  harness surface, so it cannot be reconciled safely and must be replaced on a
+  clean worktree.
+- Disposition: `retry`
+- Next move: preregister and launch the same wire-capture goal on a fresh
+  `clientgarbage-wire` worktree from clean `main`.
+
+### Entry `mph-006` - Preregistration
+
+- Timestamp: `2026-03-27 19:49Z`
+- Kind: `preregister`
+- Hypothesis: repeating the same large-object wire-capture goal on a fresh
+  clean worktree will produce bounded harness evidence without polluting
+  product files outside the harness-owned surface.
+- Owner: next forked worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire`
+- Start commit: `d12c23c`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on
+    `clientgarbage-wire`
+- Mutable surface:
+  - `Cargo.toml`
+  - `crates/server/Cargo.toml`
+  - `crates/server/tests/**`
+  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+    is strictly necessary
+- Validator:
+  - fastest useful check: `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
+  - strong checks:
+    - `cargo test -p server --test dist_multiprocess_harness -- --nocapture`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - a fast repro that also reports the first bad request/response edge
+  - clearer daemon-path evidence for the product worker
+  - one bounded harness-only commit ready for reconciliation

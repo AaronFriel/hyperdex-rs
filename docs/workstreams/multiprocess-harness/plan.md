@@ -76,13 +76,17 @@ waiting on the whole Haskell path every time.
 - [x] (2026-03-27 07:50Z) Reopened this workstream again right after landing
   the fast repro because the product worker still needs wire-level evidence for
   the first bad request/response pair on that same large-object path.
+- [x] (2026-03-27 19:49Z) Retired the first wire-capture retry after the
+  interrupted worker left unrelated product files dirty in the old worktree,
+  then moved the same goal onto a clean replacement worktree.
 
 ## Current Hypothesis
 
 The short `ClientGarbage` repro is now on `main`, but the product worker still
-only has a smaller failing subset, not the first bad request/response pair.
-This workstream should now capture that wire-level evidence without taking over
-the product fix itself.
+only has a smaller failing subset, not the first bad request/response pair. The
+first wire-capture retry drifted across unrelated product files, so the same
+goal is now relaunched on a clean replacement worktree. This workstream should
+capture that wire-level evidence without taking over the product fix itself.
 
 ## Next Bounded Step
 
@@ -117,6 +121,11 @@ Capture the first bad daemon-path request/response pair around the large-object
   Evidence: the landed tests prove the public failure quickly, but they stop at
   the failing subset rather than capturing the first bad legacy data-plane
   exchange.
+- Observation: the first retry for wire-level capture did not stay inside the
+  harness-owned surface.
+  Evidence: the interrupted `clientgarbage-probe` worktree ended with edits in
+  product files outside `crates/server/tests/**`, including
+  `crates/server/src/lib.rs` and several other core crates.
 
 ## Decision Log
 
@@ -138,3 +147,6 @@ Capture the first bad daemon-path request/response pair around the large-object
 - `0b2379d` delivers that shorter repro, so this workstream can wait again
   unless the product worker benefits from wire-level evidence on that same
   path. That is the current bounded step.
+- The first wire-capture retry produced no bounded harness result because the
+  worktree drifted outside its owned surface. The replacement attempt is now
+  explicitly tied to a fresh worktree before any further code is trusted.
