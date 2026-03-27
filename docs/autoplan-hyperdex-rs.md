@@ -90,8 +90,9 @@ One bounded design-or-implementation step with validation and a recorded verdict
 
 The runtime now preserves logical degraded reads in fixed integration tests, in
 one deterministic `turmoil` simulation, and in one deterministic `madsim`
-simulation. The next limiting gap is the requested Hegel-based property path,
-because the current property coverage still depends on `proptest` alone.
+simulation. The requested Hegel path is now viable and integrated for one real
+memory-engine property, so the next limiting gap is depth: the richer
+operation-sequence model still lives only in `proptest`.
 
 ## Milestones
 
@@ -191,18 +192,21 @@ because the current property coverage still depends on `proptest` alone.
 - Done: distributed delete-group now converges across replicas too, with a
   focused proof that matching records disappear from every replica while
   non-matching records survive.
-- Known gap: the current property coverage still relies on `proptest`, and the
-  requested Hegel-based path is not yet confirmed or integrated.
+- Done: `simulation-harness` now includes a first Hegel-backed property test
+  for latest-write-wins behavior in the memory engine, and this host satisfies
+  Hegel's `uv` requirement.
+- Known gap: the richer operation-sequence model is still only covered by
+  `proptest`; Hegel coverage does not yet exercise stateful sequences.
 - Active: dedicated worktrees are now producing distributed control-plane,
   distributed data-plane, and multiprocess validation changes in parallel.
-- Next: confirm the requested Hegel property-testing path and either land a
-  first property check with it or record an evidence-backed reframe.
+- Next: extend Hegel coverage from one generated write property to a stateful
+  operation-sequence model in `simulation-harness`.
 
 ## Next Bounded Iteration
 
-Confirm the requested Hegel property-testing path and either add a first
-property-based check with it in `simulation-harness` or record a bounded
-reframe if no practical Rust Hegel crate exists.
+Add a Hegel-backed stateful operation-sequence property in `simulation-harness`
+so Hegel covers the same kind of evolving key/value behavior that is currently
+only modeled under `proptest`.
 
 ## Loop Ledger
 
@@ -249,3 +253,4 @@ reframe if no practical Rust Hegel crate exists.
 | 39 | After degraded multi-record reads work in the gRPC runtime harness, the next missing proof is the real coordinator-plus-daemons process surface, because the user asked for a real distributed system rather than only in-process correctness. | Add a coordinator-plus-daemons harness test that writes replicated data, shuts down one daemon process, and verifies the surviving daemon still returns the expected logical legacy search results and total count, then revalidate `server` and the full workspace. | `cargo test -p server --test dist_multiprocess_harness degraded_search_and_count_survive_one_daemon_process_shutdown -- --nocapture` passes; `cargo test -p server` passes; `cargo test --workspace` passes, proving degraded search and count through the real daemon-process harness. | Confirmed. | advance | Add deterministic simulation coverage for degraded `Get`, `Search`, and `Count`. |
 | 40 | After real-process degraded-read proof, the next missing coverage is deterministic failure simulation, because integration tests alone do not vary node-loss timing cheaply enough to harden the behavior. | Add a `turmoil` simulation with a shared fake transport and two real `ClusterRuntime` instances, inject one node failure after replicated writes, prove degraded `Get`, `Search`, and `Count` still return the expected logical results, add the minimal simulation-harness dependencies needed for that runtime-level proof, harden the process harness readiness check to wait on the daemon control port instead of a log line, and revalidate `simulation-harness`, `server`, and the full workspace. | `cargo test -p simulation-harness` passes with `turmoil_preserves_degraded_read_correctness_after_one_node_loss`; `cargo test -p server` passes after replacing the flaky daemon gRPC log wait with a control-port readiness probe; `cargo test --workspace` passes. | Confirmed. | advance | Add `madsim` degraded-read coverage and compare it against the existing `turmoil` and real-process proofs. |
 | 41 | After the `turmoil` proof, the next missing simulation surface is `madsim`, because the user explicitly asked for both deterministic schedulers and the degraded-read proof should survive the second runtime as well. | Add a cfg-gated `madsim` degraded-read proof to `simulation-harness`, keep default workspace builds clean by registering `cfg(madsim)` with Cargo check-cfg, generalize the degraded-read target selection so it follows actual placement instead of assuming one fixed primary, and revalidate the default harness, the explicit `madsim` path, `server`, and the full workspace. | `cargo test -p simulation-harness` passes; `RUSTFLAGS='--cfg madsim' cargo test -p simulation-harness madsim_preserves_degraded_read_correctness_after_one_node_loss -- --nocapture` passes; `cargo test -p server` passes; `cargo test --workspace` passes, proving the degraded `Get`, `Search`, and `Count` path under both deterministic simulation runtimes plus the existing process harness. | Confirmed. | advance | Confirm the requested Hegel property-testing path and either land a first property check with it or record an evidence-backed reframe if no practical Rust Hegel crate exists. |
+| 42 | After the `madsim` proof, the next open testing request is the Hegel property path, because the user asked for it explicitly and the harness still relied on `proptest` alone for property-level confidence. | Confirm the practical Rust Hegel crate and host prerequisites, add `hegeltest` as a dev dependency under the exported crate name `hegel`, land one generated latest-write-wins property in `simulation-harness`, and revalidate the targeted Hegel test, the full harness crate, and the full workspace. | `cargo search hegel --limit 10` shows `hegeltest` as the Rust property-testing crate; `cargo info hegeltest` reports version `0.2.6`; `uv --version` returns `uv 0.6.6`; `cargo test -p simulation-harness hegel_memory_engine_tracks_latest_write_per_key -- --nocapture` passes; `cargo test -p simulation-harness` passes; `cargo test --workspace` passes. | Confirmed. | advance | Extend Hegel coverage to a stateful operation-sequence model so it overlaps the existing `proptest` model instead of remaining a single-property smoke test. |
