@@ -1944,6 +1944,60 @@
 - Next move: wait for `cce-015` to name the exact remaining coordinator-side
   mismatch, then relaunch product work on that narrower target.
 
+### Entry `hyh-042` - Preregistration
+
+- Timestamp: `2026-03-27 23:46Z`
+- Kind: `preregister`
+- Hypothesis: a product pass that verifies the native HyperDex client path
+  against the same Rust cluster and compares it with Hyhac’s deferred
+  handle/completion path will expose the remaining public contract mismatch
+  before the first daemon request, and that differential will either produce a
+  fix or one exact blocker.
+- Owner: next delegated product worker
+- Start commit: `a618ea0`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
+    on `live-hyhac-post-follow`
+- Mutable surface:
+  - `crates/server/**`
+  - `crates/server/tests/**`
+  - `/home/friel/c/aaronfriel/hyhac/**` only if a tiny focused probe helper is
+    strictly necessary and does not change Hyhac semantics
+- Validator:
+  - fastest useful checks:
+    - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_no_daemon_traffic_after_startup -- --nocapture`
+    - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
+  - strong checks:
+    - `cargo test -p server`
+    - any tighter differential probe added for native client versus Hyhac
+- Expected artifacts:
+  - a verified differential between native HyperDex client behavior and Hyhac’s
+    deferred-handle path against the same live Rust cluster
+  - a commit that fixes the remaining public contract or one exact blocker
+
+### Entry `hyh-043` - Preregistration
+
+- Timestamp: `2026-03-27 23:49Z`
+- Kind: `preregister`
+- Hypothesis: a parallel read-only pass over the original HyperDex client loop
+  and Hyhac’s `clientDeferred` / `wrapDeferred` / `demandHandle` path will map
+  the exact handle/completion contract the product worker must satisfy or
+  probe, without waiting for another broad implementation attempt.
+- Owner: next delegated read-only worker
+- Start commit: `a618ea0`
+- Worktree / branch:
+  - none required; read-only evidence gathering only
+- Mutable surface:
+  - none
+- Validator:
+  - concrete mapping between original HyperDex client handle lifecycle and
+    Hyhac’s deferred wrapper path on the failing large-object operation
+  - exact file/function pointers for the first point where Hyhac can surface
+    `ClientGarbage` before any daemon request is emitted
+- Expected artifacts:
+  - a precise handle/completion map for native client versus Hyhac
+  - a tighter next target for `hyh-042`
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`

@@ -122,8 +122,8 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | root | None; `69d5918` already proved the fast Hyhac failure loops only through coordinator identify/bootstrap traffic on the cleaned baseline, so this workstream can pause again until another harness change is justified. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence -- --nocapture` | Hold until product or read-only comparison work needs another harness change. | `advance` |
-| `live-hyhac` | ready | root | `hyh-041` is reconciled on `main` and now proves the failing large-object Hyhac path still produces no daemon legacy traffic after startup. The next product change should wait for the exact coordinator-side post-follow mismatch from the active read-only comparison instead of guessing. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow` on `live-hyhac-post-follow` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_no_daemon_traffic_after_startup -- --nocapture` | Wait for `cce-015`, then relaunch product work on the exact remaining coordinator-side mismatch. | `advance` |
-| `coordinator-config-evidence` | active | `019d316c-58c6-7981-b76e-86a5a507a3a3` (`Nietzsche`) | `cce-013` is reconciled and `cce-014` was retired after it contradicted the corrected baseline; the new comparison starts from the observed post-bootstrap follow traffic on current `main`. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence -- --nocapture` | Name the first exact post-follow mismatch on the corrected baseline without reopening already-fixed bootstrap or interval issues. | `advance` |
+| `live-hyhac` | active | root-coordinated pair for `hyh-042` and `hyh-043` | `hyh-041` is reconciled on `main` and proves the failing large-object Hyhac path still produces no daemon legacy traffic after startup. `cce-015` now points the next product step at the client-side handle/completion contract that Hyhac exercises before any daemon request is emitted. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow` on `live-hyhac-post-follow` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_no_daemon_traffic_after_startup -- --nocapture` | Run one product pass and one read-only handle-map pass in parallel, both on the native-client-versus-Hyhac differential. | `advance` |
+| `coordinator-config-evidence` | ready | root | `cce-015` is finished. The stronger no-daemon-traffic proof and the source comparison move the remaining question out of coordinator follow/config behavior and toward the client-handle/completion contract that Hyhac wraps. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_no_daemon_traffic_after_startup -- --nocapture` | Hold until the next product pass needs another exact source comparison. | `advance` |
 
 ## Progress
 
@@ -372,24 +372,29 @@ split, sequencing, or validator set needs to change.
   traffic in hyhac probe`), which proves the focused large-object Hyhac path
   still reaches zero daemon legacy traffic after startup, so the next exact
   target remains coordinator-side post-follow behavior.
+- [x] (2026-03-27 23:46Z) Finished `cce-015`, which moved the remaining
+  question one step later again: the next product target is now the
+  HyperDex-client handle/completion contract that Hyhac wraps before any
+  daemon request is emitted.
 - [ ] Rerun the bounded live `hyhac` probe after the remaining large-object
   mismatch is fixed.
 
 ## Current Root Focus
 
 Drive the remaining focused large-object `ClientGarbage` failure on the
-corrected post-bootstrap baseline without reopening the daemon path too early.
-The coordinator no longer stops at bootstrap, but the newly integrated harness
-result proves the focused large-object Hyhac path still produces zero daemon
-legacy traffic after startup, so the next exact reduction remains on the
-coordinator-side post-follow behavior.
+corrected post-bootstrap baseline by moving from coordinator follow theory to
+the client-handle contract Hyhac actually wraps. The coordinator no longer
+stops at bootstrap, and the integrated no-daemon-traffic proof means the next
+exact reduction is now the handle/completion path before the first daemon
+request, not another daemon or follow/config guess.
 
 ## Next Root Move
 
-Use the corrected BusyBee proxy and the new no-daemon-traffic harness as the
-short coordinator-side checks. The next root action after this pass is to feed
-that new evidence into `Nietzsche`, wait for the exact post-follow mismatch,
-and then relaunch product work on that narrower target.
+Use the no-daemon-traffic harness as the short public check and relaunch the
+next differential in parallel: one product pass plus one read-only handle-map
+pass on native HyperDex client path versus Hyhac deferred handle path on the
+same live Rust cluster. The next root action after this pass is to launch both
+owners and then wait on them with a long timeout.
 
 ## Surprises & Discoveries
 
