@@ -28,3 +28,5 @@ tonic-build = "0.12"
 
 [dev-dependencies]
 cluster-config = { path = "../cluster-config" }
+legacy-frontend = { path = "../legacy-frontend" }
+legacy-protocol = { path = "../legacy-protocol" }

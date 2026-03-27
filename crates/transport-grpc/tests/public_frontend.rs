@@ -1,14 +1,21 @@
 use std::sync::Arc;
 
 use cluster_config::{ClusterConfig, ClusterNode, TransportBackend};
+use data_model::{Attribute as ModelAttribute, Check, Mutation, Predicate, Value as ModelValue};
+use hyperdex_admin_protocol::{AdminRequest, HyperdexAdminService};
+use hyperdex_client_protocol::{ClientRequest, ClientResponse, HyperdexClientService};
+use legacy_frontend::{request_once as legacy_request_once, LegacyFrontend};
+use legacy_protocol::{
+    AtomicRequest, AtomicResponse, GetRequest as LegacyGetRequest,
+    GetResponse as LegacyGetResponse, GetValue as LegacyGetValue, LegacyFuncall, LegacyFuncallName,
+    LegacyMessageType, LegacyReturnCode, RequestHeader, LEGACY_ATOMIC_FLAG_WRITE,
+};
 use server::bootstrap_runtime;
-use server::{ClusterRuntime, TransportRuntime};
+use server::{handle_legacy_request, ClusterRuntime, TransportRuntime};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
-use data_model::{Attribute as ModelAttribute, Check, Mutation, Predicate, Value as ModelValue};
-use hyperdex_client_protocol::{ClientRequest, ClientResponse, HyperdexClientService};
 use transport_core::{DataPlaneRequest, DataPlaneResponse, InternodeRequest, DATA_PLANE_METHOD};
 use transport_grpc::hyperdex::v1::hyperdex_admin_client::HyperdexAdminClient;
 use transport_grpc::hyperdex::v1::hyperdex_admin_server::HyperdexAdminServer;
@@ -249,6 +256,151 @@ async fn grpc_forwards_data_plane_requests_between_two_runtimes() {
 
     shutdown1.send(()).unwrap();
     shutdown2.send(()).unwrap();
+}
+
+#[tokio::test]
+async fn legacy_atomic_public_path_forwards_to_remote_primary_runtime() {
+    let grpc_listener1 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let grpc_addr1 = grpc_listener1.local_addr().unwrap();
+    let grpc_listener2 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let grpc_addr2 = grpc_listener2.local_addr().unwrap();
+
+    let config = ClusterConfig {
+        nodes: vec![
+            ClusterNode {
+                id: 1,
+                host: "127.0.0.1".to_owned(),
+                control_port: grpc_addr1.port(),
+                data_port: grpc_addr1.port(),
+            },
+            ClusterNode {
+                id: 2,
+                host: "127.0.0.1".to_owned(),
+                control_port: grpc_addr2.port(),
+                data_port: grpc_addr2.port(),
+            },
+        ],
+        internode_transport: TransportBackend::Grpc,
+        ..ClusterConfig::default()
+    };
+
+    let mut runtime1 = ClusterRuntime::for_node(config.clone(), 1).unwrap();
+    runtime1.install_cluster_transport(Arc::new(GrpcTransportAdapter), TransportRuntime::Grpc);
+    let runtime1 = Arc::new(runtime1);
+
+    let mut runtime2 = ClusterRuntime::for_node(config.clone(), 2).unwrap();
+    runtime2.install_cluster_transport(Arc::new(GrpcTransportAdapter), TransportRuntime::Grpc);
+    let runtime2 = Arc::new(runtime2);
+
+    HyperdexAdminService::handle(
+        runtime1.as_ref(),
+        AdminRequest::CreateSpaceDsl(profiles_schema()),
+    )
+    .await
+    .unwrap();
+    HyperdexAdminService::handle(
+        runtime2.as_ref(),
+        AdminRequest::CreateSpaceDsl(profiles_schema()),
+    )
+    .await
+    .unwrap();
+
+    let grpc_shutdown1 = serve_runtime(runtime1.clone(), grpc_listener1).await;
+    let grpc_shutdown2 = serve_runtime(runtime2.clone(), grpc_listener2).await;
+
+    let legacy_frontend1 = LegacyFrontend::bind("127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
+    let legacy_addr1 = legacy_frontend1.local_addr().unwrap();
+    let runtime1_for_legacy = runtime1.clone();
+    let legacy_server1 = tokio::spawn(async move {
+        legacy_frontend1
+            .serve_once_with(move |header, body| {
+                let runtime = runtime1_for_legacy.clone();
+                async move { handle_legacy_request(runtime.as_ref(), header, &body).await }
+            })
+            .await
+            .unwrap()
+    });
+
+    let legacy_frontend2 = LegacyFrontend::bind("127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
+    let legacy_addr2 = legacy_frontend2.local_addr().unwrap();
+    let runtime2_for_legacy = runtime2.clone();
+    let legacy_server2 = tokio::spawn(async move {
+        legacy_frontend2
+            .serve_once_with(move |header, body| {
+                let runtime = runtime2_for_legacy.clone();
+                async move { handle_legacy_request(runtime.as_ref(), header, &body).await }
+            })
+            .await
+            .unwrap()
+    });
+
+    let key = (0..4096)
+        .map(|i| format!("legacy-atomic-{i}"))
+        .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
+        .expect("expected a key routed to node 2");
+
+    let (atomic_header, atomic_body) = legacy_request_once(
+        legacy_addr1,
+        RequestHeader {
+            message_type: LegacyMessageType::ReqAtomic,
+            flags: 0,
+            version: 7,
+            target_virtual_server: 0,
+            nonce: 91,
+        },
+        &AtomicRequest {
+            flags: LEGACY_ATOMIC_FLAG_WRITE,
+            key: key.as_bytes().to_vec(),
+            checks: Vec::new(),
+            funcalls: vec![LegacyFuncall {
+                attribute: "profile_views".to_owned(),
+                name: LegacyFuncallName::NumAdd,
+                arg1: LegacyGetValue::Int(3),
+                arg2: None,
+            }],
+        }
+        .encode_body(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(atomic_header.message_type, LegacyMessageType::RespAtomic);
+    assert_eq!(
+        AtomicResponse::decode_body(&atomic_body).unwrap().status,
+        LegacyReturnCode::Success
+    );
+
+    let (get_header, get_body) = legacy_request_once(
+        legacy_addr2,
+        RequestHeader {
+            message_type: LegacyMessageType::ReqGet,
+            flags: 0,
+            version: 7,
+            target_virtual_server: 0,
+            nonce: 92,
+        },
+        &LegacyGetRequest {
+            key: key.as_bytes().to_vec(),
+        }
+        .encode_body(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(get_header.message_type, LegacyMessageType::RespGet);
+    let response = LegacyGetResponse::decode_body(&get_body).unwrap();
+    assert_eq!(response.status, LegacyReturnCode::Success);
+    assert!(response
+        .attributes
+        .iter()
+        .any(|attr| { attr.name == "profile_views" && attr.value == LegacyGetValue::Int(3) }));
+
+    legacy_server1.await.unwrap();
+    legacy_server2.await.unwrap();
+    grpc_shutdown1.send(()).unwrap();
+    grpc_shutdown2.send(()).unwrap();
 }
 
 #[tokio::test]
