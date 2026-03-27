@@ -223,8 +223,23 @@ mod tests {
     fn ensure_hegel_server_command() -> String {
         HEGEL_SERVER_COMMAND
             .get_or_init(|| {
-                let root = std::env::temp_dir().join("hyperdex-rs-hegel-core-0.2.3");
+                let root = std::env::temp_dir()
+                    .join(format!("hyperdex-rs-hegel-core-0.2.3-{}", std::process::id()));
                 let venv_dir = root.join("venv");
+                let hegel = venv_dir.join("bin/hegel");
+                let pyvenv_cfg = venv_dir.join("pyvenv.cfg");
+
+                if hegel.is_file() && pyvenv_cfg.is_file() {
+                    return hegel
+                        .to_str()
+                        .expect("hegel path must be utf-8")
+                        .to_owned();
+                }
+
+                if venv_dir.exists() && !pyvenv_cfg.is_file() {
+                    std::fs::remove_dir_all(&venv_dir).expect("remove invalid hegel venv dir");
+                }
+
                 std::fs::create_dir_all(&root).expect("create hegel temp dir");
 
                 let status = std::process::Command::new("uv")
@@ -243,7 +258,6 @@ mod tests {
                     .expect("run uv pip install");
                 assert!(status.success(), "uv pip install failed for {:?}", python);
 
-                let hegel = venv_dir.join("bin/hegel");
                 assert!(hegel.is_file(), "missing hegel binary at {:?}", hegel);
                 hegel
                     .to_str()
@@ -1016,6 +1030,134 @@ mod tests {
                 .await
                 .unwrap();
                 assert_eq!(primary_get, ClientResponse::Record(None));
+            });
+        })
+        .settings(hegel::Settings::new().test_cases(15))
+        .run();
+    }
+
+    #[test]
+    fn hegel_distributed_runtime_routes_conditional_put() {
+        let _guard = HEGEL_ENV_LOCK.lock().unwrap();
+        let hegel_server_command = ensure_hegel_server_command();
+        unsafe {
+            std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
+        }
+
+        hegel::Hegel::new(|tc: hegel::TestCase| {
+            let key_suffix: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(4095));
+            let initial_value_id: u16 =
+                tc.draw(hegel::generators::integers::<u16>().max_value(99));
+            let updated_value_id: u16 =
+                tc.draw(hegel::generators::integers::<u16>().max_value(99));
+            let failed_value_id: u16 =
+                tc.draw(hegel::generators::integers::<u16>().max_value(99));
+
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            runtime.block_on(async move {
+                let (runtime1, runtime2) = distributed_runtime_pair().await;
+                let routed_key = (0..65536)
+                    .map(|i| format!("conditional-{key_suffix}-{i}"))
+                    .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
+                    .expect("expected a key routed to node 2");
+                let initial_value = i64::from(initial_value_id);
+                let updated_value = i64::from(updated_value_id) + 100;
+                let failed_value = i64::from(failed_value_id) + 200;
+
+                let put = HyperdexClientService::handle(
+                    runtime1.as_ref(),
+                    ClientRequest::Put {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(routed_key.clone().into_bytes()),
+                        mutations: vec![Mutation::Set(Attribute {
+                            name: "profile_views".to_owned(),
+                            value: Value::Int(initial_value),
+                        })],
+                    },
+                )
+                .await
+                .unwrap();
+                assert_eq!(put, ClientResponse::Unit);
+
+                let success = HyperdexClientService::handle(
+                    runtime1.as_ref(),
+                    ClientRequest::ConditionalPut {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(routed_key.clone().into_bytes()),
+                        checks: vec![Check {
+                            attribute: "profile_views".to_owned(),
+                            predicate: Predicate::Equal,
+                            value: Value::Int(initial_value),
+                        }],
+                        mutations: vec![Mutation::Set(Attribute {
+                            name: "profile_views".to_owned(),
+                            value: Value::Int(updated_value),
+                        })],
+                    },
+                )
+                .await
+                .unwrap();
+                assert_eq!(success, ClientResponse::Unit);
+
+                let compare_failed = HyperdexClientService::handle(
+                    runtime1.as_ref(),
+                    ClientRequest::ConditionalPut {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(routed_key.clone().into_bytes()),
+                        checks: vec![Check {
+                            attribute: "profile_views".to_owned(),
+                            predicate: Predicate::Equal,
+                            value: Value::Int(initial_value),
+                        }],
+                        mutations: vec![Mutation::Set(Attribute {
+                            name: "profile_views".to_owned(),
+                            value: Value::Int(failed_value),
+                        })],
+                    },
+                )
+                .await
+                .unwrap();
+                assert_eq!(compare_failed, ClientResponse::ConditionFailed);
+
+                let routed_get = HyperdexClientService::handle(
+                    runtime1.as_ref(),
+                    ClientRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(routed_key.clone().into_bytes()),
+                    },
+                )
+                .await
+                .unwrap();
+                match routed_get {
+                    ClientResponse::Record(Some(record)) => {
+                        let actual = match record.attributes.get("profile_views") {
+                            Some(Value::Int(value)) => *value,
+                            other => panic!("unexpected record attribute: {other:?}"),
+                        };
+                        assert_eq!(actual, updated_value);
+                    }
+                    other => panic!("unexpected routed get response: {other:?}"),
+                }
+
+                let primary_get = HyperdexClientService::handle(
+                    runtime2.as_ref(),
+                    ClientRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(routed_key.into_bytes()),
+                    },
+                )
+                .await
+                .unwrap();
+                match primary_get {
+                    ClientResponse::Record(Some(record)) => {
+                        let actual = match record.attributes.get("profile_views") {
+                            Some(Value::Int(value)) => *value,
+                            other => panic!("unexpected record attribute: {other:?}"),
+                        };
+                        assert_eq!(actual, updated_value);
+                    }
+                    other => panic!("unexpected primary get response: {other:?}"),
+                }
             });
         })
         .settings(hegel::Settings::new().test_cases(15))
