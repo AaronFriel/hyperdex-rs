@@ -196,6 +196,99 @@ pub struct AtomicResponse {
     pub status: LegacyReturnCode,
 }
 
+pub const HYPERDATATYPE_GENERIC: u16 = 9216;
+pub const HYPERDATATYPE_STRING: u16 = 9217;
+pub const HYPERDATATYPE_INT64: u16 = 9218;
+pub const HYPERDATATYPE_FLOAT: u16 = 9219;
+pub const HYPERDATATYPE_DOCUMENT: u16 = 9223;
+pub const HYPERDATATYPE_LIST_GENERIC: u16 = 9280;
+pub const HYPERDATATYPE_SET_GENERIC: u16 = 9344;
+pub const HYPERDATATYPE_MAP_GENERIC: u16 = 9408;
+
+pub const HYPERPREDICATE_EQUALS: u16 = 9729;
+pub const HYPERPREDICATE_LESS_THAN: u16 = 9738;
+pub const HYPERPREDICATE_LESS_EQUAL: u16 = 9730;
+pub const HYPERPREDICATE_GREATER_EQUAL: u16 = 9731;
+pub const HYPERPREDICATE_GREATER_THAN: u16 = 9739;
+pub const HYPERPREDICATE_CONTAINS_LESS_THAN: u16 = 9732;
+pub const HYPERPREDICATE_REGEX: u16 = 9733;
+pub const HYPERPREDICATE_LENGTH_EQUALS: u16 = 9734;
+pub const HYPERPREDICATE_LENGTH_LESS_EQUAL: u16 = 9735;
+pub const HYPERPREDICATE_LENGTH_GREATER_EQUAL: u16 = 9736;
+pub const HYPERPREDICATE_CONTAINS: u16 = 9737;
+
+pub const FUNC_SET: u8 = 1;
+pub const FUNC_STRING_APPEND: u8 = 2;
+pub const FUNC_STRING_PREPEND: u8 = 3;
+pub const FUNC_NUM_ADD: u8 = 4;
+pub const FUNC_NUM_SUB: u8 = 5;
+pub const FUNC_NUM_MUL: u8 = 6;
+pub const FUNC_NUM_DIV: u8 = 7;
+pub const FUNC_NUM_MOD: u8 = 8;
+pub const FUNC_NUM_AND: u8 = 9;
+pub const FUNC_NUM_OR: u8 = 10;
+pub const FUNC_NUM_XOR: u8 = 11;
+pub const FUNC_NUM_MAX: u8 = 12;
+pub const FUNC_NUM_MIN: u8 = 13;
+pub const FUNC_LIST_LPUSH: u8 = 14;
+pub const FUNC_LIST_RPUSH: u8 = 15;
+pub const FUNC_SET_ADD: u8 = 16;
+pub const FUNC_SET_REMOVE: u8 = 17;
+pub const FUNC_SET_INTERSECT: u8 = 18;
+pub const FUNC_SET_UNION: u8 = 19;
+pub const FUNC_MAP_ADD: u8 = 20;
+pub const FUNC_MAP_REMOVE: u8 = 21;
+pub const FUNC_DOC_RENAME: u8 = 22;
+pub const FUNC_DOC_UNSET: u8 = 23;
+pub const FUNC_STRING_LTRIM: u8 = 24;
+pub const FUNC_STRING_RTRIM: u8 = 25;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProtocolAttributeCheck {
+    pub attr: u16,
+    pub value: Vec<u8>,
+    pub datatype: u16,
+    pub predicate: u16,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProtocolFuncall {
+    pub attr: u16,
+    pub name: u8,
+    pub arg1: Vec<u8>,
+    pub arg1_datatype: u16,
+    pub arg2: Vec<u8>,
+    pub arg2_datatype: u16,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProtocolKeyChange {
+    pub key: Vec<u8>,
+    pub erase: bool,
+    pub fail_if_not_found: bool,
+    pub fail_if_found: bool,
+    pub checks: Vec<ProtocolAttributeCheck>,
+    pub funcalls: Vec<ProtocolFuncall>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProtocolSearchStart {
+    pub search_id: u64,
+    pub checks: Vec<ProtocolAttributeCheck>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProtocolGetResponse {
+    pub status: u16,
+    pub values: Vec<Vec<u8>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProtocolSearchItem {
+    pub key: Vec<u8>,
+    pub values: Vec<Vec<u8>>,
+}
+
 #[derive(Debug, Error)]
 pub enum LegacyProtocolError {
     #[error("unknown message type {0}")]
@@ -208,6 +301,8 @@ pub enum LegacyProtocolError {
     UnknownPredicate(u16),
     #[error("unknown funcall name {0}")]
     UnknownFuncallName(u8),
+    #[error("invalid varint")]
+    InvalidVarint,
     #[error("buffer too short for header")]
     ShortBuffer,
     #[error("invalid utf-8 in request body")]
@@ -810,11 +905,352 @@ pub fn encode_response_frame(header: ResponseHeader, body: &[u8]) -> Vec<u8> {
     encode_frame(header.encode().to_vec(), body)
 }
 
+pub fn encode_protocol_slice(bytes: &[u8]) -> Vec<u8> {
+    let mut out = encode_varint(bytes.len() as u64);
+    out.extend_from_slice(bytes);
+    out
+}
+
+pub fn decode_protocol_slice(bytes: &[u8]) -> Result<(Vec<u8>, usize), LegacyProtocolError> {
+    let (size, used) = decode_varint(bytes)?;
+    let size = size as usize;
+    if bytes.len() < used + size {
+        return Err(LegacyProtocolError::ShortBuffer);
+    }
+    Ok((bytes[used..used + size].to_vec(), used + size))
+}
+
+pub fn encode_protocol_get_request(key: &[u8]) -> Vec<u8> {
+    encode_protocol_slice(key)
+}
+
+pub fn decode_protocol_get_request(bytes: &[u8]) -> Result<Vec<u8>, LegacyProtocolError> {
+    let (key, used) = decode_protocol_slice(bytes)?;
+    if used != bytes.len() {
+        return Err(LegacyProtocolError::ShortBuffer);
+    }
+    Ok(key)
+}
+
+pub fn encode_protocol_count_request(checks: &[ProtocolAttributeCheck]) -> Vec<u8> {
+    encode_protocol_checks(checks)
+}
+
+pub fn decode_protocol_count_request(
+    bytes: &[u8],
+) -> Result<Vec<ProtocolAttributeCheck>, LegacyProtocolError> {
+    let (checks, used) = decode_protocol_checks(bytes)?;
+    if used != bytes.len() {
+        return Err(LegacyProtocolError::ShortBuffer);
+    }
+    Ok(checks)
+}
+
+pub fn encode_protocol_atomic_request(change: &ProtocolKeyChange) -> Vec<u8> {
+    let mut out = encode_protocol_slice(&change.key);
+    let mut flags = 0u8;
+    if !change.erase {
+        flags |= LEGACY_ATOMIC_FLAG_WRITE;
+    }
+    if change.fail_if_not_found {
+        flags |= LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND;
+    }
+    if change.fail_if_found {
+        flags |= LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND;
+    }
+    out.push(flags);
+    out.extend_from_slice(&encode_protocol_checks(&change.checks));
+    out.extend_from_slice(&encode_protocol_funcalls(&change.funcalls));
+    out
+}
+
+pub fn decode_protocol_atomic_request(
+    bytes: &[u8],
+) -> Result<ProtocolKeyChange, LegacyProtocolError> {
+    let (key, mut used) = decode_protocol_slice(bytes)?;
+    if bytes.len() < used + 1 {
+        return Err(LegacyProtocolError::ShortBuffer);
+    }
+    let flags = bytes[used];
+    used += 1;
+    let (checks, checks_used) = decode_protocol_checks(&bytes[used..])?;
+    used += checks_used;
+    let (funcalls, funcalls_used) = decode_protocol_funcalls(&bytes[used..])?;
+    used += funcalls_used;
+    if used != bytes.len() {
+        return Err(LegacyProtocolError::ShortBuffer);
+    }
+    Ok(ProtocolKeyChange {
+        key,
+        erase: flags & LEGACY_ATOMIC_FLAG_WRITE == 0,
+        fail_if_not_found: flags & LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND != 0,
+        fail_if_found: flags & LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND != 0,
+        checks,
+        funcalls,
+    })
+}
+
+pub fn encode_protocol_search_start(request: &ProtocolSearchStart) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&request.search_id.to_be_bytes());
+    out.extend_from_slice(&encode_protocol_checks(&request.checks));
+    out
+}
+
+pub fn decode_protocol_search_start(
+    bytes: &[u8],
+) -> Result<ProtocolSearchStart, LegacyProtocolError> {
+    if bytes.len() < 8 {
+        return Err(LegacyProtocolError::ShortBuffer);
+    }
+    let search_id = u64::from_be_bytes(bytes[..8].try_into().expect("fixed-width slice"));
+    let (checks, used) = decode_protocol_checks(&bytes[8..])?;
+    if 8 + used != bytes.len() {
+        return Err(LegacyProtocolError::ShortBuffer);
+    }
+    Ok(ProtocolSearchStart { search_id, checks })
+}
+
+pub fn encode_protocol_search_continue(search_id: u64) -> [u8; 8] {
+    search_id.to_be_bytes()
+}
+
+pub fn decode_protocol_search_continue(bytes: &[u8]) -> Result<u64, LegacyProtocolError> {
+    if bytes.len() != 8 {
+        return Err(LegacyProtocolError::ShortBuffer);
+    }
+    Ok(u64::from_be_bytes(bytes.try_into().expect("fixed-width slice")))
+}
+
+pub fn encode_protocol_atomic_response(status: u16) -> [u8; 2] {
+    status.to_be_bytes()
+}
+
+pub fn decode_protocol_atomic_response(bytes: &[u8]) -> Result<u16, LegacyProtocolError> {
+    if bytes.len() != 2 {
+        return Err(LegacyProtocolError::ShortBuffer);
+    }
+    Ok(u16::from_be_bytes(bytes.try_into().expect("fixed-width slice")))
+}
+
+pub fn encode_protocol_count_response(count: u64) -> [u8; 8] {
+    count.to_be_bytes()
+}
+
+pub fn decode_protocol_count_response(bytes: &[u8]) -> Result<u64, LegacyProtocolError> {
+    if bytes.len() != 8 {
+        return Err(LegacyProtocolError::ShortBuffer);
+    }
+    Ok(u64::from_be_bytes(bytes.try_into().expect("fixed-width slice")))
+}
+
+pub fn encode_protocol_get_response(response: &ProtocolGetResponse) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&response.status.to_be_bytes());
+    if response.status == LegacyReturnCode::Success as u16 {
+        out.extend_from_slice(&encode_protocol_slices(&response.values));
+    }
+    out
+}
+
+pub fn decode_protocol_get_response(
+    bytes: &[u8],
+) -> Result<ProtocolGetResponse, LegacyProtocolError> {
+    if bytes.len() < 2 {
+        return Err(LegacyProtocolError::ShortBuffer);
+    }
+    let status = u16::from_be_bytes(bytes[..2].try_into().expect("fixed-width slice"));
+    if status != LegacyReturnCode::Success as u16 {
+        if bytes.len() != 2 {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+        return Ok(ProtocolGetResponse {
+            status,
+            values: Vec::new(),
+        });
+    }
+    let (values, used) = decode_protocol_slices(&bytes[2..])?;
+    if 2 + used != bytes.len() {
+        return Err(LegacyProtocolError::ShortBuffer);
+    }
+    Ok(ProtocolGetResponse { status, values })
+}
+
+pub fn encode_protocol_search_item(item: &ProtocolSearchItem) -> Vec<u8> {
+    let mut out = encode_protocol_slice(&item.key);
+    out.extend_from_slice(&encode_protocol_slices(&item.values));
+    out
+}
+
+pub fn decode_protocol_search_item(
+    bytes: &[u8],
+) -> Result<ProtocolSearchItem, LegacyProtocolError> {
+    let (key, used) = decode_protocol_slice(bytes)?;
+    let (values, values_used) = decode_protocol_slices(&bytes[used..])?;
+    if used + values_used != bytes.len() {
+        return Err(LegacyProtocolError::ShortBuffer);
+    }
+    Ok(ProtocolSearchItem { key, values })
+}
+
+pub fn encode_protocol_search_done() -> Vec<u8> {
+    Vec::new()
+}
+
 fn encode_frame(mut head: Vec<u8>, body: &[u8]) -> Vec<u8> {
-    let payload_len = (head.len() - BUSYBEE_HEADER_SIZE + body.len()) as u32;
-    head[..BUSYBEE_HEADER_SIZE].copy_from_slice(&payload_len.to_be_bytes());
+    let total_len = (head.len() + body.len()) as u32;
+    head[..BUSYBEE_HEADER_SIZE].copy_from_slice(&total_len.to_be_bytes());
     head.extend_from_slice(body);
     head
+}
+
+fn encode_protocol_checks(checks: &[ProtocolAttributeCheck]) -> Vec<u8> {
+    let mut out = encode_varint(checks.len() as u64);
+    for check in checks {
+        out.extend_from_slice(&check.attr.to_be_bytes());
+        out.extend_from_slice(&encode_protocol_slice(&check.value));
+        out.extend_from_slice(&check.datatype.to_be_bytes());
+        out.extend_from_slice(&check.predicate.to_be_bytes());
+    }
+    out
+}
+
+fn decode_protocol_checks(
+    bytes: &[u8],
+) -> Result<(Vec<ProtocolAttributeCheck>, usize), LegacyProtocolError> {
+    let (count, mut used) = decode_varint(bytes)?;
+    let mut checks = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        if bytes.len() < used + 2 {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+        let attr = u16::from_be_bytes(bytes[used..used + 2].try_into().expect("fixed-width slice"));
+        used += 2;
+        let (value, value_used) = decode_protocol_slice(&bytes[used..])?;
+        used += value_used;
+        if bytes.len() < used + 4 {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+        let datatype =
+            u16::from_be_bytes(bytes[used..used + 2].try_into().expect("fixed-width slice"));
+        let predicate = u16::from_be_bytes(
+            bytes[used + 2..used + 4]
+                .try_into()
+                .expect("fixed-width slice"),
+        );
+        used += 4;
+        checks.push(ProtocolAttributeCheck {
+            attr,
+            value,
+            datatype,
+            predicate,
+        });
+    }
+    Ok((checks, used))
+}
+
+fn encode_protocol_funcalls(funcalls: &[ProtocolFuncall]) -> Vec<u8> {
+    let mut out = encode_varint(funcalls.len() as u64);
+    for funcall in funcalls {
+        out.extend_from_slice(&funcall.attr.to_be_bytes());
+        out.push(funcall.name);
+        out.extend_from_slice(&encode_protocol_slice(&funcall.arg1));
+        out.extend_from_slice(&funcall.arg1_datatype.to_be_bytes());
+        out.extend_from_slice(&encode_protocol_slice(&funcall.arg2));
+        out.extend_from_slice(&funcall.arg2_datatype.to_be_bytes());
+    }
+    out
+}
+
+fn decode_protocol_funcalls(
+    bytes: &[u8],
+) -> Result<(Vec<ProtocolFuncall>, usize), LegacyProtocolError> {
+    let (count, mut used) = decode_varint(bytes)?;
+    let mut funcalls = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        if bytes.len() < used + 3 {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+        let attr = u16::from_be_bytes(bytes[used..used + 2].try_into().expect("fixed-width slice"));
+        let name = bytes[used + 2];
+        used += 3;
+        let (arg1, arg1_used) = decode_protocol_slice(&bytes[used..])?;
+        used += arg1_used;
+        if bytes.len() < used + 2 {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+        let arg1_datatype =
+            u16::from_be_bytes(bytes[used..used + 2].try_into().expect("fixed-width slice"));
+        used += 2;
+        let (arg2, arg2_used) = decode_protocol_slice(&bytes[used..])?;
+        used += arg2_used;
+        if bytes.len() < used + 2 {
+            return Err(LegacyProtocolError::ShortBuffer);
+        }
+        let arg2_datatype =
+            u16::from_be_bytes(bytes[used..used + 2].try_into().expect("fixed-width slice"));
+        used += 2;
+        funcalls.push(ProtocolFuncall {
+            attr,
+            name,
+            arg1,
+            arg1_datatype,
+            arg2,
+            arg2_datatype,
+        });
+    }
+    Ok((funcalls, used))
+}
+
+fn encode_protocol_slices(values: &[Vec<u8>]) -> Vec<u8> {
+    let mut out = encode_varint(values.len() as u64);
+    for value in values {
+        out.extend_from_slice(&encode_protocol_slice(value));
+    }
+    out
+}
+
+fn decode_protocol_slices(bytes: &[u8]) -> Result<(Vec<Vec<u8>>, usize), LegacyProtocolError> {
+    let (count, mut used) = decode_varint(bytes)?;
+    let mut values = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        let (value, value_used) = decode_protocol_slice(&bytes[used..])?;
+        used += value_used;
+        values.push(value);
+    }
+    Ok((values, used))
+}
+
+fn encode_varint(mut value: u64) -> Vec<u8> {
+    let mut out = Vec::new();
+    loop {
+        let mut byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value != 0 {
+            byte |= 0x80;
+        }
+        out.push(byte);
+        if value == 0 {
+            break;
+        }
+    }
+    out
+}
+
+fn decode_varint(bytes: &[u8]) -> Result<(u64, usize), LegacyProtocolError> {
+    let mut shift = 0u32;
+    let mut value = 0u64;
+    for (idx, byte) in bytes.iter().copied().enumerate() {
+        value |= u64::from(byte & 0x7f) << shift;
+        if byte & 0x80 == 0 {
+            return Ok((value, idx + 1));
+        }
+        shift += 7;
+        if shift >= 64 {
+            return Err(LegacyProtocolError::InvalidVarint);
+        }
+    }
+    Err(LegacyProtocolError::InvalidVarint)
 }
 
 fn decode_message_type(value: u8) -> Result<LegacyMessageType, LegacyProtocolError> {
@@ -1140,7 +1576,7 @@ mod tests {
 
         assert_eq!(
             u32::from_be_bytes(frame[..4].try_into().unwrap()) as usize,
-            frame.len() - BUSYBEE_HEADER_SIZE
+            frame.len()
         );
     }
 }

@@ -70,13 +70,18 @@ async fn read_request_frame(
     let mut prefix = [0u8; BUSYBEE_HEADER_SIZE];
     stream.read_exact(&mut prefix).await?;
 
-    let payload_len = u32::from_be_bytes(prefix) as usize;
-    let mut bytes = vec![0u8; BUSYBEE_HEADER_SIZE + payload_len];
+    let total_len = (u32::from_be_bytes(prefix) & 0x00ff_ffff) as usize;
+    if total_len < BUSYBEE_HEADER_SIZE {
+        anyhow::bail!("busybee frame size {total_len} is too small");
+    }
+
+    let mut bytes = vec![0u8; total_len];
     bytes[..BUSYBEE_HEADER_SIZE].copy_from_slice(&prefix);
-    stream.read_exact(&mut bytes[BUSYBEE_HEADER_SIZE..]).await?;
+    stream.read_exact(&mut bytes[BUSYBEE_HEADER_SIZE..total_len]).await?;
 
     let header = RequestHeader::decode(&bytes[..LEGACY_REQUEST_HEADER_SIZE])?;
-    let body = bytes[LEGACY_REQUEST_HEADER_SIZE..].to_vec();
+    let handler_body_offset = LEGACY_REQUEST_HEADER_SIZE - std::mem::size_of::<u64>();
+    let body = bytes[handler_body_offset..].to_vec();
     Ok((header, body))
 }
 
@@ -93,11 +98,14 @@ pub async fn request_once(
 
     let mut prefix = [0u8; BUSYBEE_HEADER_SIZE];
     stream.read_exact(&mut prefix).await?;
-    let payload_len = u32::from_be_bytes(prefix) as usize;
-    let mut response = vec![0u8; BUSYBEE_HEADER_SIZE + payload_len];
+    let total_len = (u32::from_be_bytes(prefix) & 0x00ff_ffff) as usize;
+    if total_len < BUSYBEE_HEADER_SIZE {
+        anyhow::bail!("busybee frame size {total_len} is too small");
+    }
+    let mut response = vec![0u8; total_len];
     response[..BUSYBEE_HEADER_SIZE].copy_from_slice(&prefix);
     stream
-        .read_exact(&mut response[BUSYBEE_HEADER_SIZE..])
+        .read_exact(&mut response[BUSYBEE_HEADER_SIZE..total_len])
         .await?;
     let header = ResponseHeader::decode(&response)?;
     let body = response[legacy_protocol::LEGACY_RESPONSE_HEADER_SIZE..].to_vec();
@@ -108,10 +116,20 @@ pub async fn request_once(
 mod tests {
     use super::*;
     use legacy_protocol::{
-        AtomicRequest, AtomicResponse, CountRequest, CountResponse, GetValue, LegacyFuncall,
-        LegacyFuncallName, LegacyMessageType, LegacyPredicate, LegacyReturnCode,
-        RequestHeader, SearchItemResponse, SearchStartRequest, LEGACY_ATOMIC_FLAG_WRITE,
+        decode_protocol_atomic_request, decode_protocol_atomic_response,
+        decode_protocol_count_request, decode_protocol_count_response,
+        decode_protocol_search_item, decode_protocol_search_start,
+        encode_protocol_atomic_request, encode_protocol_count_request,
+        encode_protocol_search_item, encode_protocol_search_start, ProtocolAttributeCheck,
+        ProtocolFuncall, ProtocolKeyChange, ProtocolSearchItem, ProtocolSearchStart,
+        LegacyMessageType, RequestHeader, ResponseHeader, FUNC_SET, HYPERDATATYPE_INT64,
+        HYPERDATATYPE_STRING, HYPERPREDICATE_GREATER_EQUAL,
     };
+
+    fn decode_handler_nonce(body: &[u8]) -> (u64, &[u8]) {
+        let nonce = u64::from_be_bytes(body[..8].try_into().expect("fixed-width slice"));
+        (nonce, &body[8..])
+    }
 
     #[tokio::test]
     async fn serve_once_returns_config_mismatch() {
@@ -154,8 +172,10 @@ mod tests {
             frontend
                 .serve_once_with(|header, body| async move {
                     assert_eq!(header.message_type, LegacyMessageType::ReqCount);
-                    let request = CountRequest::decode_body(&body).unwrap();
-                    assert_eq!(request.space, "profiles");
+                    let (nonce, request_body) = decode_handler_nonce(&body);
+                    assert_eq!(nonce, header.nonce);
+                    let request = decode_protocol_count_request(request_body).unwrap();
+                    assert!(request.is_empty());
 
                     Ok((
                         ResponseHeader {
@@ -163,7 +183,7 @@ mod tests {
                             target_virtual_server: header.target_virtual_server,
                             nonce: header.nonce,
                         },
-                        CountResponse { count: 7 }.encode_body().to_vec(),
+                        legacy_protocol::encode_protocol_count_response(7).to_vec(),
                     ))
                 })
                 .await
@@ -179,10 +199,7 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &CountRequest {
-                space: "profiles".to_owned(),
-            }
-            .encode_body(),
+            &encode_protocol_count_request(&[]),
         )
         .await
         .unwrap();
@@ -190,7 +207,7 @@ mod tests {
         server.await.unwrap();
 
         assert_eq!(response.message_type, LegacyMessageType::RespCount);
-        assert_eq!(CountResponse::decode_body(&body).unwrap().count, 7);
+        assert_eq!(decode_protocol_count_response(&body).unwrap(), 7);
     }
 
     #[tokio::test]
@@ -204,17 +221,23 @@ mod tests {
             frontend
                 .serve_once_with(|header, body| async move {
                     assert_eq!(header.message_type, LegacyMessageType::ReqAtomic);
-                    let request = AtomicRequest::decode_body(&body).unwrap();
+                    let (nonce, request_body) = decode_handler_nonce(&body);
+                    assert_eq!(nonce, header.nonce);
+                    let request = decode_protocol_atomic_request(request_body).unwrap();
                     assert_eq!(request.key, b"ada".to_vec());
-                    assert_eq!(request.flags, LEGACY_ATOMIC_FLAG_WRITE);
+                    assert!(!request.erase);
+                    assert!(!request.fail_if_not_found);
+                    assert!(!request.fail_if_found);
                     assert!(request.checks.is_empty());
                     assert_eq!(
                         request.funcalls,
-                        vec![LegacyFuncall {
-                            attribute: "first".to_owned(),
-                            name: LegacyFuncallName::Set,
-                            arg1: GetValue::String("Ada".to_owned()),
-                            arg2: None,
+                        vec![ProtocolFuncall {
+                            attr: 1,
+                            name: FUNC_SET,
+                            arg1: b"Ada".to_vec(),
+                            arg1_datatype: HYPERDATATYPE_STRING,
+                            arg2: Vec::new(),
+                            arg2_datatype: 0,
                         }]
                     );
 
@@ -224,10 +247,9 @@ mod tests {
                             target_virtual_server: header.target_virtual_server,
                             nonce: header.nonce,
                         },
-                        AtomicResponse {
-                            status: LegacyReturnCode::Success,
-                        }
-                        .encode_body()
+                        legacy_protocol::encode_protocol_atomic_response(
+                            legacy_protocol::LegacyReturnCode::Success as u16,
+                        )
                         .to_vec(),
                     ))
                 })
@@ -244,18 +266,21 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &AtomicRequest {
-                flags: LEGACY_ATOMIC_FLAG_WRITE,
+            &encode_protocol_atomic_request(&ProtocolKeyChange {
                 key: b"ada".to_vec(),
+                erase: false,
+                fail_if_not_found: false,
+                fail_if_found: false,
                 checks: Vec::new(),
-                funcalls: vec![LegacyFuncall {
-                    attribute: "first".to_owned(),
-                    name: LegacyFuncallName::Set,
-                    arg1: GetValue::String("Ada".to_owned()),
-                    arg2: None,
+                funcalls: vec![ProtocolFuncall {
+                    attr: 1,
+                    name: FUNC_SET,
+                    arg1: b"Ada".to_vec(),
+                    arg1_datatype: HYPERDATATYPE_STRING,
+                    arg2: Vec::new(),
+                    arg2_datatype: 0,
                 }],
-            }
-            .encode_body(),
+            }),
         )
         .await
         .unwrap();
@@ -264,8 +289,8 @@ mod tests {
 
         assert_eq!(response.message_type, LegacyMessageType::RespAtomic);
         assert_eq!(
-            AtomicResponse::decode_body(&body).unwrap().status,
-            LegacyReturnCode::Success
+            decode_protocol_atomic_response(&body).unwrap(),
+            legacy_protocol::LegacyReturnCode::Success as u16
         );
     }
 
@@ -280,12 +305,15 @@ mod tests {
             frontend
                 .serve_once_with(|header, body| async move {
                     assert_eq!(header.message_type, LegacyMessageType::ReqSearchStart);
-                    let request = SearchStartRequest::decode_body(&body).unwrap();
-                    assert_eq!(request.space, "profiles");
+                    let (nonce, request_body) = decode_handler_nonce(&body);
+                    assert_eq!(nonce, header.nonce);
+                    let request = decode_protocol_search_start(request_body).unwrap();
                     assert_eq!(request.search_id, 41);
                     assert_eq!(request.checks.len(), 1);
-                    assert_eq!(request.checks[0].attribute, "profile_views");
-                    assert_eq!(request.checks[0].predicate, LegacyPredicate::GreaterThanOrEqual);
+                    assert_eq!(request.checks[0].attr, 2);
+                    assert_eq!(request.checks[0].predicate, HYPERPREDICATE_GREATER_EQUAL);
+                    assert_eq!(request.checks[0].datatype, HYPERDATATYPE_INT64);
+                    assert_eq!(request.checks[0].value, 2_i64.to_le_bytes().to_vec());
 
                     Ok((
                         ResponseHeader {
@@ -293,15 +321,10 @@ mod tests {
                             target_virtual_server: header.target_virtual_server,
                             nonce: header.nonce,
                         },
-                        SearchItemResponse {
-                            search_id: request.search_id,
+                        encode_protocol_search_item(&ProtocolSearchItem {
                             key: b"ada".to_vec(),
-                            attributes: vec![legacy_protocol::GetAttribute {
-                                name: "first".to_owned(),
-                                value: GetValue::String("Ada".to_owned()),
-                            }],
-                        }
-                        .encode_body(),
+                            values: vec![b"Ada".to_vec(), 2_i64.to_le_bytes().to_vec()],
+                        }),
                     ))
                 })
                 .await
@@ -317,16 +340,15 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &SearchStartRequest {
-                space: "profiles".to_owned(),
+            &encode_protocol_search_start(&ProtocolSearchStart {
                 search_id: 41,
-                checks: vec![legacy_protocol::LegacyCheck {
-                    attribute: "profile_views".to_owned(),
-                    predicate: LegacyPredicate::GreaterThanOrEqual,
-                    value: GetValue::Int(2),
+                checks: vec![ProtocolAttributeCheck {
+                    attr: 2,
+                    value: 2_i64.to_le_bytes().to_vec(),
+                    datatype: HYPERDATATYPE_INT64,
+                    predicate: HYPERPREDICATE_GREATER_EQUAL,
                 }],
-            }
-            .encode_body(),
+            }),
         )
         .await
         .unwrap();
@@ -334,8 +356,8 @@ mod tests {
         server.await.unwrap();
 
         assert_eq!(response.message_type, LegacyMessageType::RespSearchItem);
-        let item = SearchItemResponse::decode_body(&body).unwrap();
-        assert_eq!(item.search_id, 41);
+        let item = decode_protocol_search_item(&body).unwrap();
         assert_eq!(item.key, b"ada".to_vec());
+        assert_eq!(item.values[0], b"Ada".to_vec());
     }
 }

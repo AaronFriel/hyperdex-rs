@@ -26,12 +26,20 @@ use hyperdex_admin_protocol::{
 };
 use hyperdex_client_protocol::{ClientRequest, ClientResponse, HyperdexClientService};
 use legacy_protocol::{
-    config_mismatch_response, AtomicRequest, AtomicResponse, CountRequest, CountResponse,
-    GetAttribute, GetRequest, GetResponse, GetValue, LegacyCheck, LegacyFuncall, LegacyFuncallName,
-    LegacyMessageType, LegacyPredicate, LegacyReturnCode, RequestHeader, ResponseHeader,
-    SearchContinueRequest, SearchDoneResponse, SearchItemResponse, SearchStartRequest,
-    LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND, LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND,
-    LEGACY_ATOMIC_FLAG_WRITE,
+    config_mismatch_response, decode_protocol_atomic_request, decode_protocol_count_request,
+    decode_protocol_get_request, decode_protocol_search_continue, decode_protocol_search_start,
+    encode_protocol_atomic_response, encode_protocol_count_response, encode_protocol_get_response,
+    encode_protocol_search_done, encode_protocol_search_item, LegacyMessageType,
+    LegacyReturnCode, ProtocolAttributeCheck, ProtocolFuncall, ProtocolGetResponse,
+    ProtocolKeyChange, ProtocolSearchItem, RequestHeader, ResponseHeader, FUNC_LIST_LPUSH,
+    FUNC_LIST_RPUSH, FUNC_MAP_ADD, FUNC_MAP_REMOVE, FUNC_NUM_ADD, FUNC_NUM_AND, FUNC_NUM_DIV,
+    FUNC_NUM_MAX, FUNC_NUM_MIN, FUNC_NUM_MOD, FUNC_NUM_MUL, FUNC_NUM_OR, FUNC_NUM_SUB,
+    FUNC_NUM_XOR, FUNC_SET, FUNC_SET_ADD, FUNC_SET_INTERSECT, FUNC_SET_REMOVE, FUNC_SET_UNION,
+    FUNC_STRING_APPEND, FUNC_STRING_LTRIM, FUNC_STRING_PREPEND, FUNC_STRING_RTRIM,
+    HYPERDATATYPE_FLOAT, HYPERDATATYPE_INT64, HYPERDATATYPE_LIST_GENERIC,
+    HYPERDATATYPE_MAP_GENERIC, HYPERDATATYPE_SET_GENERIC, HYPERDATATYPE_STRING,
+    HYPERPREDICATE_EQUALS, HYPERPREDICATE_GREATER_EQUAL, HYPERPREDICATE_GREATER_THAN,
+    HYPERPREDICATE_LESS_EQUAL, HYPERPREDICATE_LESS_THAN,
 };
 use placement_core::{
     HyperSpacePlacement, PlacementDecision, PlacementStrategy, RendezvousPlacement,
@@ -1118,7 +1126,7 @@ fn encode_legacy_space(
 
     encode_u64_be(out, ids.next_space_id);
     ids.next_space_id += 1;
-    encode_len32_bytes(out, space.name.as_bytes())?;
+    encode_legacy_slice(out, space.name.as_bytes())?;
     encode_u64_be(out, u64::from(space.options.fault_tolerance));
     encode_u16_be(
         out,
@@ -1133,7 +1141,7 @@ fn encode_legacy_space(
     encode_u16_be(out, 0);
 
     for (name, datatype) in &attrs {
-        encode_len32_bytes(out, name.as_bytes())?;
+        encode_legacy_slice(out, name.as_bytes())?;
         encode_u16_be(out, *datatype);
     }
 
@@ -1261,11 +1269,28 @@ fn legacy_primitive_code(kind: &ValueKind) -> Result<u16> {
     }
 }
 
-fn encode_len32_bytes(out: &mut Vec<u8>, bytes: &[u8]) -> Result<()> {
-    let len = u32::try_from(bytes.len()).map_err(|_| anyhow!("legacy byte slice exceeds u32"))?;
-    encode_u32_be(out, len);
+fn encode_legacy_slice(out: &mut Vec<u8>, bytes: &[u8]) -> Result<()> {
+    let len = u64::try_from(bytes.len()).map_err(|_| anyhow!("legacy byte slice exceeds u64"))?;
+    encode_legacy_varint(out, len);
     out.extend_from_slice(bytes);
     Ok(())
+}
+
+fn encode_legacy_varint(out: &mut Vec<u8>, mut value: u64) {
+    loop {
+        let mut byte = (value & 0x7f) as u8;
+        value >>= 7;
+
+        if value != 0 {
+            byte |= 0x80;
+        }
+
+        out.push(byte);
+
+        if value == 0 {
+            break;
+        }
+    }
 }
 
 fn encode_u64_be(out: &mut Vec<u8>, value: u64) {
@@ -1816,39 +1841,46 @@ pub async fn handle_legacy_request(
 ) -> Result<(ResponseHeader, Vec<u8>)> {
     match header.message_type {
         LegacyMessageType::ReqAtomic => {
-            let request = AtomicRequest::decode_body(body)?;
-            let space = runtime.only_space_name()?;
+            let space = legacy_space(runtime)?;
+            let (nonce, request_body) = legacy_decode_request_nonce(body)?;
+            let request = decode_protocol_atomic_request(request_body)?;
             let key = request.key.clone();
-            let exists = legacy_record_exists(runtime, &space, &key).await?;
-            let checks = legacy_checks_from_request(request.checks);
+            let exists = legacy_record_exists(runtime, &space.name, &key).await?;
+            let checks = legacy_checks_from_protocol(&space, &request.checks)?;
 
-            let status = if request.flags & LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND != 0 && exists {
+            let status = if request.fail_if_found && exists {
                 LegacyReturnCode::CompareFailed
-            } else if request.flags & LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND != 0 && !exists {
+            } else if request.fail_if_not_found && !exists {
                 LegacyReturnCode::NotFound
-            } else if request.flags & LEGACY_ATOMIC_FLAG_WRITE != 0 {
-                let mutations = legacy_mutations_from_funcalls(request.funcalls)?;
-                let response = if checks.is_empty() {
-                    HyperdexClientService::handle(
-                        runtime,
-                        ClientRequest::Put {
-                            space,
-                            key: request.key.into(),
-                            mutations,
-                        },
-                    )
-                    .await?
+            } else if !request.erase {
+                let response = if legacy_atomic_can_use_runtime_mutations(&request.funcalls) {
+                    let mutations =
+                        legacy_mutations_from_protocol_funcalls(&space, &request.funcalls)?;
+                    if checks.is_empty() {
+                        HyperdexClientService::handle(
+                            runtime,
+                            ClientRequest::Put {
+                                space: space.name.clone(),
+                                key: request.key.clone().into(),
+                                mutations,
+                            },
+                        )
+                        .await?
+                    } else {
+                        HyperdexClientService::handle(
+                            runtime,
+                            ClientRequest::ConditionalPut {
+                                space: space.name.clone(),
+                                key: request.key.clone().into(),
+                                checks: checks.clone(),
+                                mutations,
+                            },
+                        )
+                        .await?
+                    }
                 } else {
-                    HyperdexClientService::handle(
-                        runtime,
-                        ClientRequest::ConditionalPut {
-                            space,
-                            key: request.key.into(),
-                            checks,
-                            mutations,
-                        },
-                    )
-                    .await?
+                    legacy_apply_atomic_direct(runtime, &space, request.clone(), checks.clone())
+                        .await?
                 };
                 legacy_atomic_status(response)?
             } else {
@@ -1858,7 +1890,7 @@ pub async fn handle_legacy_request(
                 let response = HyperdexClientService::handle(
                     runtime,
                     ClientRequest::Delete {
-                        space,
+                        space: space.name.clone(),
                         key: request.key.into(),
                     },
                 )
@@ -1870,18 +1902,20 @@ pub async fn handle_legacy_request(
                 ResponseHeader {
                     message_type: LegacyMessageType::RespAtomic,
                     target_virtual_server: header.target_virtual_server,
-                    nonce: header.nonce,
+                    nonce,
                 },
-                AtomicResponse { status }.encode_body().to_vec(),
+                encode_protocol_atomic_response(status as u16).to_vec(),
             ))
         }
         LegacyMessageType::ReqSearchStart => {
-            let request = SearchStartRequest::decode_body(body)?;
+            let space = legacy_space(runtime)?;
+            let (nonce, request_body) = legacy_decode_request_nonce(body)?;
+            let request = decode_protocol_search_start(request_body)?;
             let response = HyperdexClientService::handle(
                 runtime,
                 ClientRequest::Search {
-                    space: request.space,
-                    checks: legacy_checks_from_request(request.checks),
+                    space: space.name.clone(),
+                    checks: legacy_checks_from_protocol(&space, &request.checks)?,
                 },
             )
             .await?;
@@ -1896,40 +1930,41 @@ pub async fn handle_legacy_request(
                 .expect("legacy search state poisoned")
                 .insert(request.search_id, VecDeque::from(records));
 
-            legacy_search_response(runtime, header, request.search_id)
+            legacy_search_response(runtime, &space, header, nonce, request.search_id)
         }
         LegacyMessageType::ReqSearchNext => {
-            let request = SearchContinueRequest::decode_body(body)?;
-            legacy_search_response(runtime, header, request.search_id)
+            let space = legacy_space(runtime)?;
+            let (nonce, request_body) = legacy_decode_request_nonce(body)?;
+            let search_id = decode_protocol_search_continue(request_body)?;
+            legacy_search_response(runtime, &space, header, nonce, search_id)
         }
         LegacyMessageType::ReqSearchStop => {
-            let request = SearchContinueRequest::decode_body(body)?;
+            let (nonce, request_body) = legacy_decode_request_nonce(body)?;
+            let search_id = decode_protocol_search_continue(request_body)?;
             runtime
                 .legacy_searches
                 .lock()
                 .expect("legacy search state poisoned")
-                .remove(&request.search_id);
+                .remove(&search_id);
 
             Ok((
                 ResponseHeader {
                     message_type: LegacyMessageType::RespSearchDone,
                     target_virtual_server: header.target_virtual_server,
-                    nonce: header.nonce,
+                    nonce,
                 },
-                SearchDoneResponse {
-                    search_id: request.search_id,
-                }
-                .encode_body()
-                .to_vec(),
+                encode_protocol_search_done(),
             ))
         }
         LegacyMessageType::ReqCount => {
-            let request = CountRequest::decode_body(body)?;
+            let space = legacy_space(runtime)?;
+            let (nonce, request_body) = legacy_decode_request_nonce(body)?;
+            let checks = decode_protocol_count_request(request_body)?;
             let response = HyperdexClientService::handle(
                 runtime,
                 ClientRequest::Count {
-                    space: request.space,
-                    checks: Vec::new(),
+                    space: space.name.clone(),
+                    checks: legacy_checks_from_protocol(&space, &checks)?,
                 },
             )
             .await?;
@@ -1942,18 +1977,20 @@ pub async fn handle_legacy_request(
                 ResponseHeader {
                     message_type: LegacyMessageType::RespCount,
                     target_virtual_server: header.target_virtual_server,
-                    nonce: header.nonce,
+                    nonce,
                 },
-                CountResponse { count }.encode_body().to_vec(),
+                encode_protocol_count_response(count).to_vec(),
             ))
         }
         LegacyMessageType::ReqGet => {
-            let request = GetRequest::decode_body(body)?;
+            let space = legacy_space(runtime)?;
+            let (nonce, request_body) = legacy_decode_request_nonce(body)?;
+            let key = decode_protocol_get_request(request_body)?;
             let response = HyperdexClientService::handle(
                 runtime,
                 ClientRequest::Get {
-                    space: runtime.only_space_name()?,
-                    key: request.key.into(),
+                    space: space.name.clone(),
+                    key: key.into(),
                 },
             )
             .await?;
@@ -1963,20 +2000,13 @@ pub async fn handle_legacy_request(
             };
 
             let get = match record {
-                Some(record) => GetResponse {
-                    status: LegacyReturnCode::Success,
-                    attributes: record
-                        .attributes
-                        .into_iter()
-                        .map(|(name, value)| GetAttribute {
-                            name,
-                            value: legacy_value_from_model(value),
-                        })
-                        .collect(),
+                Some(record) => ProtocolGetResponse {
+                    status: LegacyReturnCode::Success as u16,
+                    values: legacy_protocol_values_from_record(&space, &record)?,
                 },
-                None => GetResponse {
-                    status: LegacyReturnCode::NotFound,
-                    attributes: Vec::new(),
+                None => ProtocolGetResponse {
+                    status: LegacyReturnCode::NotFound as u16,
+                    values: Vec::new(),
                 },
             };
 
@@ -1984,13 +2014,21 @@ pub async fn handle_legacy_request(
                 ResponseHeader {
                     message_type: LegacyMessageType::RespGet,
                     target_virtual_server: header.target_virtual_server,
-                    nonce: header.nonce,
+                    nonce,
                 },
-                get.encode_body(),
+                encode_protocol_get_response(&get),
             ))
         }
         _ => Ok((config_mismatch_response(header), Vec::new())),
     }
+}
+
+fn legacy_space(runtime: &ClusterRuntime) -> Result<Space> {
+    let space_name = runtime.only_space_name()?;
+    runtime
+        .catalog
+        .get_space(&space_name)?
+        .ok_or_else(|| anyhow!("catalog lost space definition for {space_name}"))
 }
 
 async fn legacy_record_exists(runtime: &ClusterRuntime, space: &str, key: &[u8]) -> Result<bool> {
@@ -2010,9 +2048,24 @@ async fn legacy_record_exists(runtime: &ClusterRuntime, space: &str, key: &[u8])
     Ok(record.is_some())
 }
 
+fn legacy_decode_request_nonce(bytes: &[u8]) -> Result<(u64, &[u8])> {
+    if bytes.len() < std::mem::size_of::<u64>() {
+        anyhow::bail!("legacy request body is missing nonce");
+    }
+
+    let nonce = u64::from_be_bytes(
+        bytes[..std::mem::size_of::<u64>()]
+            .try_into()
+            .expect("fixed-width slice"),
+    );
+    Ok((nonce, &bytes[std::mem::size_of::<u64>()..]))
+}
+
 fn legacy_search_response(
     runtime: &ClusterRuntime,
+    space: &Space,
     header: RequestHeader,
+    nonce: u64,
     search_id: u64,
 ) -> Result<(ResponseHeader, Vec<u8>)> {
     let mut searches = runtime
@@ -2024,9 +2077,9 @@ fn legacy_search_response(
             ResponseHeader {
                 message_type: LegacyMessageType::RespSearchDone,
                 target_virtual_server: header.target_virtual_server,
-                nonce: header.nonce,
+                nonce,
             },
-            SearchDoneResponse { search_id }.encode_body().to_vec(),
+            encode_protocol_search_done(),
         ));
     };
 
@@ -2035,30 +2088,21 @@ fn legacy_search_response(
             ResponseHeader {
                 message_type: LegacyMessageType::RespSearchItem,
                 target_virtual_server: header.target_virtual_server,
-                nonce: header.nonce,
+                nonce,
             },
-            SearchItemResponse {
-                search_id,
+            encode_protocol_search_item(&ProtocolSearchItem {
                 key: record.key.to_vec(),
-                attributes: record
-                    .attributes
-                    .into_iter()
-                    .map(|(name, value)| GetAttribute {
-                        name,
-                        value: legacy_value_from_model(value),
-                    })
-                    .collect(),
-            }
-            .encode_body(),
+                values: legacy_protocol_values_from_record(space, &record)?,
+            }),
         )
     } else {
         (
             ResponseHeader {
                 message_type: LegacyMessageType::RespSearchDone,
                 target_virtual_server: header.target_virtual_server,
-                nonce: header.nonce,
+                nonce,
             },
-            SearchDoneResponse { search_id }.encode_body().to_vec(),
+            encode_protocol_search_done(),
         )
     };
 
@@ -2077,96 +2121,581 @@ fn legacy_atomic_status(response: ClientResponse) -> Result<LegacyReturnCode> {
     }
 }
 
-fn legacy_checks_from_request(checks: Vec<LegacyCheck>) -> Vec<Check> {
+fn legacy_non_key_attribute<'a>(space: &'a Space, attr: u16) -> Result<(&'a str, &'a ValueKind)> {
+    if attr == 0 {
+        return Ok((&space.key_attribute, &ValueKind::Bytes));
+    }
+
+    let index = usize::from(attr - 1);
+    let attribute = space
+        .attributes
+        .get(index)
+        .ok_or_else(|| anyhow!("legacy attribute index {attr} exceeds schema width"))?;
+    Ok((&attribute.name, &attribute.kind))
+}
+
+fn legacy_checks_from_protocol(space: &Space, checks: &[ProtocolAttributeCheck]) -> Result<Vec<Check>> {
     checks
-        .into_iter()
-        .map(|check| Check {
-            attribute: check.attribute,
-            predicate: model_predicate_from_legacy(check.predicate),
-            value: model_value_from_legacy(check.value),
+        .iter()
+        .map(|check| {
+            let (attribute, _) = legacy_non_key_attribute(space, check.attr)?;
+            Ok(Check {
+                attribute: attribute.to_owned(),
+                predicate: legacy_protocol_predicate(check.predicate)?,
+                value: legacy_value_from_protocol(check.datatype, &check.value)?,
+            })
         })
         .collect()
 }
 
-fn legacy_mutations_from_funcalls(funcalls: Vec<LegacyFuncall>) -> Result<Vec<Mutation>> {
+fn legacy_protocol_predicate(predicate: u16) -> Result<Predicate> {
+    match predicate {
+        HYPERPREDICATE_EQUALS => Ok(Predicate::Equal),
+        HYPERPREDICATE_LESS_THAN => Ok(Predicate::LessThan),
+        HYPERPREDICATE_LESS_EQUAL => Ok(Predicate::LessThanOrEqual),
+        HYPERPREDICATE_GREATER_EQUAL => Ok(Predicate::GreaterThanOrEqual),
+        HYPERPREDICATE_GREATER_THAN => Ok(Predicate::GreaterThan),
+        other => Err(anyhow!("legacy predicate {other} is not implemented")),
+    }
+}
+
+fn legacy_atomic_can_use_runtime_mutations(funcalls: &[ProtocolFuncall]) -> bool {
+    funcalls.iter().all(|funcall| {
+        matches!(
+            funcall.name,
+            FUNC_SET
+                | FUNC_NUM_ADD
+                | FUNC_NUM_SUB
+                | FUNC_NUM_MUL
+                | FUNC_NUM_DIV
+                | FUNC_NUM_MOD
+                | FUNC_NUM_AND
+                | FUNC_NUM_OR
+                | FUNC_NUM_XOR
+        ) && funcall.arg2.is_empty()
+    })
+}
+
+fn legacy_mutations_from_protocol_funcalls(
+    space: &Space,
+    funcalls: &[ProtocolFuncall],
+) -> Result<Vec<Mutation>> {
     funcalls
-        .into_iter()
+        .iter()
         .map(|funcall| match funcall.name {
-            LegacyFuncallName::Set => Ok(Mutation::Set(Attribute {
-                name: funcall.attribute,
-                value: model_value_from_legacy(funcall.arg1),
-            })),
-            LegacyFuncallName::NumAdd
-            | LegacyFuncallName::NumSub
-            | LegacyFuncallName::NumMul
-            | LegacyFuncallName::NumDiv
-            | LegacyFuncallName::NumMod
-            | LegacyFuncallName::NumAnd
-            | LegacyFuncallName::NumOr
-            | LegacyFuncallName::NumXor => {
-                let GetValue::Int(operand) = funcall.arg1 else {
-                    anyhow::bail!("numeric legacy funcalls require integer operands");
-                };
-                if funcall.arg2.is_some() {
-                    anyhow::bail!("scalar numeric legacy funcalls do not use arg2");
-                }
+            FUNC_SET => {
+                let (attribute, _) = legacy_non_key_attribute(space, funcall.attr)?;
+                Ok(Mutation::Set(Attribute {
+                    name: attribute.to_owned(),
+                    value: legacy_value_from_protocol(funcall.arg1_datatype, &funcall.arg1)?,
+                }))
+            }
+            FUNC_NUM_ADD
+            | FUNC_NUM_SUB
+            | FUNC_NUM_MUL
+            | FUNC_NUM_DIV
+            | FUNC_NUM_MOD
+            | FUNC_NUM_AND
+            | FUNC_NUM_OR
+            | FUNC_NUM_XOR => {
+                let (attribute, _) = legacy_non_key_attribute(space, funcall.attr)?;
                 Ok(Mutation::Numeric {
-                    attribute: funcall.attribute,
-                    op: model_numeric_op_from_legacy(funcall.name),
-                    operand,
+                    attribute: attribute.to_owned(),
+                    op: legacy_numeric_op(funcall.name)?,
+                    operand: legacy_decode_i64(&funcall.arg1)?,
                 })
             }
-            other => anyhow::bail!("legacy funcall {other:?} is not implemented yet"),
+            other => anyhow::bail!("legacy funcall {other} cannot use direct runtime mutations"),
         })
         .collect()
 }
 
-fn legacy_value_from_model(value: Value) -> GetValue {
-    match value {
-        Value::Null => GetValue::Null,
-        Value::Bool(v) => GetValue::Bool(v),
-        Value::Int(v) => GetValue::Int(v),
-        Value::Bytes(v) => GetValue::Bytes(v.to_vec()),
-        Value::String(v) => GetValue::String(v),
-        Value::Float(v) => GetValue::String(v.to_string()),
-        Value::List(v) => GetValue::String(format!("{v:?}")),
-        Value::Set(v) => GetValue::String(format!("{v:?}")),
-        Value::Map(v) => GetValue::String(format!("{v:?}")),
-    }
-}
-
-fn model_value_from_legacy(value: GetValue) -> Value {
-    match value {
-        GetValue::Null => Value::Null,
-        GetValue::Bool(v) => Value::Bool(v),
-        GetValue::Int(v) => Value::Int(v),
-        GetValue::Bytes(v) => Value::Bytes(v.into()),
-        GetValue::String(v) => Value::String(v),
-    }
-}
-
-fn model_predicate_from_legacy(predicate: LegacyPredicate) -> Predicate {
-    match predicate {
-        LegacyPredicate::Equal => Predicate::Equal,
-        LegacyPredicate::LessThan => Predicate::LessThan,
-        LegacyPredicate::LessThanOrEqual => Predicate::LessThanOrEqual,
-        LegacyPredicate::GreaterThanOrEqual => Predicate::GreaterThanOrEqual,
-        LegacyPredicate::GreaterThan => Predicate::GreaterThan,
-    }
-}
-
-fn model_numeric_op_from_legacy(name: LegacyFuncallName) -> NumericOp {
+fn legacy_numeric_op(name: u8) -> Result<NumericOp> {
     match name {
-        LegacyFuncallName::NumAdd => NumericOp::Add,
-        LegacyFuncallName::NumSub => NumericOp::Sub,
-        LegacyFuncallName::NumMul => NumericOp::Mul,
-        LegacyFuncallName::NumDiv => NumericOp::Div,
-        LegacyFuncallName::NumMod => NumericOp::Mod,
-        LegacyFuncallName::NumAnd => NumericOp::And,
-        LegacyFuncallName::NumOr => NumericOp::Or,
-        LegacyFuncallName::NumXor => NumericOp::Xor,
-        other => unreachable!("not a scalar numeric funcall: {other:?}"),
+        FUNC_NUM_ADD => Ok(NumericOp::Add),
+        FUNC_NUM_SUB => Ok(NumericOp::Sub),
+        FUNC_NUM_MUL => Ok(NumericOp::Mul),
+        FUNC_NUM_DIV => Ok(NumericOp::Div),
+        FUNC_NUM_MOD => Ok(NumericOp::Mod),
+        FUNC_NUM_AND => Ok(NumericOp::And),
+        FUNC_NUM_OR => Ok(NumericOp::Or),
+        FUNC_NUM_XOR => Ok(NumericOp::Xor),
+        other => Err(anyhow!("legacy numeric funcall {other} is not implemented")),
     }
+}
+
+async fn legacy_apply_atomic_direct(
+    runtime: &ClusterRuntime,
+    space: &Space,
+    request: ProtocolKeyChange,
+    checks: Vec<Check>,
+) -> Result<ClientResponse> {
+    let existing = HyperdexClientService::handle(
+        runtime,
+        ClientRequest::Get {
+            space: space.name.clone(),
+            key: request.key.clone().into(),
+        },
+    )
+    .await?;
+
+    let ClientResponse::Record(record) = existing else {
+        anyhow::bail!("unexpected runtime response to atomic prefetch");
+    };
+
+    let mut record = record.unwrap_or_else(|| Record::new(request.key.clone().into()));
+
+    for funcall in &request.funcalls {
+        legacy_apply_protocol_funcall(space, &mut record, funcall)?;
+    }
+
+    let mutations = record
+        .attributes
+        .into_iter()
+        .map(|(name, value)| Mutation::Set(Attribute { name, value }))
+        .collect::<Vec<_>>();
+
+    if checks.is_empty() {
+        HyperdexClientService::handle(
+            runtime,
+            ClientRequest::Put {
+                space: space.name.clone(),
+                key: request.key.into(),
+                mutations,
+            },
+        )
+        .await
+    } else {
+        HyperdexClientService::handle(
+            runtime,
+            ClientRequest::ConditionalPut {
+                space: space.name.clone(),
+                key: request.key.into(),
+                checks,
+                mutations,
+            },
+        )
+        .await
+    }
+}
+
+fn legacy_apply_protocol_funcall(
+    space: &Space,
+    record: &mut Record,
+    funcall: &ProtocolFuncall,
+) -> Result<()> {
+    let (attribute_name, attribute_kind) = legacy_non_key_attribute(space, funcall.attr)?;
+
+    match funcall.name {
+        FUNC_SET => {
+            record.attributes.insert(
+                attribute_name.to_owned(),
+                legacy_value_from_protocol(funcall.arg1_datatype, &funcall.arg1)?,
+            );
+        }
+        FUNC_STRING_APPEND | FUNC_STRING_PREPEND | FUNC_STRING_LTRIM | FUNC_STRING_RTRIM => {
+            let current = legacy_existing_bytes(record, attribute_name);
+            let operand = funcall.arg1.clone();
+            let updated = match funcall.name {
+                FUNC_STRING_APPEND => [current, operand].concat(),
+                FUNC_STRING_PREPEND => [operand, current].concat(),
+                FUNC_STRING_LTRIM => current
+                    .strip_prefix(operand.as_slice())
+                    .map_or(current.clone(), Vec::from),
+                FUNC_STRING_RTRIM => current
+                    .strip_suffix(operand.as_slice())
+                    .map_or(current.clone(), Vec::from),
+                _ => unreachable!(),
+            };
+            record
+                .attributes
+                .insert(attribute_name.to_owned(), Value::Bytes(updated.into()));
+        }
+        FUNC_NUM_ADD
+        | FUNC_NUM_SUB
+        | FUNC_NUM_MUL
+        | FUNC_NUM_DIV
+        | FUNC_NUM_MOD
+        | FUNC_NUM_AND
+        | FUNC_NUM_OR
+        | FUNC_NUM_XOR
+        | FUNC_NUM_MAX
+        | FUNC_NUM_MIN => match attribute_kind {
+            ValueKind::Float => {
+                let current = legacy_existing_f64(record, attribute_name)?;
+                let operand = legacy_decode_f64(&funcall.arg1)?;
+                let updated = match funcall.name {
+                    FUNC_NUM_ADD => current + operand,
+                    FUNC_NUM_SUB => current - operand,
+                    FUNC_NUM_MUL => current * operand,
+                    FUNC_NUM_DIV => current / operand,
+                    FUNC_NUM_MAX => current.max(operand),
+                    FUNC_NUM_MIN => current.min(operand),
+                    other => anyhow::bail!("legacy float funcall {other} is not implemented"),
+                };
+                record.attributes.insert(
+                    attribute_name.to_owned(),
+                    Value::Float(updated.into()),
+                );
+            }
+            _ => {
+                let current = legacy_existing_i64(record, attribute_name)?;
+                let operand = legacy_decode_i64(&funcall.arg1)?;
+                let updated = match funcall.name {
+                    FUNC_NUM_ADD => current.saturating_add(operand),
+                    FUNC_NUM_SUB => current.saturating_sub(operand),
+                    FUNC_NUM_MUL => current.saturating_mul(operand),
+                    FUNC_NUM_DIV => current / operand,
+                    FUNC_NUM_MOD => current % operand,
+                    FUNC_NUM_AND => current & operand,
+                    FUNC_NUM_OR => current | operand,
+                    FUNC_NUM_XOR => current ^ operand,
+                    FUNC_NUM_MAX => current.max(operand),
+                    FUNC_NUM_MIN => current.min(operand),
+                    _ => unreachable!(),
+                };
+                record
+                    .attributes
+                    .insert(attribute_name.to_owned(), Value::Int(updated));
+            }
+        },
+        FUNC_LIST_LPUSH | FUNC_LIST_RPUSH => {
+            let mut list = match record.attributes.remove(attribute_name) {
+                Some(Value::List(values)) => values,
+                Some(other) => anyhow::bail!("expected list attribute {attribute_name}, got {other:?}"),
+                None => Vec::new(),
+            };
+            let elem_kind = match attribute_kind {
+                ValueKind::List(elem_kind) => elem_kind.as_ref(),
+                other => anyhow::bail!("expected list kind for {attribute_name}, got {other:?}"),
+            };
+            let value = legacy_value_from_kind_bytes(elem_kind, &funcall.arg1)?;
+            if funcall.name == FUNC_LIST_LPUSH {
+                list.insert(0, value);
+            } else {
+                list.push(value);
+            }
+            record
+                .attributes
+                .insert(attribute_name.to_owned(), Value::List(list));
+        }
+        FUNC_SET_ADD | FUNC_SET_REMOVE => {
+            let mut set = match record.attributes.remove(attribute_name) {
+                Some(Value::Set(values)) => values,
+                Some(other) => anyhow::bail!("expected set attribute {attribute_name}, got {other:?}"),
+                None => Default::default(),
+            };
+            let elem_kind = match attribute_kind {
+                ValueKind::Set(elem_kind) => elem_kind.as_ref(),
+                other => anyhow::bail!("expected set kind for {attribute_name}, got {other:?}"),
+            };
+            let value = legacy_value_from_kind_bytes(elem_kind, &funcall.arg1)?;
+            if funcall.name == FUNC_SET_ADD {
+                set.insert(value);
+            } else {
+                set.remove(&value);
+            }
+            record
+                .attributes
+                .insert(attribute_name.to_owned(), Value::Set(set));
+        }
+        FUNC_SET_INTERSECT | FUNC_SET_UNION => {
+            let current = match record.attributes.remove(attribute_name) {
+                Some(Value::Set(values)) => values,
+                Some(other) => anyhow::bail!("expected set attribute {attribute_name}, got {other:?}"),
+                None => Default::default(),
+            };
+            let operand = match legacy_value_from_protocol(funcall.arg1_datatype, &funcall.arg1)? {
+                Value::Set(values) => values,
+                other => anyhow::bail!("expected set operand for {attribute_name}, got {other:?}"),
+            };
+            let updated = if funcall.name == FUNC_SET_INTERSECT {
+                current.intersection(&operand).cloned().collect()
+            } else {
+                current.union(&operand).cloned().collect()
+            };
+            record
+                .attributes
+                .insert(attribute_name.to_owned(), Value::Set(updated));
+        }
+        FUNC_MAP_ADD => {
+            let mut map = match record.attributes.remove(attribute_name) {
+                Some(Value::Map(values)) => values,
+                Some(other) => anyhow::bail!("expected map attribute {attribute_name}, got {other:?}"),
+                None => Default::default(),
+            };
+            let (key_kind, value_kind) = match attribute_kind {
+                ValueKind::Map { key, value } => (key.as_ref(), value.as_ref()),
+                other => anyhow::bail!("expected map kind for {attribute_name}, got {other:?}"),
+            };
+            let map_key = legacy_value_from_kind_bytes(key_kind, &funcall.arg2)?;
+            let map_value = legacy_value_from_kind_bytes(value_kind, &funcall.arg1)?;
+            map.insert(map_key, map_value);
+            record
+                .attributes
+                .insert(attribute_name.to_owned(), Value::Map(map));
+        }
+        FUNC_MAP_REMOVE => {
+            let mut map = match record.attributes.remove(attribute_name) {
+                Some(Value::Map(values)) => values,
+                Some(other) => anyhow::bail!("expected map attribute {attribute_name}, got {other:?}"),
+                None => Default::default(),
+            };
+            let key_kind = match attribute_kind {
+                ValueKind::Map { key, .. } => key.as_ref(),
+                other => anyhow::bail!("expected map kind for {attribute_name}, got {other:?}"),
+            };
+            let map_key = legacy_value_from_kind_bytes(key_kind, &funcall.arg2)?;
+            map.remove(&map_key);
+            record
+                .attributes
+                .insert(attribute_name.to_owned(), Value::Map(map));
+        }
+        other => anyhow::bail!("legacy funcall {other} is not implemented"),
+    }
+
+    Ok(())
+}
+
+fn legacy_protocol_values_from_record(space: &Space, record: &Record) -> Result<Vec<Vec<u8>>> {
+    space
+        .attributes
+        .iter()
+        .map(|attribute| {
+            let value = record
+                .attributes
+                .get(&attribute.name)
+                .ok_or_else(|| anyhow!("record missing attribute {}", attribute.name))?;
+            legacy_protocol_value_from_kind(&attribute.kind, value)
+        })
+        .collect()
+}
+
+fn legacy_protocol_value_from_kind(kind: &ValueKind, value: &Value) -> Result<Vec<u8>> {
+    match kind {
+        ValueKind::Bytes | ValueKind::String | ValueKind::Document => legacy_value_as_bytes(value),
+        ValueKind::Int => match value {
+            Value::Int(number) => Ok(number.to_le_bytes().to_vec()),
+            other => Err(anyhow!("cannot encode {other:?} as legacy int")),
+        },
+        ValueKind::Float => match value {
+            Value::Float(number) => Ok(number.into_inner().to_le_bytes().to_vec()),
+            other => Err(anyhow!("cannot encode {other:?} as legacy float")),
+        },
+        ValueKind::List(elem_kind) => {
+            let Value::List(values) = value else {
+                return Err(anyhow!("cannot encode {value:?} as legacy list"));
+            };
+            let mut out = Vec::new();
+            for value in values {
+                out.extend_from_slice(&legacy_encode_container_value(elem_kind, value)?);
+            }
+            Ok(out)
+        }
+        ValueKind::Set(elem_kind) => {
+            let Value::Set(values) = value else {
+                return Err(anyhow!("cannot encode {value:?} as legacy set"));
+            };
+            let mut out = Vec::new();
+            for value in values {
+                out.extend_from_slice(&legacy_encode_container_value(elem_kind, value)?);
+            }
+            Ok(out)
+        }
+        ValueKind::Map { key, value: map_value } => {
+            let Value::Map(values) = value else {
+                return Err(anyhow!("cannot encode {value:?} as legacy map"));
+            };
+            let mut out = Vec::new();
+            for (map_key, map_value_item) in values {
+                out.extend_from_slice(&legacy_encode_container_value(key, map_key)?);
+                out.extend_from_slice(&legacy_encode_container_value(map_value, map_value_item)?);
+            }
+            Ok(out)
+        }
+        ValueKind::Bool | ValueKind::Timestamp(_) => {
+            Err(anyhow!("legacy daemon protocol does not support {kind:?} yet"))
+        }
+    }
+}
+
+fn legacy_value_from_protocol(datatype: u16, bytes: &[u8]) -> Result<Value> {
+    let kind = legacy_kind_from_protocol_datatype(datatype)?;
+    legacy_value_from_kind_bytes(&kind, bytes)
+}
+
+fn legacy_value_from_kind_bytes(kind: &ValueKind, bytes: &[u8]) -> Result<Value> {
+    match kind {
+        ValueKind::Bytes | ValueKind::String | ValueKind::Document => {
+            Ok(Value::Bytes(bytes::Bytes::copy_from_slice(bytes)))
+        }
+        ValueKind::Int => Ok(Value::Int(legacy_decode_i64(bytes)?)),
+        ValueKind::Float => Ok(Value::Float(legacy_decode_f64(bytes)?.into())),
+        ValueKind::List(elem_kind) => {
+            let mut offset = 0;
+            let mut values = Vec::new();
+            while offset < bytes.len() {
+                let (value, consumed) = legacy_decode_container_value(elem_kind, &bytes[offset..])?;
+                values.push(value);
+                offset += consumed;
+            }
+            Ok(Value::List(values))
+        }
+        ValueKind::Set(elem_kind) => {
+            let mut offset = 0;
+            let mut values = std::collections::BTreeSet::new();
+            while offset < bytes.len() {
+                let (value, consumed) = legacy_decode_container_value(elem_kind, &bytes[offset..])?;
+                values.insert(value);
+                offset += consumed;
+            }
+            Ok(Value::Set(values))
+        }
+        ValueKind::Map { key, value } => {
+            let mut offset = 0;
+            let mut map = BTreeMap::new();
+            while offset < bytes.len() {
+                let (map_key, key_size) = legacy_decode_container_value(key, &bytes[offset..])?;
+                offset += key_size;
+                let (map_value, value_size) =
+                    legacy_decode_container_value(value, &bytes[offset..])?;
+                offset += value_size;
+                map.insert(map_key, map_value);
+            }
+            Ok(Value::Map(map))
+        }
+        ValueKind::Bool | ValueKind::Timestamp(_) => {
+            Err(anyhow!("legacy daemon protocol does not support {kind:?} yet"))
+        }
+    }
+}
+
+fn legacy_kind_from_protocol_datatype(datatype: u16) -> Result<ValueKind> {
+    match datatype {
+        HYPERDATATYPE_STRING => Ok(ValueKind::String),
+        HYPERDATATYPE_INT64 => Ok(ValueKind::Int),
+        HYPERDATATYPE_FLOAT => Ok(ValueKind::Float),
+        _ if datatype & !0x003f == HYPERDATATYPE_LIST_GENERIC => Ok(ValueKind::List(Box::new(
+            legacy_primitive_kind(datatype & 0x003f)?,
+        ))),
+        _ if datatype & !0x003f == HYPERDATATYPE_SET_GENERIC => Ok(ValueKind::Set(Box::new(
+            legacy_primitive_kind(datatype & 0x003f)?,
+        ))),
+        _ if datatype & !0x01ff == HYPERDATATYPE_MAP_GENERIC => Ok(ValueKind::Map {
+            key: Box::new(legacy_primitive_kind((datatype >> 3) & 0x003f)?),
+            value: Box::new(legacy_primitive_kind(datatype & 0x0007)?),
+        }),
+        other => Err(anyhow!("legacy datatype {other} is not implemented")),
+    }
+}
+
+fn legacy_primitive_kind(code: u16) -> Result<ValueKind> {
+    match code {
+        0 => Ok(ValueKind::Bytes),
+        1 => Ok(ValueKind::String),
+        2 => Ok(ValueKind::Int),
+        3 => Ok(ValueKind::Float),
+        other => Err(anyhow!("legacy primitive datatype code {other} is not implemented")),
+    }
+}
+
+fn legacy_decode_container_value(kind: &ValueKind, bytes: &[u8]) -> Result<(Value, usize)> {
+    match kind {
+        ValueKind::Bytes | ValueKind::String | ValueKind::Document => {
+            if bytes.len() < 4 {
+                anyhow::bail!("legacy container string element is truncated");
+            }
+            let len = u32::from_le_bytes(bytes[..4].try_into().expect("fixed-width slice")) as usize;
+            if bytes.len() < 4 + len {
+                anyhow::bail!("legacy container string element is truncated");
+            }
+            Ok((
+                Value::Bytes(bytes::Bytes::copy_from_slice(&bytes[4..4 + len])),
+                4 + len,
+            ))
+        }
+        ValueKind::Int => {
+            if bytes.len() < 8 {
+                anyhow::bail!("legacy int element is truncated");
+            }
+            Ok((Value::Int(legacy_decode_i64(bytes)?), 8))
+        }
+        ValueKind::Float => {
+            if bytes.len() < 8 {
+                anyhow::bail!("legacy float element is truncated");
+            }
+            Ok((Value::Float(legacy_decode_f64(bytes)?.into()), 8))
+        }
+        other => Err(anyhow!("legacy container element kind {other:?} is not supported")),
+    }
+}
+
+fn legacy_encode_container_value(kind: &ValueKind, value: &Value) -> Result<Vec<u8>> {
+    match kind {
+        ValueKind::Bytes | ValueKind::String | ValueKind::Document => {
+            let bytes = legacy_value_as_bytes(value)?;
+            let len = u32::try_from(bytes.len()).map_err(|_| anyhow!("legacy string element exceeds u32"))?;
+            let mut out = Vec::with_capacity(4 + bytes.len());
+            out.extend_from_slice(&len.to_le_bytes());
+            out.extend_from_slice(&bytes);
+            Ok(out)
+        }
+        ValueKind::Int => match value {
+            Value::Int(number) => Ok(number.to_le_bytes().to_vec()),
+            other => Err(anyhow!("cannot encode {other:?} as legacy int element")),
+        },
+        ValueKind::Float => match value {
+            Value::Float(number) => Ok(number.into_inner().to_le_bytes().to_vec()),
+            other => Err(anyhow!("cannot encode {other:?} as legacy float element")),
+        },
+        other => Err(anyhow!("legacy container element kind {other:?} is not supported")),
+    }
+}
+
+fn legacy_existing_bytes(record: &Record, attribute: &str) -> Vec<u8> {
+    match record.attributes.get(attribute) {
+        Some(Value::Bytes(bytes)) => bytes.to_vec(),
+        Some(Value::String(text)) => text.as_bytes().to_vec(),
+        Some(_) | None => Vec::new(),
+    }
+}
+
+fn legacy_existing_i64(record: &Record, attribute: &str) -> Result<i64> {
+    match record.attributes.get(attribute) {
+        Some(Value::Int(number)) => Ok(*number),
+        Some(other) => Err(anyhow!("expected int attribute {attribute}, got {other:?}")),
+        None => Ok(0),
+    }
+}
+
+fn legacy_existing_f64(record: &Record, attribute: &str) -> Result<f64> {
+    match record.attributes.get(attribute) {
+        Some(Value::Float(number)) => Ok(number.into_inner()),
+        Some(other) => Err(anyhow!("expected float attribute {attribute}, got {other:?}")),
+        None => Ok(0.0),
+    }
+}
+
+fn legacy_value_as_bytes(value: &Value) -> Result<Vec<u8>> {
+    match value {
+        Value::Bytes(bytes) => Ok(bytes.to_vec()),
+        Value::String(text) => Ok(text.as_bytes().to_vec()),
+        other => Err(anyhow!("cannot encode {other:?} as legacy bytes")),
+    }
+}
+
+fn legacy_decode_i64(bytes: &[u8]) -> Result<i64> {
+    if bytes.len() < 8 {
+        anyhow::bail!("legacy int payload is truncated");
+    }
+    Ok(i64::from_le_bytes(bytes[..8].try_into().expect("fixed-width slice")))
+}
+
+fn legacy_decode_f64(bytes: &[u8]) -> Result<f64> {
+    if bytes.len() < 8 {
+        anyhow::bail!("legacy float payload is truncated");
+    }
+    Ok(f64::from_le_bytes(bytes[..8].try_into().expect("fixed-width slice")))
 }
 
 pub async fn handle_coordinator_admin_request(
@@ -2812,14 +3341,22 @@ mod tests {
     };
     use hyperdex_client_protocol::HyperdexClientService;
     use legacy_protocol::{
-        AtomicRequest, AtomicResponse, CountRequest, CountResponse, GetRequest, GetResponse,
-        GetValue, LegacyCheck, LegacyFuncall, LegacyFuncallName, LegacyMessageType,
-        LegacyPredicate, LegacyReturnCode, RequestHeader, SearchContinueRequest,
-        SearchDoneResponse, SearchItemResponse, SearchStartRequest,
-        LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND, LEGACY_ATOMIC_FLAG_WRITE,
+        decode_protocol_atomic_response, decode_protocol_count_response,
+        decode_protocol_get_response, decode_protocol_search_item, encode_protocol_atomic_request,
+        encode_protocol_count_request, encode_protocol_get_request,
+        encode_protocol_search_continue, encode_protocol_search_start, LegacyMessageType,
+        LegacyReturnCode, ProtocolAttributeCheck, ProtocolFuncall, ProtocolKeyChange,
+        ProtocolSearchStart, RequestHeader, FUNC_NUM_ADD, FUNC_SET, HYPERDATATYPE_INT64,
+        HYPERDATATYPE_STRING, HYPERPREDICATE_GREATER_EQUAL,
     };
     use std::sync::Arc;
     use std::time::Duration;
+
+    fn legacy_request_body(nonce: u64, body: Vec<u8>) -> Vec<u8> {
+        let mut request = nonce.to_be_bytes().to_vec();
+        request.extend_from_slice(&body);
+        request
+    }
 
     fn dsl_space_add_decoder(bytes: &[u8]) -> Result<Space> {
         Ok(parse_hyperdex_space(std::str::from_utf8(bytes)?)?)
@@ -2836,7 +3373,13 @@ mod tests {
     struct DecodedLegacyConfig {
         version: u64,
         server_ids: Vec<u64>,
-        space_names: Vec<String>,
+        spaces: Vec<DecodedLegacySpace>,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct DecodedLegacySpace {
+        name: String,
+        attributes: Vec<(String, u16)>,
     }
 
     fn decode_legacy_config(bytes: &[u8]) -> DecodedLegacyConfig {
@@ -2848,7 +3391,7 @@ mod tests {
         let spaces_len = decode_u64(bytes, &mut cursor) as usize;
         let transfers_len = decode_u64(bytes, &mut cursor) as usize;
         let mut server_ids = Vec::with_capacity(servers_len);
-        let mut space_names = Vec::with_capacity(spaces_len);
+        let mut spaces = Vec::with_capacity(spaces_len);
 
         for _ in 0..servers_len {
             let _state = decode_u8(bytes, &mut cursor);
@@ -2857,7 +3400,7 @@ mod tests {
         }
 
         for _ in 0..spaces_len {
-            space_names.push(decode_legacy_space_name(bytes, &mut cursor));
+            spaces.push(decode_legacy_space(bytes, &mut cursor));
         }
 
         for _ in 0..transfers_len {
@@ -2873,21 +3416,23 @@ mod tests {
         DecodedLegacyConfig {
             version,
             server_ids,
-            space_names,
+            spaces,
         }
     }
 
-    fn decode_legacy_space_name(bytes: &[u8], cursor: &mut usize) -> String {
+    fn decode_legacy_space(bytes: &[u8], cursor: &mut usize) -> DecodedLegacySpace {
         let _space_id = decode_u64(bytes, cursor);
-        let name = decode_len32_string(bytes, cursor);
+        let name = decode_varint_string(bytes, cursor);
         let _fault_tolerance = decode_u64(bytes, cursor);
         let attrs_len = decode_u16(bytes, cursor) as usize;
         let subspaces_len = decode_u16(bytes, cursor) as usize;
         let indices_len = decode_u16(bytes, cursor) as usize;
+        let mut attributes = Vec::with_capacity(attrs_len);
 
         for _ in 0..attrs_len {
-            let _attr_name = decode_len32_string(bytes, cursor);
-            let _datatype = decode_u16(bytes, cursor);
+            let attr_name = decode_varint_string(bytes, cursor);
+            let datatype = decode_u16(bytes, cursor);
+            attributes.push((attr_name, datatype));
         }
 
         for _ in 0..subspaces_len {
@@ -2920,10 +3465,10 @@ mod tests {
             let _index_type = decode_u8(bytes, cursor);
             let _index_id = decode_u64(bytes, cursor);
             let _attr = decode_u16(bytes, cursor);
-            let _extra = decode_len32_bytes(bytes, cursor);
+            let _extra = decode_varint_bytes(bytes, cursor);
         }
 
-        name
+        DecodedLegacySpace { name, attributes }
     }
 
     fn skip_legacy_location(bytes: &[u8], cursor: &mut usize) {
@@ -2936,12 +3481,12 @@ mod tests {
         *cursor += addr_len + std::mem::size_of::<u16>();
     }
 
-    fn decode_len32_string(bytes: &[u8], cursor: &mut usize) -> String {
-        String::from_utf8(decode_len32_bytes(bytes, cursor)).unwrap()
+    fn decode_varint_string(bytes: &[u8], cursor: &mut usize) -> String {
+        String::from_utf8(decode_varint_bytes(bytes, cursor)).unwrap()
     }
 
-    fn decode_len32_bytes(bytes: &[u8], cursor: &mut usize) -> Vec<u8> {
-        let len = decode_u32(bytes, cursor) as usize;
+    fn decode_varint_bytes(bytes: &[u8], cursor: &mut usize) -> Vec<u8> {
+        let len = decode_varint(bytes, cursor) as usize;
         let start = *cursor;
         let end = start + len;
         let value = bytes[start..end].to_vec();
@@ -2963,6 +3508,24 @@ mod tests {
         let value = u32::from_be_bytes(bytes[start..end].try_into().unwrap());
         *cursor = end;
         value
+    }
+
+    fn decode_varint(bytes: &[u8], cursor: &mut usize) -> u64 {
+        let mut shift = 0_u32;
+        let mut value = 0_u64;
+
+        loop {
+            let byte = bytes[*cursor];
+            *cursor += 1;
+            value |= u64::from(byte & 0x7f) << shift;
+
+            if byte & 0x80 == 0 {
+                return value;
+            }
+
+            shift += 7;
+            assert!(shift < 64, "legacy config varint should fit in u64");
+        }
     }
 
     fn decode_u16(bytes: &[u8], cursor: &mut usize) -> u16 {
@@ -3447,7 +4010,7 @@ mod tests {
         assert_eq!(completion.state, 1);
         assert_eq!(config.version, 1);
         assert_eq!(config.server_ids, vec![1]);
-        assert!(config.space_names.is_empty());
+        assert!(config.spaces.is_empty());
     }
 
     #[tokio::test]
@@ -4158,10 +4721,118 @@ mod tests {
         assert_eq!(follow_completion.state, 2);
         assert_eq!(config.version, 2);
         assert_eq!(config.server_ids, vec![1]);
-        assert_eq!(config.space_names, vec!["profiles".to_owned()]);
+        assert_eq!(
+            config.spaces,
+            vec![DecodedLegacySpace {
+                name: "profiles".to_owned(),
+                attributes: vec![
+                    ("username".to_owned(), LEGACY_HYPERDATATYPE_STRING),
+                    ("first".to_owned(), LEGACY_HYPERDATATYPE_STRING),
+                    ("profile_views".to_owned(), LEGACY_HYPERDATATYPE_INT64),
+                ],
+            }]
+        );
 
         drop(stream);
         server.await.unwrap();
+    }
+
+    #[test]
+    fn legacy_config_encoder_preserves_profiles_attribute_names_and_types() {
+        let view = ConfigView {
+            version: 1,
+            stable_through: 1,
+            cluster: ClusterConfig::default(),
+            spaces: vec![parse_hyperdex_space(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first,\n\
+                    string last,\n\
+                    float score,\n\
+                    int profile_views,\n\
+                    list(string) pending_requests,\n\
+                    list(float) rankings,\n\
+                    list(int) todolist,\n\
+                    set(string) hobbies,\n\
+                    set(float) imonafloat,\n\
+                    set(int) friendids,\n\
+                    map(string, int) unread_messages,\n\
+                    map(string, float) upvotes,\n\
+                    map(string, string) friendranks,\n\
+                    map(int, int) posts,\n\
+                    map(int, string) friendremapping,\n\
+                    map(int, float) intfloatmap,\n\
+                    map(float, int) still_looking,\n\
+                    map(float, string) for_a_reason,\n\
+                    map(float, float) for_float_keyed_map\n\
+                 tolerate 0 failures\n",
+            )
+            .unwrap()],
+        };
+
+        let encoded = default_legacy_config_encoder(&view).unwrap();
+        let decoded = decode_legacy_config(&encoded);
+
+        assert_eq!(decoded.version, 2);
+        assert_eq!(
+            decoded.spaces,
+            vec![DecodedLegacySpace {
+                name: "profiles".to_owned(),
+                attributes: vec![
+                    ("username".to_owned(), LEGACY_HYPERDATATYPE_STRING),
+                    ("first".to_owned(), LEGACY_HYPERDATATYPE_STRING),
+                    ("last".to_owned(), LEGACY_HYPERDATATYPE_STRING),
+                    ("score".to_owned(), LEGACY_HYPERDATATYPE_FLOAT),
+                    ("profile_views".to_owned(), LEGACY_HYPERDATATYPE_INT64),
+                    (
+                        "pending_requests".to_owned(),
+                        LEGACY_HYPERDATATYPE_LIST_GENERIC | 0x0001,
+                    ),
+                    ("rankings".to_owned(), LEGACY_HYPERDATATYPE_LIST_GENERIC | 0x0003),
+                    ("todolist".to_owned(), LEGACY_HYPERDATATYPE_LIST_GENERIC | 0x0002),
+                    ("hobbies".to_owned(), LEGACY_HYPERDATATYPE_SET_GENERIC | 0x0001),
+                    ("imonafloat".to_owned(), LEGACY_HYPERDATATYPE_SET_GENERIC | 0x0003),
+                    ("friendids".to_owned(), LEGACY_HYPERDATATYPE_SET_GENERIC | 0x0002),
+                    (
+                        "unread_messages".to_owned(),
+                        LEGACY_HYPERDATATYPE_MAP_GENERIC | (0x0001 << 3) | 0x0002,
+                    ),
+                    (
+                        "upvotes".to_owned(),
+                        LEGACY_HYPERDATATYPE_MAP_GENERIC | (0x0001 << 3) | 0x0003,
+                    ),
+                    (
+                        "friendranks".to_owned(),
+                        LEGACY_HYPERDATATYPE_MAP_GENERIC | (0x0001 << 3) | 0x0001,
+                    ),
+                    (
+                        "posts".to_owned(),
+                        LEGACY_HYPERDATATYPE_MAP_GENERIC | (0x0002 << 3) | 0x0002,
+                    ),
+                    (
+                        "friendremapping".to_owned(),
+                        LEGACY_HYPERDATATYPE_MAP_GENERIC | (0x0002 << 3) | 0x0001,
+                    ),
+                    (
+                        "intfloatmap".to_owned(),
+                        LEGACY_HYPERDATATYPE_MAP_GENERIC | (0x0002 << 3) | 0x0003,
+                    ),
+                    (
+                        "still_looking".to_owned(),
+                        LEGACY_HYPERDATATYPE_MAP_GENERIC | (0x0003 << 3) | 0x0002,
+                    ),
+                    (
+                        "for_a_reason".to_owned(),
+                        LEGACY_HYPERDATATYPE_MAP_GENERIC | (0x0003 << 3) | 0x0001,
+                    ),
+                    (
+                        "for_float_keyed_map".to_owned(),
+                        LEGACY_HYPERDATATYPE_MAP_GENERIC | (0x0003 << 3) | 0x0003,
+                    ),
+                ],
+            }]
+        );
     }
 
     #[tokio::test]
@@ -4370,20 +5041,15 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &GetRequest {
-                key: b"ada".to_vec(),
-            }
-            .encode_body(),
+            &legacy_request_body(19, encode_protocol_get_request(b"ada")),
         )
         .await
         .unwrap();
 
         assert_eq!(header.message_type, LegacyMessageType::RespGet);
-        let response = GetResponse::decode_body(&body).unwrap();
-        assert_eq!(response.status, LegacyReturnCode::Success);
-        assert!(response.attributes.iter().any(|attr| {
-            attr.name == "first" && attr.value == GetValue::String("Ada".to_owned())
-        }));
+        let response = decode_protocol_get_response(&body).unwrap();
+        assert_eq!(response.status, LegacyReturnCode::Success as u16);
+        assert_eq!(response.values, vec![b"Ada".to_vec(), 5_i64.to_le_bytes().to_vec()]);
     }
 
     #[tokio::test]
@@ -4413,34 +5079,39 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &AtomicRequest {
-                flags: LEGACY_ATOMIC_FLAG_WRITE,
+            &legacy_request_body(19, encode_protocol_atomic_request(&ProtocolKeyChange {
                 key: b"ada".to_vec(),
+                erase: false,
+                fail_if_not_found: false,
+                fail_if_found: false,
                 checks: Vec::new(),
                 funcalls: vec![
-                    LegacyFuncall {
-                        attribute: "first".to_owned(),
-                        name: LegacyFuncallName::Set,
-                        arg1: GetValue::String("Ada".to_owned()),
-                        arg2: None,
+                    ProtocolFuncall {
+                        attr: 1,
+                        name: FUNC_SET,
+                        arg1: b"Ada".to_vec(),
+                        arg1_datatype: HYPERDATATYPE_STRING,
+                        arg2: Vec::new(),
+                        arg2_datatype: 0,
                     },
-                    LegacyFuncall {
-                        attribute: "profile_views".to_owned(),
-                        name: LegacyFuncallName::Set,
-                        arg1: GetValue::Int(5),
-                        arg2: None,
+                    ProtocolFuncall {
+                        attr: 2,
+                        name: FUNC_SET,
+                        arg1: 5_i64.to_le_bytes().to_vec(),
+                        arg1_datatype: HYPERDATATYPE_INT64,
+                        arg2: Vec::new(),
+                        arg2_datatype: 0,
                     },
                 ],
-            }
-            .encode_body(),
+            })),
         )
         .await
         .unwrap();
 
         assert_eq!(header.message_type, LegacyMessageType::RespAtomic);
         assert_eq!(
-            AtomicResponse::decode_body(&body).unwrap().status,
-            LegacyReturnCode::Success
+            decode_protocol_atomic_response(&body).unwrap(),
+            LegacyReturnCode::Success as u16
         );
 
         let response = HyperdexClientService::handle(
@@ -4459,7 +5130,7 @@ mod tests {
 
         assert_eq!(
             record.attributes.get("first"),
-            Some(&Value::String("Ada".to_owned()))
+            Some(&Value::Bytes(Bytes::from_static(b"Ada")))
         );
         assert_eq!(record.attributes.get("profile_views"), Some(&Value::Int(5)));
     }
@@ -4504,25 +5175,28 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &AtomicRequest {
-                flags: LEGACY_ATOMIC_FLAG_WRITE | LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND,
+            &legacy_request_body(19, encode_protocol_atomic_request(&ProtocolKeyChange {
                 key: b"ada".to_vec(),
+                erase: false,
+                fail_if_not_found: false,
+                fail_if_found: true,
                 checks: Vec::new(),
-                funcalls: vec![LegacyFuncall {
-                    attribute: "first".to_owned(),
-                    name: LegacyFuncallName::Set,
-                    arg1: GetValue::String("Grace".to_owned()),
-                    arg2: None,
+                funcalls: vec![ProtocolFuncall {
+                    attr: 1,
+                    name: FUNC_SET,
+                    arg1: b"Grace".to_vec(),
+                    arg1_datatype: HYPERDATATYPE_STRING,
+                    arg2: Vec::new(),
+                    arg2_datatype: 0,
                 }],
-            }
-            .encode_body(),
+            })),
         )
         .await
         .unwrap();
 
         assert_eq!(
-            AtomicResponse::decode_body(&body).unwrap().status,
-            LegacyReturnCode::CompareFailed
+            decode_protocol_atomic_response(&body).unwrap(),
+            LegacyReturnCode::CompareFailed as u16
         );
     }
 
@@ -4573,29 +5247,33 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &AtomicRequest {
-                flags: LEGACY_ATOMIC_FLAG_WRITE,
+            &legacy_request_body(19, encode_protocol_atomic_request(&ProtocolKeyChange {
                 key: b"ada".to_vec(),
-                checks: vec![LegacyCheck {
-                    attribute: "profile_views".to_owned(),
-                    predicate: LegacyPredicate::GreaterThanOrEqual,
-                    value: GetValue::Int(5),
+                erase: false,
+                fail_if_not_found: false,
+                fail_if_found: false,
+                checks: vec![ProtocolAttributeCheck {
+                    attr: 2,
+                    value: 5_i64.to_le_bytes().to_vec(),
+                    datatype: HYPERDATATYPE_INT64,
+                    predicate: HYPERPREDICATE_GREATER_EQUAL,
                 }],
-                funcalls: vec![LegacyFuncall {
-                    attribute: "first".to_owned(),
-                    name: LegacyFuncallName::Set,
-                    arg1: GetValue::String("Grace".to_owned()),
-                    arg2: None,
+                funcalls: vec![ProtocolFuncall {
+                    attr: 1,
+                    name: FUNC_SET,
+                    arg1: b"Grace".to_vec(),
+                    arg1_datatype: HYPERDATATYPE_STRING,
+                    arg2: Vec::new(),
+                    arg2_datatype: 0,
                 }],
-            }
-            .encode_body(),
+            })),
         )
         .await
         .unwrap();
 
         assert_eq!(
-            AtomicResponse::decode_body(&body).unwrap().status,
-            LegacyReturnCode::CompareFailed
+            decode_protocol_atomic_response(&body).unwrap(),
+            LegacyReturnCode::CompareFailed as u16
         );
 
         let response = HyperdexClientService::handle(
@@ -4658,25 +5336,28 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &AtomicRequest {
-                flags: LEGACY_ATOMIC_FLAG_WRITE,
+            &legacy_request_body(19, encode_protocol_atomic_request(&ProtocolKeyChange {
                 key: b"ada".to_vec(),
+                erase: false,
+                fail_if_not_found: false,
+                fail_if_found: false,
                 checks: Vec::new(),
-                funcalls: vec![LegacyFuncall {
-                    attribute: "profile_views".to_owned(),
-                    name: LegacyFuncallName::NumAdd,
-                    arg1: GetValue::Int(3),
-                    arg2: None,
+                funcalls: vec![ProtocolFuncall {
+                    attr: 1,
+                    name: FUNC_NUM_ADD,
+                    arg1: 3_i64.to_le_bytes().to_vec(),
+                    arg1_datatype: HYPERDATATYPE_INT64,
+                    arg2: Vec::new(),
+                    arg2_datatype: 0,
                 }],
-            }
-            .encode_body(),
+            })),
         )
         .await
         .unwrap();
 
         assert_eq!(
-            AtomicResponse::decode_body(&body).unwrap().status,
-            LegacyReturnCode::Success
+            decode_protocol_atomic_response(&body).unwrap(),
+            LegacyReturnCode::Success as u16
         );
 
         let response = HyperdexClientService::handle(
@@ -4722,16 +5403,13 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &CountRequest {
-                space: "profiles".to_owned(),
-            }
-            .encode_body(),
+            &legacy_request_body(19, encode_protocol_count_request(&[])),
         )
         .await
         .unwrap();
 
         assert_eq!(header.message_type, LegacyMessageType::RespCount);
-        assert_eq!(CountResponse::decode_body(&body).unwrap().count, 0);
+        assert_eq!(decode_protocol_count_response(&body).unwrap(), 0);
     }
 
     #[tokio::test]
@@ -4783,23 +5461,21 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &SearchStartRequest {
-                space: "profiles".to_owned(),
+            &legacy_request_body(19, encode_protocol_search_start(&ProtocolSearchStart {
                 search_id: 41,
-                checks: vec![LegacyCheck {
-                    attribute: "profile_views".to_owned(),
-                    predicate: LegacyPredicate::GreaterThanOrEqual,
-                    value: GetValue::Int(3),
+                checks: vec![ProtocolAttributeCheck {
+                    attr: 2,
+                    value: 3_i64.to_le_bytes().to_vec(),
+                    datatype: HYPERDATATYPE_INT64,
+                    predicate: HYPERPREDICATE_GREATER_EQUAL,
                 }],
-            }
-            .encode_body(),
+            })),
         )
         .await
         .unwrap();
 
         assert_eq!(header.message_type, LegacyMessageType::RespSearchItem);
-        let item = SearchItemResponse::decode_body(&body).unwrap();
-        assert_eq!(item.search_id, 41);
+        let item = decode_protocol_search_item(&body).unwrap();
         assert_eq!(item.key, b"ada".to_vec());
     }
 
@@ -4845,12 +5521,10 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &SearchStartRequest {
-                space: "profiles".to_owned(),
+            &legacy_request_body(19, encode_protocol_search_start(&ProtocolSearchStart {
                 search_id: 99,
                 checks: Vec::new(),
-            }
-            .encode_body(),
+            })),
         )
         .await
         .unwrap();
@@ -4864,15 +5538,12 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 20,
             },
-            &SearchContinueRequest { search_id: 99 }.encode_body(),
+            &legacy_request_body(20, encode_protocol_search_continue(99).to_vec()),
         )
         .await
         .unwrap();
         assert_eq!(header.message_type, LegacyMessageType::RespSearchItem);
-        assert_eq!(
-            SearchItemResponse::decode_body(&body).unwrap().key,
-            b"grace".to_vec()
-        );
+        assert_eq!(decode_protocol_search_item(&body).unwrap().key, b"grace".to_vec());
 
         let (header, body) = handle_legacy_request(
             &runtime,
@@ -4883,15 +5554,12 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 21,
             },
-            &SearchContinueRequest { search_id: 99 }.encode_body(),
+            &legacy_request_body(21, encode_protocol_search_continue(99).to_vec()),
         )
         .await
         .unwrap();
         assert_eq!(header.message_type, LegacyMessageType::RespSearchDone);
-        assert_eq!(
-            SearchDoneResponse::decode_body(&body).unwrap().search_id,
-            99
-        );
+        assert!(body.is_empty());
     }
 
     #[test]
