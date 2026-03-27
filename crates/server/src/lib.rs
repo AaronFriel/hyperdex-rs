@@ -28,7 +28,7 @@ use legacy_protocol::{
     LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND, LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND,
     LEGACY_ATOMIC_FLAG_WRITE,
 };
-use placement_core::{HyperSpacePlacement, PlacementStrategy, RendezvousPlacement};
+use placement_core::{HyperSpacePlacement, PlacementDecision, PlacementStrategy, RendezvousPlacement};
 use storage_core::{StorageEngine, WriteResult};
 use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -252,8 +252,12 @@ impl ClusterRuntime {
     }
 
     pub fn route_primary(&self, key: &[u8]) -> Result<u64> {
+        Ok(self.locate_key(key)?.primary)
+    }
+
+    fn locate_key(&self, key: &[u8]) -> Result<PlacementDecision> {
         let layout = self.catalog.layout()?;
-        Ok(self.placement_strategy.locate(key, &layout).primary)
+        Ok(self.placement_strategy.locate(key, &layout))
     }
 
     async fn forward_data_request(
@@ -279,6 +283,73 @@ impl ClusterRuntime {
         response.decode()
     }
 
+    async fn replicate_put_to_secondaries(
+        &self,
+        space: &str,
+        key: &bytes::Bytes,
+        mutations: &[Mutation],
+    ) -> Result<()> {
+        let decision = self.locate_key(key)?;
+        for replica in decision.replicas {
+            if replica == self.local_node_id {
+                continue;
+            }
+            match self
+                .forward_data_request(
+                    replica,
+                    DataPlaneRequest::ReplicatedPut {
+                        space: space.to_owned(),
+                        key: key.clone(),
+                        mutations: mutations.to_vec(),
+                    },
+                )
+                .await?
+            {
+                DataPlaneResponse::Unit => {}
+                DataPlaneResponse::ConditionFailed | DataPlaneResponse::Record(_) => {
+                    anyhow::bail!(
+                        "unexpected response to replicated put on replica {replica}"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn apply_primary_put(
+        &self,
+        space: String,
+        key: bytes::Bytes,
+        mutations: Vec<Mutation>,
+    ) -> Result<DataPlaneResponse> {
+        match self.data_plane.put(&space, key.clone(), &mutations)? {
+            WriteResult::Written | WriteResult::Missing => {
+                self.replicate_put_to_secondaries(&space, &key, &mutations).await?;
+                Ok(DataPlaneResponse::Unit)
+            }
+            WriteResult::ConditionFailed => Ok(DataPlaneResponse::ConditionFailed),
+        }
+    }
+
+    async fn apply_primary_conditional_put(
+        &self,
+        space: String,
+        key: bytes::Bytes,
+        checks: Vec<Check>,
+        mutations: Vec<Mutation>,
+    ) -> Result<DataPlaneResponse> {
+        match self
+            .data_plane
+            .conditional_put(&space, key.clone(), &checks, &mutations)?
+        {
+            WriteResult::Written | WriteResult::Missing => {
+                self.replicate_put_to_secondaries(&space, &key, &mutations).await?;
+                Ok(DataPlaneResponse::Unit)
+            }
+            WriteResult::ConditionFailed => Ok(DataPlaneResponse::ConditionFailed),
+        }
+    }
+
     pub async fn handle_internode_request(
         &self,
         request: InternodeRequest,
@@ -290,10 +361,7 @@ impl ClusterRuntime {
                         space,
                         key,
                         mutations,
-                    } => match self.data_plane.put(&space, key, &mutations)? {
-                        WriteResult::Written | WriteResult::Missing => DataPlaneResponse::Unit,
-                        WriteResult::ConditionFailed => DataPlaneResponse::ConditionFailed,
-                    },
+                    } => self.apply_primary_put(space, key, mutations).await?,
                     DataPlaneRequest::Get { space, key } => {
                         DataPlaneResponse::Record(self.data_plane.get(&space, &key)?)
                     }
@@ -308,10 +376,14 @@ impl ClusterRuntime {
                         key,
                         checks,
                         mutations,
-                    } => match self
-                        .data_plane
-                        .conditional_put(&space, key, &checks, &mutations)?
-                    {
+                    } => self
+                        .apply_primary_conditional_put(space, key, checks, mutations)
+                        .await?,
+                    DataPlaneRequest::ReplicatedPut {
+                        space,
+                        key,
+                        mutations,
+                    } => match self.data_plane.put(&space, key, &mutations)? {
                         WriteResult::Written | WriteResult::Missing => DataPlaneResponse::Unit,
                         WriteResult::ConditionFailed => DataPlaneResponse::ConditionFailed,
                     },
@@ -1253,10 +1325,12 @@ impl HyperdexClientService for ClusterRuntime {
             } => {
                 let primary = self.route_primary(&key)?;
                 if primary == self.local_node_id {
-                    Ok(match self.data_plane.put(&space, key, &mutations)? {
-                        WriteResult::Written => ClientResponse::Unit,
-                        WriteResult::ConditionFailed => ClientResponse::ConditionFailed,
-                        WriteResult::Missing => ClientResponse::Unit,
+                    Ok(match self.apply_primary_put(space, key, mutations).await? {
+                        DataPlaneResponse::Unit => ClientResponse::Unit,
+                        DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
+                        DataPlaneResponse::Record(_) => {
+                            anyhow::bail!("unexpected record response to local put")
+                        }
                     })
                 } else {
                     Ok(
@@ -1328,16 +1402,16 @@ impl HyperdexClientService for ClusterRuntime {
             } => {
                 let primary = self.route_primary(&key)?;
                 if primary == self.local_node_id {
-                    Ok(
-                        match self
-                            .data_plane
-                            .conditional_put(&space, key, &checks, &mutations)?
-                        {
-                            WriteResult::Written => ClientResponse::Unit,
-                            WriteResult::ConditionFailed => ClientResponse::ConditionFailed,
-                            WriteResult::Missing => ClientResponse::Unit,
-                        },
-                    )
+                    Ok(match self
+                        .apply_primary_conditional_put(space, key, checks, mutations)
+                        .await?
+                    {
+                        DataPlaneResponse::Unit => ClientResponse::Unit,
+                        DataPlaneResponse::ConditionFailed => ClientResponse::ConditionFailed,
+                        DataPlaneResponse::Record(_) => {
+                            anyhow::bail!("unexpected record response to local conditional put")
+                        }
+                    })
                 } else {
                     Ok(
                         match self

@@ -824,3 +824,127 @@ async fn grpc_forwards_numeric_mutation_requests_between_two_runtimes() {
     shutdown1.send(()).unwrap();
     shutdown2.send(()).unwrap();
 }
+
+#[tokio::test]
+async fn legacy_atomic_replicates_to_secondary_runtime() {
+    let grpc_listener1 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let grpc_addr1 = grpc_listener1.local_addr().unwrap();
+    let grpc_listener2 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let grpc_addr2 = grpc_listener2.local_addr().unwrap();
+
+    let config = ClusterConfig {
+        nodes: vec![
+            ClusterNode {
+                id: 1,
+                host: "127.0.0.1".to_owned(),
+                control_port: grpc_addr1.port(),
+                data_port: grpc_addr1.port(),
+            },
+            ClusterNode {
+                id: 2,
+                host: "127.0.0.1".to_owned(),
+                control_port: grpc_addr2.port(),
+                data_port: grpc_addr2.port(),
+            },
+        ],
+        replicas: 2,
+        internode_transport: TransportBackend::Grpc,
+        ..ClusterConfig::default()
+    };
+
+    let mut runtime1 = ClusterRuntime::for_node(config.clone(), 1).unwrap();
+    runtime1.install_cluster_transport(Arc::new(GrpcTransportAdapter), TransportRuntime::Grpc);
+    let runtime1 = Arc::new(runtime1);
+
+    let mut runtime2 = ClusterRuntime::for_node(config.clone(), 2).unwrap();
+    runtime2.install_cluster_transport(Arc::new(GrpcTransportAdapter), TransportRuntime::Grpc);
+    let runtime2 = Arc::new(runtime2);
+
+    HyperdexAdminService::handle(runtime1.as_ref(), AdminRequest::CreateSpaceDsl(profiles_schema()))
+        .await
+        .unwrap();
+    HyperdexAdminService::handle(runtime2.as_ref(), AdminRequest::CreateSpaceDsl(profiles_schema()))
+        .await
+        .unwrap();
+
+    let grpc_shutdown1 = serve_runtime(runtime1.clone(), grpc_listener1).await;
+    let grpc_shutdown2 = serve_runtime(runtime2.clone(), grpc_listener2).await;
+
+    let legacy_frontend1 = LegacyFrontend::bind("127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
+    let legacy_addr1 = legacy_frontend1.local_addr().unwrap();
+    let runtime1_for_legacy = runtime1.clone();
+    let legacy_server1 = tokio::spawn(async move {
+        legacy_frontend1
+            .serve_once_with(move |header, body| {
+                let runtime = runtime1_for_legacy.clone();
+                async move { handle_legacy_request(runtime.as_ref(), header, &body).await }
+            })
+            .await
+            .unwrap()
+    });
+
+    let key = (0..4096)
+        .map(|i| format!("legacy-replicated-{i}"))
+        .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
+        .expect("expected a key routed to node 2");
+
+    let (atomic_header, atomic_body) = legacy_request_once(
+        legacy_addr1,
+        RequestHeader {
+            message_type: LegacyMessageType::ReqAtomic,
+            flags: 0,
+            version: 7,
+            target_virtual_server: 0,
+            nonce: 101,
+        },
+        &AtomicRequest {
+            flags: LEGACY_ATOMIC_FLAG_WRITE,
+            key: key.as_bytes().to_vec(),
+            checks: Vec::new(),
+            funcalls: vec![LegacyFuncall {
+                attribute: "profile_views".to_owned(),
+                name: LegacyFuncallName::NumAdd,
+                arg1: LegacyGetValue::Int(3),
+                arg2: None,
+            }],
+        }
+        .encode_body(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(atomic_header.message_type, LegacyMessageType::RespAtomic);
+    assert_eq!(
+        AtomicResponse::decode_body(&atomic_body).unwrap().status,
+        LegacyReturnCode::Success
+    );
+
+    let local_probe = InternodeRequest::encode(
+        DATA_PLANE_METHOD,
+        &DataPlaneRequest::Get {
+            space: "profiles".to_owned(),
+            key: key.as_bytes().to_vec().into(),
+        },
+    )
+    .unwrap();
+    let secondary_record: DataPlaneResponse = runtime1
+        .handle_internode_request(local_probe.clone())
+        .await
+        .unwrap()
+        .decode()
+        .unwrap();
+    let primary_record: DataPlaneResponse = runtime2
+        .handle_internode_request(local_probe)
+        .await
+        .unwrap()
+        .decode()
+        .unwrap();
+
+    assert!(matches!(secondary_record, DataPlaneResponse::Record(Some(_))));
+    assert!(matches!(primary_record, DataPlaneResponse::Record(Some(_))));
+
+    legacy_server1.await.unwrap();
+    grpc_shutdown1.send(()).unwrap();
+    grpc_shutdown2.send(()).unwrap();
+}

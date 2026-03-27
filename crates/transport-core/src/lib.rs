@@ -46,6 +46,11 @@ pub enum DataPlaneRequest {
         checks: Vec<Check>,
         mutations: Vec<Mutation>,
     },
+    ReplicatedPut {
+        space: String,
+        key: Bytes,
+        mutations: Vec<Mutation>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
