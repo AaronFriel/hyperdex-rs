@@ -118,7 +118,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Hold until a new real-cluster failure requires deeper harness work. | `advance` |
-| `live-hyhac` | active | None. The codec is landed and the server wiring map is complete. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated admin server worktree | Relaunch the full coordinator-side legacy admin implementation with a forked worker and a separate read-only reviewer on the session state machine, then rerun the bounded live probe. | `reframe` |
+| `live-hyhac` | active | None. The codec is landed and the transport mismatch is now explicit. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus dedicated admin server worktree | Implement a separate BusyBee/Replicant coordinator admin transport and session layer on top of the landed codec, then rerun the bounded live probe. | `reframe` |
 
 ## Progress
 
@@ -176,20 +176,24 @@ split, sequencing, or validator set needs to change.
   admin-server worktree still had no diff after interruption.
 - [x] (2026-03-27 05:14Z) Retired the explicit-patch-target retry when the
   admin-server worktree still had no diff after interruption.
+- [x] (2026-03-27 05:14Z) Reframed the server execution shape and launched a
+  forked implementation worker plus a read-only reviewer.
+- [x] (2026-03-27 05:17Z) Reframed the server target itself after the review
+  showed that the current coordinator transport is JSON and incompatible with
+  the landed codec.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
-Drive the next live-compatibility step as one substantial server integration,
-but with a different execution shape. Repeating context-free retries is not
-working, so the next pass must use a forked implementation worker plus a
-separate read-only reviewer on the session state machine.
+Drive the next live-compatibility step on the correct server target. The main
+problem is no longer session-state design alone; it is that the coordinator is
+still speaking the wrong transport entirely.
 
 ## Next Root Move
 
-Relaunch the server implementation using a forked worker that inherits the full
-thread context, pair it with a read-only reviewer on the session state machine,
-and reconcile both results immediately.
+Launch one substantial implementation step for a separate BusyBee/Replicant
+coordinator admin transport and session layer, then rerun the bounded live
+probe if that listener lands.
 
 ## Surprises & Discoveries
 
@@ -260,6 +264,15 @@ and reconcile both results immediately.
 - Observation: even an explicit-patch-target retry stayed empty.
   Evidence: the `admin-server` worktree remained clean at `ee09ee0` until the
   retry worker was interrupted.
+- Observation: the execution shape is now different from the failed retries.
+  Evidence: the active `hyh-014` relaunch uses a forked implementation worker
+  plus a parallel read-only reviewer, and the `admin-server` worktree is
+  fast-forwarded to `2641a75`.
+- Observation: the bigger mismatch is transport, not only missing session
+  state.
+  Evidence: the reviewer showed that the coordinator still binds only the JSON
+  `CoordinatorControlService`, while the landed codec expects BusyBee framing
+  and Replicant-style request and completion messages.
 
 ## Decision Log
 

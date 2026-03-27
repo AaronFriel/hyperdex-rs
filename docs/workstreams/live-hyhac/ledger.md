@@ -599,3 +599,56 @@
   - `space_add` and `wait_until_stable` loop completion
   - read-only reviewer notes on the session-state machine and risky branches
   - one bounded commit ready for reconciliation
+
+### Entry `hyh-014` - Outcome
+
+- Timestamp: `2026-03-27 05:17Z`
+- Kind: `outcome`
+- End commit: `2641a75`
+- Artifact location:
+  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - read-only review against
+    `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/main.rs`
+    and `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+- Evidence summary:
+  - the forked implementation worker still produced no diff
+  - the reviewer established that the coordinator currently exposes only the
+    JSON `CoordinatorControlService`
+  - the existing coordinator control transport encodes `method + JSON body`,
+    which is incompatible with the landed BusyBee/Replicant codec
+  - no coordinator-side legacy admin listener, config-follow path, nonce
+    allocator, or completion queue exists today
+- Conclusion: the correct next target is not "wire the current coordinator
+  control service"; it is a separate BusyBee/Replicant coordinator admin
+  transport and session layer.
+- Disposition: `reframe`
+- Next move: preregister and launch one substantial implementation step on that
+  corrected transport target.
+
+### Entry `hyh-015` - Preregistration
+
+- Timestamp: `2026-03-27 05:17Z`
+- Kind: `preregister`
+- Hypothesis: implementing a separate BusyBee/Replicant coordinator admin
+  transport and session layer will finally unblock the original admin tools,
+  because it matches the landed codec instead of trying to reuse the JSON
+  control path.
+- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Start commit: `2641a75`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Mutable surface:
+  - `crates/server/**`
+  - `crates/hyperdex-admin-protocol/**` only for small integration glue if
+    strictly necessary
+- Validator:
+  - `cargo test -p server`
+  - `cargo test --workspace`
+  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
+- Expected artifacts:
+  - separate coordinator-side BusyBee/Replicant admin listener
+  - per-connection session state with nonce allocation and pending completions
+  - initial config-follow handling
+  - `space_add` and `wait_until_stable` completion frames
+  - one bounded commit ready for reconciliation

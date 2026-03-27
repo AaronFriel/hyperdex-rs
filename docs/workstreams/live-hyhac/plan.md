@@ -93,20 +93,24 @@ surface.
   admin-server worktree still had no file changes after interruption.
 - [x] (2026-03-27 05:14Z) Retired the explicit-patch-target retry when the
   admin-server worktree still had no file changes after interruption.
+- [x] (2026-03-27 05:14Z) Reframed the server execution shape and launched a
+  forked implementation worker plus a read-only reviewer.
+- [x] (2026-03-27 05:17Z) Reframed the server target after the review showed
+  that the coordinator still speaks the wrong transport.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
 The first missing live contract is still the legacy coordinator admin frontend.
-The codec and the server-side shape both exist, so the remaining problem is
-execution shape: repeating context-free server retries is not producing code.
+The newest evidence shows the immediate target is a separate BusyBee/Replicant
+coordinator transport and session layer, because the current coordinator path
+is still JSON control and cannot interoperate with the landed codec.
 
 ## Next Bounded Step
 
-Implement the coordinator-side legacy admin listener, session state, request-id
-allocation, config-follow, `space_add`, and `wait_until_stable` loop
-completion using a forked implementation worker, while a separate read-only
-reviewer checks the exact session-state machine against the current server code.
+Implement a separate BusyBee/Replicant coordinator admin transport and session
+layer: listener, frame decoding, config-follow, request-id allocation, pending
+completions, `space_add`, and `wait_until_stable` loop completion.
 
 ## Surprises & Discoveries
 
@@ -166,6 +170,10 @@ reviewer checks the exact session-state machine against the current server code.
 - Observation: the explicit-patch-target retry also produced no code.
   Evidence: the `admin-server` worktree remained clean at `ee09ee0` until the
   retry worker was interrupted.
+- Observation: the reviewer exposed a larger transport mismatch behind the
+  empty server retries.
+  Evidence: the coordinator still binds only the JSON control service, while
+  the landed codec expects BusyBee framing and Replicant-style completions.
 
 ## Decision Log
 
