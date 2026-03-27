@@ -95,45 +95,32 @@ first atomic write.
   that compares the Rust `default_legacy_config_encoder` output against the
   original HyperDex `configuration` / `space` packing rules on a live
   `profiles` config body.
+- [x] (2026-03-27 21:34Z) Rechecked the cleaned post-`5879fab` baseline and
+  confirmed that the focused large-object failure still does not reach daemon
+  request handling; the active mismatch is back in the coordinator follow/config
+  path the original client must complete before daemon traffic starts.
 
 ## Current Hypothesis
 
-The focused large-object path is still blocked by the coordinator-side packed
-`hyperdex::configuration` body that the HyperDex client consumes after
-`replicant_client_cond_follow("hyperdex", "config", ...)`. `1d6093c` corrected
-the first known mismatch by replacing singleton primary-subspace region bounds
-with the original `hyperdex::partition(...)` hash intervals, and `cce-004`
-now identifies the next one: Rust still emits zero-based `space_id`,
-`subspace_id`, `region_id`, and especially `virtual_server_id=0`, while the
-original coordinator allocates all of those IDs from a shared counter seeded
-at `1`.
-at `1`. `cce-005` narrows that again for the concrete failing key: `"large"`
-does not route through the zero-valued replica tuple, so the remaining public
-failure is beyond coordinator route selection. `cce-006` narrows it one step
-later: after `configuration::point_leader`, the next exact contract is the
-client-to-daemon routing header, especially whether the chosen
-`virtual_server_id` maps back to a real `server_id` and address and whether the
-stamped config version passes the daemon-side header gate. `cce-007` rules that
-header contract out for the concrete failing key as well, so the next exact
-question is the first body contract after a daemon-acceptable header.
-`cce-008` rules out that first body contract too, so the next exact question is
-the first daemon-side processing or response contract after a structurally
-valid `REQ_ATOMIC`. `cce-009` now identifies that contract concretely: upstream
-validates `key_change` against the region schema before execution and responds
-with explicit `RESP_ATOMIC/NET_BADDIMSPEC` when that validation fails, while
-current Rust has no equivalent gate or response path.
+The cleaned post-`5879fab` baseline moved the active diagnosis earlier again.
+The focused large-object path still does not reach daemon request handling, so
+the immediate blocker is back in the coordinator follow/config path that the
+original client must finish in `client::maintain_coord_connection` before it
+can even reach normal request preparation. The earlier packed-config work still
+matters because it fixed several real contracts inside that path, but the next
+exact target is now the remaining coordinator follow/config mismatch, not a
+daemon request or response. One downstream daemon gap is now explicit and
+should stay queued behind that barrier: current Rust still has no
+`ReqGetPartial -> RespGetPartial` support.
 
 ## Next Bounded Step
 
-Keep this workstream read-only. The next bounded step is now narrower than
-general comparison: follow the original client path one step beyond an
-accepted daemon header for the failing large-object put and identify the first
-exact body contract, function-selection contract, or `key_change` encoding
-contract that must hold before the daemon can process `REQ_ATOMIC`. That
-request-shape contract now looks sound, so the next bounded step is the first
-daemon-side processing or response contract after a structurally valid atomic
-request. The next exact target is now that validation-and-explicit-error
-contract.
+Keep this workstream read-only. The next bounded step is to compare the
+remaining coordinator follow/config contract on the cleaned baseline:
+determine what the original client still expects to see or unpack between
+`replicant_client_cond_follow("hyperdex", "config", ...)` and the point where
+it would start daemon traffic for the large-object put. Do not broaden into
+daemon request handling unless the coordinator path is proven complete first.
 
 ## Surprises & Discoveries
 
@@ -199,6 +186,17 @@ contract.
   `key_change` against schema and emits `RESP_ATOMIC/NET_BADDIMSPEC` on
   failure, while current Rust goes straight from decode into translation and
   execution without an upstream-equivalent gate.
+- Observation: on the cleaned post-`5879fab` baseline, the focused large-object
+  failure still does not reach daemon request handling at all.
+  Evidence: a manual live cluster with daemon-side capture cleared after
+  startup still reproduced `Left ClientGarbage` while recording no daemon
+  request frames for the failing path.
+- Observation: one exact daemon mismatch is already known but is downstream of
+  the current blocker.
+  Evidence: current Rust falls through to `ConfigMismatch` for unhandled legacy
+  message types and still lacks `ReqGetPartial -> RespGetPartial`, while the
+  original producer/consumer contract is `hyperdex_client_get_partial` plus
+  `pending_get_partial::handle_message`.
 
 ## Decision Log
 

@@ -503,3 +503,84 @@
 - Disposition: `advance`
 - Next move: hand this validation-and-error-response contract to the active
   product worker and let product work take priority.
+
+### Entry `cce-010` - Preregistration
+
+- Timestamp: `2026-03-27 21:30Z`
+- Kind: `preregister`
+- Hypothesis: on the cleaned post-`5879fab` baseline, a new read-only pass can
+  verify whether the large-object public failure still reaches daemon traffic,
+  or whether the active blocker has moved back into the coordinator
+  follow/config contract the client must finish before request preparation.
+- Owner: forked read-only worker
+- Start commit: `0f7e9e4`
+- Worktree / branch:
+  - none required; read-only evidence gathering only
+- Mutable surface:
+  - none
+- Validator:
+  - source-backed statement of whether the focused large-object path reaches
+    daemon request handling on the cleaned baseline
+  - if not, the exact coordinator/client-visible contract that remains ahead of
+    daemon traffic
+- Expected artifacts:
+  - clean-baseline evidence about whether daemon traffic exists on the failing
+    path
+  - the next exact coordinator or daemon contract target for the product worker
+
+### Entry `cce-010` - Outcome
+
+- Timestamp: `2026-03-27 21:34Z`
+- Kind: `outcome`
+- End commit: `0f7e9e4`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/client/pending_get_partial.cc`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - manual clean-baseline live-cluster probe with daemon capture cleared after
+    startup
+- Evidence summary:
+  - the fast public check still reproduces `Left ClientGarbage` on current
+    `main`
+  - a clean manual coordinator-plus-daemon cluster with daemon capture cleared
+    after startup reproduced the same failure while recording no daemon request
+    frames for the failing large-object path
+  - this pushes the active blocker back into the coordinator follow/config path
+    that the original client must finish in `client::maintain_coord_connection`
+    before it can even reach normal request preparation
+  - one exact daemon-side gap is now explicitly queued behind that barrier:
+    current Rust still lacks `ReqGetPartial -> RespGetPartial`, while the
+    original producer/consumer contract is
+    `hyperdex_client_get_partial` -> `pending_get_partial::handle_message`
+- Conclusion: the cleaned baseline does not support the earlier daemon-side
+  diagnosis as the current blocker. The immediate compatibility gap is again in
+  the coordinator follow/config contract, while `ReqGetPartial` remains a real
+  downstream daemon gap once that barrier is cleared.
+- Disposition: `reframe`
+- Next move: hand this reframe to the product and harness workers, then reopen
+  this workstream for one narrower read-only step on the remaining
+  coordinator follow/config mismatch.
+
+### Entry `cce-011` - Preregistration
+
+- Timestamp: `2026-03-27 21:34Z`
+- Kind: `preregister`
+- Hypothesis: a new read-only pass focused only on the coordinator
+  follow/config path can name the remaining exact mismatch between the original
+  client’s `maintain_coord_connection` expectations and the current Rust
+  `hyperdex/config` follow behavior on the cleaned large-object baseline.
+- Owner: forked read-only worker
+- Start commit: `0f7e9e4`
+- Worktree / branch:
+  - none required; read-only evidence gathering only
+- Mutable surface:
+  - none
+- Validator:
+  - source-backed explanation of the remaining coordinator/client-visible
+    mismatch between `replicant_client_cond_follow("hyperdex", "config", ...)`
+    and the point where the client would start daemon traffic for the large
+    object put
+- Expected artifacts:
+  - the next exact coordinator follow/config mismatch on the cleaned baseline
+  - concrete producer/consumer pointers in the original HyperDex and current
+    Rust code
