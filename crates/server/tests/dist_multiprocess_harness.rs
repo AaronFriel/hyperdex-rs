@@ -1118,6 +1118,82 @@ async fn spawn_single_daemon_cluster_with_legacy_proxy(
     ))
 }
 
+async fn spawn_single_daemon_cluster_with_busybee_proxy(
+) -> Result<(
+    TempDir,
+    ChildProcess,
+    ChildProcess,
+    SocketAddr,
+    tokio::task::JoinHandle<Result<()>>,
+    Arc<AtomicBool>,
+    Arc<Mutex<BusyBeeCapture>>,
+)> {
+    let tempdir = TempDir::new()?;
+    let mut coordinator_backend_port = ReservedPort::new()?;
+    let mut coordinator_public_port = ReservedPort::new()?;
+    let mut daemon_port = ReservedPort::new()?;
+    let mut daemon_control_port = ReservedPort::new()?;
+    let coordinator_backend_address = localhost(coordinator_backend_port.port())?;
+    let coordinator_public_address = localhost(coordinator_public_port.port())?;
+    let daemon_address = localhost(daemon_port.port())?;
+
+    coordinator_backend_port.release();
+    let mut coordinator = ChildProcess::spawn(
+        "coordinator",
+        &[
+            "coordinator".to_owned(),
+            format!("--data={}", tempdir.path().join("coordinator").display()),
+            "--listen=127.0.0.1".to_owned(),
+            format!("--listen-port={}", coordinator_backend_port.port()),
+        ],
+        tempdir.path(),
+    )?;
+    coordinator
+        .wait_for_coordinator(coordinator_backend_address)
+        .await?;
+
+    coordinator_public_port.release();
+    let proxy_listener = tokio::net::TcpListener::bind(coordinator_public_address).await?;
+    let proxy_stop = Arc::new(AtomicBool::new(false));
+    let busybee_capture = Arc::new(Mutex::new(BusyBeeCapture::default()));
+    let proxy_task = tokio::spawn(run_busybee_proxy_capture(
+        proxy_listener,
+        coordinator_backend_address,
+        Arc::clone(&busybee_capture),
+        Arc::clone(&proxy_stop),
+    ));
+
+    daemon_port.release();
+    daemon_control_port.release();
+    let mut daemon = ChildProcess::spawn(
+        "daemon",
+        &[
+            "daemon".to_owned(),
+            "--node-id=1".to_owned(),
+            "--threads=1".to_owned(),
+            format!("--data={}", tempdir.path().join("daemon").display()),
+            "--listen=127.0.0.1".to_owned(),
+            format!("--listen-port={}", daemon_port.port()),
+            format!("--control-port={}", daemon_control_port.port()),
+            "--coordinator=127.0.0.1".to_owned(),
+            format!("--coordinator-port={}", coordinator_backend_port.port()),
+            "--transport=grpc".to_owned(),
+        ],
+        tempdir.path(),
+    )?;
+    daemon.wait_for_daemon(daemon_address).await?;
+
+    Ok((
+        tempdir,
+        coordinator,
+        daemon,
+        coordinator_public_address,
+        proxy_task,
+        proxy_stop,
+        busybee_capture,
+    ))
+}
+
 async fn run_legacy_admin_probe_via_proxy(
     _proxy_addr: SocketAddr,
     capture: Arc<Mutex<BusyBeeCapture>>,
@@ -2173,6 +2249,90 @@ async fn legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair() 
                     )
             }),
         "expected server-side coordinator frames to be 100-byte partial BusyBee-style payloads: {events:?}"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence() -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+    let (
+        _tempdir,
+        mut coordinator,
+        mut daemon,
+        coordinator_address,
+        proxy_task,
+        proxy_stop,
+        busybee_capture,
+    ) = spawn_single_daemon_cluster_with_busybee_proxy().await?;
+
+    let (exit_status, stdout, stderr) = run_hyhac_selected_tests_direct(
+        coordinator_address,
+        "*Can store a large object*",
+        Duration::from_secs(10),
+    )
+    .await?;
+
+    finalize_proxy_task(proxy_task, proxy_stop).await?;
+    coordinator.ensure_running()?;
+    daemon.ensure_running()?;
+
+    let capture = busybee_capture.lock().unwrap().clone();
+    let client_frames = capture
+        .client_frames
+        .iter()
+        .map(frame_summary)
+        .collect::<Vec<_>>();
+    let server_frames = capture
+        .server_frames
+        .iter()
+        .map(frame_summary)
+        .collect::<Vec<_>>();
+    eprintln!(
+        "hyhac large-object busybee proxy: coordinator_proxy_address={coordinator_address} exit_status={exit_status:?} stdout=`{stdout}` stderr=`{stderr}` client_frames={client_frames:?} server_frames={server_frames:?}"
+    );
+
+    assert!(
+        stdout.contains("Left ClientGarbage"),
+        "expected focused hyhac probe to report ClientGarbage"
+    );
+    assert!(
+        !capture.client_frames.is_empty(),
+        "expected proxy to capture client-to-coordinator BusyBee frames"
+    );
+    assert!(
+        !capture.server_frames.is_empty(),
+        "expected proxy to capture coordinator-to-client BusyBee frames"
+    );
+    let client_msgtypes = capture
+        .client_frames
+        .iter()
+        .filter_map(|frame| frame.payload.first().copied())
+        .filter_map(|byte| ReplicantNetworkMsgtype::decode(byte).ok())
+        .collect::<Vec<_>>();
+    let server_msgtypes = capture
+        .server_frames
+        .iter()
+        .filter_map(|frame| frame.payload.first().copied())
+        .filter_map(|byte| ReplicantNetworkMsgtype::decode(byte).ok())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        client_msgtypes,
+        vec![
+            ReplicantNetworkMsgtype::Bootstrap,
+            ReplicantNetworkMsgtype::Bootstrap,
+        ],
+        "expected the failing path to send only bootstrap messages on the coordinator connection"
+    );
+    assert_eq!(
+        server_msgtypes,
+        vec![
+            ReplicantNetworkMsgtype::Bootstrap,
+            ReplicantNetworkMsgtype::Bootstrap,
+        ],
+        "expected the coordinator to answer only bootstrap messages on the failing path"
     );
 
     Ok(())
