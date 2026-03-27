@@ -87,8 +87,8 @@ surface.
 - [x] (2026-03-27 05:07Z) Reconciled the codec worker result into `489de25`
   (`Add legacy admin codec helpers`) with `cargo test -p hyperdex-admin-protocol`
   passing.
-- [ ] Launch one substantial server implementation step on top of the landed
-  codec and the completed server map.
+- [x] (2026-03-27 05:07Z) Launched one substantial server implementation step
+  on top of the landed codec and the completed server map.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
