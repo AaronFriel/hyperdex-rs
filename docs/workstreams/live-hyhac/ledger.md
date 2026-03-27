@@ -2098,6 +2098,80 @@
   - the smallest honest setup sequence for the focused large-object probe
   - concrete guidance for `hyh-044`
 
+### Entry `hyh-045` - Outcome
+
+- Timestamp: `2026-03-28 00:17Z`
+- Kind: `outcome`
+- End commit: `589ce4f`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyhac/test/Test/HyperDex/Space.hs`
+  - `/home/friel/c/aaronfriel/hyhac/test/Test/HyperDex/Shared.hs`
+  - `/home/friel/c/aaronfriel/hyhac/test/Test/HyperDex/Pool.hs`
+- Evidence summary:
+  - `defaultSpaceDesc` and `makeSpaceDesc` define the full 19-attribute
+    `profiles` schema rather than the old two-column shortcut
+  - the smallest honest prerequisite sequence is: create `profiles` with that
+    full schema, wait until stable, then run only the selected large-object
+    tests from `Shared.hs` and `Pool.hs`
+  - using anything smaller only reproves the earlier `UnknownSpace` path and
+    does not reach the later bug
+- Conclusion: `hyh-044` must preserve the full `defaultSpaceDesc` setup before
+  any focused large-object reduction is trustworthy.
+- Disposition: `advance`
+- Next move: land the full-schema probe on `main` and use it to capture the
+  first later failure after setup.
+
+### Entry `hyh-044` - Outcome
+
+- Timestamp: `2026-03-28 00:17Z`
+- Kind: `outcome`
+- End commit: `589ce4f`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence summary:
+  - `589ce4f` adds
+    `legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup`
+  - that probe creates `profiles` with the full 19-attribute schema, waits
+    until stable, runs a native C large-object write first, then runs the
+    selected Hyhac large-object subset with client tracing
+  - native C succeeds with `put handle=1 status=8575` followed by
+    `loop handle=1 status=8448`
+  - Hyhac also advances past setup and completes one successful
+    `put handle=1 status=8575` plus `loop handle=1 status=8448`, then reaches
+    a later second `put handle=1 status=8575` before timing out
+  - the daemon capture is non-empty on the corrected baseline, so the bug is
+    no longer the old `UnknownSpace` / no-daemon-traffic path
+- Conclusion: the old fast validator is replaced. The remaining live blocker is
+  a later post-success operation in the selected large-object subset, not
+  missing schema setup.
+- Disposition: `advance`
+- Next move: preregister the next focused reduction around the second
+  large-object operation after setup.
+
+### Entry `hyh-046` - Preregistration
+
+- Timestamp: `2026-03-28 00:17Z`
+- Kind: `preregister`
+- Hypothesis: splitting the corrected full-schema baseline into the smallest
+  later-failure probes will isolate which selected large-object operation
+  stalls after the first successful Hyhac round-trip and expose the exact
+  daemon/client contract that still differs from HyperDex.
+- Owner: root
+- Start commit: `589ce4f`
+- Worktree / branch:
+  - root checkout on `main`
+- Mutable surface:
+  - `crates/server/**`
+  - `crates/server/tests/**`
+- Validator:
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture`
+  - one or more tighter full-schema probes that isolate the next later failure
+  - `cargo test -p server`
+- Expected artifacts:
+  - a narrower post-success large-object probe
+  - either a Rust-side fix for the later stall or one precise blocker tied to
+    the corrected baseline
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`

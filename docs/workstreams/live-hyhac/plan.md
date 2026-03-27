@@ -205,26 +205,32 @@ stronger live probe before returning control.
   EOF path`), which clears the process-level `early eof` failures on `main`
   and restores a cleaner live-cluster baseline for the remaining large-object
   failure.
+- [x] (2026-03-28 00:17Z) Reconciled `589ce4f` (`Add full-schema hyhac
+  large-object probe`), which replaces the old invalid fast path with a
+  full-schema setup using the same 19-attribute `profiles` space as
+  `defaultSpaceDesc`, proves native C success plus one successful Hyhac
+  `put`/`loop`, and exposes the remaining later hang on the next large-object
+  `put`.
 - [ ] Rerun the bounded live `hyhac` probe after the remaining large-object
   mismatch is fixed.
 
 ## Current Hypothesis
 
 The earlier coordinator-side, request-shape, and process-level `early eof`
-gaps are now behind `main`. The coordinator now also handles repeated BusyBee
-identify frames like the original anonymous-channel accept path, and the
-corrected BusyBee proxy proves the focused Hyhac path advances beyond
-bootstrap into `CondWait` requests with `ClientResponse` completions on the
-coordinator connection. The remaining blocker is later than bootstrap and now
-has to be reduced through the post-follow path.
+gaps are now behind `main`. The corrected baseline also proves more than the
+old fast path ever did: with the full `defaultSpaceDesc` schema installed and
+stable, native C completes the large-object write, and Hyhac completes one
+large-object `put` plus `loop` before the next `put` stalls. The remaining
+blocker is therefore later than bootstrap, later than missing schema setup,
+and later than the first daemon round-trip.
 
 ## Next Bounded Step
 
-Keep the coordinator BusyBee proxy as the fastest useful coordinator-side
-check, but stop treating the failure as bootstrap-only. The next bounded step
-is to capture the first daemon-side request/response on the corrected baseline
-or reduce the remaining post-follow mismatch exactly enough to explain why the
-direct large-object Hyhac loop still ends in `Left ClientGarbage`.
+Keep the new full-schema probe as the fastest honest public check. The next
+bounded step is to split the corrected large-object subset into the smallest
+post-success probes that identify which second operation stalls after setup,
+then reduce that exact daemon/client contract enough to fix it or name one
+precise blocker.
 
 ## Surprises & Discoveries
 
@@ -276,6 +282,14 @@ direct large-object Hyhac loop still ends in `Left ClientGarbage`.
   `legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair`, and
   that test captures partial BusyBee-style frames with `trailing_bytes=45` and
   `trailing_bytes=100` on the coordinator path.
+- Observation: once `profiles` is created with the full `defaultSpaceDesc`
+  schema and the cluster is stable, the large-object path advances materially
+  further than the old fast probe suggested.
+  Evidence: `589ce4f` adds
+  `legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup`,
+  where native C completes `put -> loop`, Hyhac completes one `put -> loop`,
+  and the remaining failure is the later second `put` on the same selected
+  large-object subset.
 - Observation: correcting string-slice encoding and legacy datatype codes moved
   the packed config contract forward, but did not clear the first public
   `ClientGarbage` failure.

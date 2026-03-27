@@ -122,7 +122,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | root | None; `69d5918` already proved the fast Hyhac failure loops only through coordinator identify/bootstrap traffic on the cleaned baseline, so this workstream can pause again until another harness change is justified. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence -- --nocapture` | Hold until product or read-only comparison work needs another harness change. | `advance` |
-| `live-hyhac` | active | `019d318e-8775-74a0-864e-a67fdd23eb49` (`Fermat`) plus `019d318e-895a-7462-9396-ddf6791d417a` (`Harvey`) | `hyh-042` and `hyh-043` prove the previous fast large-object validator was skipping schema setup: both Hyhac and a native C client return immediate `UnknownSpace`, and Hyhac then masks `NonePending` as `ClientGarbage`. The next product step is to build a schema-created fast path and capture the real later failure. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow` on `live-hyhac-post-follow` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_immediate_unknownspace_before_deferred_loop -- --nocapture` | Replace the flawed fast validator with a schema-created baseline and capture the next real failure after `profiles` exists. | `reframe` |
+| `live-hyhac` | active | root | `hyh-044` and `hyh-045` are now complete. The corrected full-schema baseline creates `profiles` from `defaultSpaceDesc` / `makeSpaceDesc`, waits until stable, and then reaches real daemon traffic. The remaining blocker is later: native C succeeds, Hyhac completes one `put` plus `loop`, then the next `put` on the same large-object subset stalls before another loop result appears. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow` on `live-hyhac-post-follow` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Split the corrected baseline into the smallest later-failure probes and isolate which post-success large-object operation stalls after full setup. | `advance` |
 | `coordinator-config-evidence` | ready | root | `cce-015` is finished. The stronger no-daemon-traffic proof and the source comparison move the remaining question out of coordinator follow/config behavior and toward the client-handle/completion contract that Hyhac wraps. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_no_daemon_traffic_after_startup -- --nocapture` | Hold until the next product pass needs another exact source comparison. | `advance` |
 
 ## Progress
@@ -384,23 +384,30 @@ split, sequencing, or validator set needs to change.
   not on the later product bug we actually need to fix.
 - [x] (2026-03-28 00:01Z) Relaunched the next schema-created pair with
   `Fermat` on `hyh-044` and `Harvey` on `hyh-045`.
+- [x] (2026-03-28 00:17Z) Reconciled `589ce4f` (`Add full-schema hyhac
+  large-object probe`) and updated the live baseline: the honest probe now
+  creates the full 19-attribute `profiles` schema, waits until stable, proves
+  native C success, proves Hyhac completes one `put` plus `loop`, and exposes
+  the remaining later failure on the next large-object `put`.
 - [ ] Rerun the bounded live `hyhac` probe after the remaining large-object
   mismatch is fixed.
 
 ## Current Root Focus
 
-Drive the remaining focused large-object `ClientGarbage` failure on a corrected
-schema-created baseline. The old fast large-object path was missing `profiles`
-entirely, so it only proved immediate `UnknownSpace` plus Hyhac’s masking of
-`NonePending`. The next useful reduction must preserve the space-creation
-prerequisite and then capture the real later failure.
+Drive the remaining focused large-object failure on the corrected full-schema
+baseline. The old fast path is no longer the active reference point: the honest
+probe now creates the 19-attribute `profiles` schema, waits until stable, and
+shows that native C plus the first Hyhac round-trip both succeed. The next
+useful reduction is later in the sequence, after Hyhac has already completed
+one successful `put` plus `loop`.
 
 ## Next Root Move
 
-Replace the flawed fast validator with a schema-created fast path. The next
-root action after this pass is to launch one product worker that preserves the
-`profiles` setup and captures the next real failure, plus one read-only worker
-that pins down the smallest Hyhac setup sequence needed for that probe.
+Keep the new full-schema probe as the shortest honest public loop and use it to
+split the later failure into smaller post-success operations. The next root
+action after this pass is to isolate which selected large-object test or second
+operation hangs after setup, then patch that concrete daemon/client contract
+instead of revisiting the disproven `UnknownSpace` path.
 
 ## Surprises & Discoveries
 

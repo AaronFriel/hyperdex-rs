@@ -781,3 +781,34 @@
 - Expected artifacts:
   - the first exact post-follow mismatch on the corrected current baseline
   - concrete pointers for the next product change
+
+### Entry `cce-015` - Outcome
+
+- Timestamp: `2026-03-27 23:46Z`
+- Kind: `outcome`
+- End commit: `a618ea0`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/HyperDex/Replicant/client/pending_cond_follow.cc`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Ffi/Client.chs`
+  - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Core.hs`
+  - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Handle.hs`
+- Evidence summary:
+  - the observed coordinator post-follow exchange is already consistent with
+    original Replicant: upstream consumes `REPLNET_COND_WAIT` through
+    `REPLNET_CLIENT_RESPONSE`, and current Rust now produces that same
+    completion shape on the corrected baseline
+  - `5e2224a` proves the failing large-object Hyhac subset still returns
+    `Left ClientGarbage` while daemon capture stays empty after startup noise
+    is cleared
+  - taken together, those two facts move the remaining boundary away from
+    coordinator follow/config behavior and toward the client-handle path before
+    any daemon request is emitted
+- Conclusion: the next exact product target is the HyperDex client
+  handle/completion contract that Hyhac wraps through its deferred path. The
+  next product step should verify that differential directly by comparing the
+  native HyperDex client path with Hyhac’s `clientDeferred` /
+  `wrapDeferred` / `demandHandle` path on the same live Rust cluster.
+- Disposition: `advance`
+- Next move: hold this workstream at ready and relaunch product work on that
+  differential target.
