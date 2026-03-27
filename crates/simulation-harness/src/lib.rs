@@ -862,7 +862,16 @@ mod tests {
                 )
                 .await
                 .unwrap();
-                assert!(matches!(primary_view, ClientResponse::Record(Some(_))));
+                match primary_view {
+                    ClientResponse::Record(Some(record)) => {
+                        let actual = match record.attributes.get("profile_views") {
+                            Some(Value::Int(value)) => *value,
+                            other => panic!("unexpected record attribute: {other:?}"),
+                        };
+                        assert_eq!(actual, expected_value);
+                    }
+                    other => panic!("unexpected primary get response: {other:?}"),
+                }
             });
         })
         .settings(hegel::Settings::new().test_cases(15))
