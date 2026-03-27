@@ -398,10 +398,7 @@ impl ClusterRuntime {
             self.catalog.register_daemon(node.clone())?;
         }
 
-        *self
-            .cluster_config
-            .lock()
-            .expect("cluster config poisoned") = view.cluster.clone();
+        *self.cluster_config.lock().expect("cluster config poisoned") = view.cluster.clone();
 
         let local_spaces = self.catalog.list_spaces()?;
         let remote_spaces = view
@@ -442,11 +439,7 @@ impl ClusterRuntime {
 
     fn remote_node(&self, node_id: u64) -> Result<RemoteNode> {
         let cluster_config = self.cluster_config.lock().expect("cluster config poisoned");
-        let Some(node) = cluster_config
-            .nodes
-            .iter()
-            .find(|node| node.id == node_id)
-        else {
+        let Some(node) = cluster_config.nodes.iter().find(|node| node.id == node_id) else {
             return Err(anyhow!(
                 "cluster config does not define remote node {node_id}"
             ));
@@ -454,7 +447,10 @@ impl ClusterRuntime {
         Ok(RemoteNode {
             id: node.id,
             host: node.host.clone(),
-            port: node.data_port,
+            port: match self.internode_transport {
+                TransportRuntime::InProcess => node.data_port,
+                TransportRuntime::Grpc => node.control_port,
+            },
         })
     }
 }
@@ -1332,14 +1328,16 @@ impl HyperdexClientService for ClusterRuntime {
             } => {
                 let primary = self.route_primary(&key)?;
                 if primary == self.local_node_id {
-                    Ok(match self
-                        .data_plane
-                        .conditional_put(&space, key, &checks, &mutations)?
-                    {
-                        WriteResult::Written => ClientResponse::Unit,
-                        WriteResult::ConditionFailed => ClientResponse::ConditionFailed,
-                        WriteResult::Missing => ClientResponse::Unit,
-                    })
+                    Ok(
+                        match self
+                            .data_plane
+                            .conditional_put(&space, key, &checks, &mutations)?
+                        {
+                            WriteResult::Written => ClientResponse::Unit,
+                            WriteResult::ConditionFailed => ClientResponse::ConditionFailed,
+                            WriteResult::Missing => ClientResponse::Unit,
+                        },
+                    )
                 } else {
                     Ok(
                         match self

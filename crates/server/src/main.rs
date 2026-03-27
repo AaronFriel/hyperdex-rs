@@ -1,17 +1,122 @@
+extern crate prost;
+
+use bytes::Bytes;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
+use async_trait::async_trait;
 use hyperdex_admin_protocol::{CoordinatorAdminRequest, CoordinatorReturnCode};
 use legacy_frontend::LegacyFrontend;
 use server::{
     coordinator_cluster_config, daemon_cluster_config, daemon_registration_node,
     handle_coordinator_control_method, handle_legacy_request, parse_process_mode,
     request_coordinator_control_once, sync_runtime_with_coordinator, ClusterRuntime,
-    CoordinatorControlService, ProcessMode,
+    CoordinatorControlService, ProcessMode, TransportRuntime,
 };
+use tokio::net::TcpListener;
+use tokio::sync::oneshot;
+use tokio_stream::wrappers::TcpListenerStream;
+use tonic::transport::Server;
 use tracing::{info, warn};
+use transport_core::{ClusterTransport, InternodeRequest, InternodeResponse, RemoteNode};
+
+pub mod grpc_api {
+    pub mod v1 {
+        tonic::include_proto!("hyperdex.v1");
+    }
+}
+
+#[derive(Clone)]
+struct ProcessInternodeGrpc {
+    runtime: Arc<ClusterRuntime>,
+}
+
+impl ProcessInternodeGrpc {
+    fn new(runtime: Arc<ClusterRuntime>) -> Self {
+        Self { runtime }
+    }
+}
+
+#[tonic::async_trait]
+impl grpc_api::v1::internode_transport_server::InternodeTransport for ProcessInternodeGrpc {
+    async fn send(
+        &self,
+        request: tonic::Request<grpc_api::v1::InternodeRpcRequest>,
+    ) -> std::result::Result<tonic::Response<grpc_api::v1::InternodeRpcResponse>, tonic::Status>
+    {
+        let request = request.into_inner();
+        let response = self
+            .runtime
+            .handle_internode_request(InternodeRequest {
+                method: request.method,
+                body: Bytes::from(request.body),
+            })
+            .await
+            .map_err(|err| tonic::Status::internal(err.to_string()))?;
+
+        Ok(tonic::Response::new(grpc_api::v1::InternodeRpcResponse {
+            status: response.status as u32,
+            body: response.body.to_vec(),
+        }))
+    }
+}
+
+#[derive(Default)]
+struct ProcessGrpcTransportAdapter;
+
+#[async_trait]
+impl ClusterTransport for ProcessGrpcTransportAdapter {
+    async fn send(
+        &self,
+        node: &RemoteNode,
+        request: InternodeRequest,
+    ) -> Result<InternodeResponse> {
+        let endpoint = format!("http://{}:{}", node.host, node.port);
+        let mut client =
+            grpc_api::v1::internode_transport_client::InternodeTransportClient::connect(endpoint)
+                .await?;
+        let response = client
+            .send(grpc_api::v1::InternodeRpcRequest {
+                method: request.method,
+                body: request.body.to_vec(),
+            })
+            .await?
+            .into_inner();
+
+        Ok(InternodeResponse {
+            status: response.status as u16,
+            body: Bytes::from(response.body),
+        })
+    }
+
+    fn name(&self) -> &'static str {
+        "grpc-process"
+    }
+}
+
+async fn serve_internode_grpc(
+    runtime: Arc<ClusterRuntime>,
+    address: std::net::SocketAddr,
+    shutdown_rx: oneshot::Receiver<()>,
+) -> Result<()> {
+    let listener = TcpListener::bind(address).await?;
+    info!(address = %listener.local_addr()?, "daemon internode gRPC listening");
+
+    Server::builder()
+        .add_service(
+            grpc_api::v1::internode_transport_server::InternodeTransportServer::new(
+                ProcessInternodeGrpc::new(runtime),
+            ),
+        )
+        .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async move {
+            let _ = shutdown_rx.await;
+        })
+        .await?;
+
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -104,10 +209,17 @@ async fn main() -> Result<()> {
                 );
             }
 
-            let runtime = Arc::new(server::ClusterRuntime::single_node_with_data_dir(
+            let mut runtime = server::ClusterRuntime::single_node_with_data_dir(
                 daemon_config,
                 Some(Path::new(&data_dir)),
-            )?);
+            )?;
+            if internode_transport == cluster_config::TransportBackend::Grpc {
+                runtime.install_cluster_transport(
+                    Arc::new(ProcessGrpcTransportAdapter),
+                    TransportRuntime::Grpc,
+                );
+            }
+            let runtime = Arc::new(runtime);
             info!(
                 threads,
                 data_dir,
@@ -134,6 +246,20 @@ async fn main() -> Result<()> {
                     error = %err,
                     "daemon could not fetch coordinator config during startup"
                 ),
+            }
+
+            let mut grpc_shutdown_tx = None;
+            let mut grpc_task = None;
+            if internode_transport == cluster_config::TransportBackend::Grpc {
+                let (shutdown_tx, shutdown_rx) = oneshot::channel();
+                let grpc_runtime = runtime.clone();
+                let grpc_address = format!("{listen_host}:{control_port}")
+                    .parse()
+                    .expect("validated socket address");
+                grpc_shutdown_tx = Some(shutdown_tx);
+                grpc_task = Some(tokio::spawn(async move {
+                    serve_internode_grpc(grpc_runtime, grpc_address, shutdown_rx).await
+                }));
             }
 
             let legacy_frontend = LegacyFrontend::bind(
@@ -185,6 +311,12 @@ async fn main() -> Result<()> {
                 _ = tokio::signal::ctrl_c() => {}
             }
 
+            if let Some(shutdown_tx) = grpc_shutdown_tx.take() {
+                let _ = shutdown_tx.send(());
+            }
+            if let Some(task) = grpc_task.take() {
+                task.await??;
+            }
             sync_task.abort();
             let _ = sync_task.await;
         }
