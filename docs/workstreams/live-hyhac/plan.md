@@ -206,50 +206,19 @@ stronger live probe before returning control.
 
 ## Current Hypothesis
 
-The request core, session core, packed-space decoder hardening, same-port
-startup, binary config encoding, daemon join, and coordinator bootstrap/admin
-compatibility are now on `main`. `1d6093c` also fixes the first concrete
-packed-config mismatch by replacing singleton primary-subspace region bounds
-with HyperDex partition intervals. The focused large-object failure is still
-the right public loop, but it still does not point at the daemon request
-decoder: the daemon never sees `REQ_ATOMIC` for this path, and the harness
-still shows the first captured exchange on the coordinator connection. The
-next concrete gap is therefore deeper inside the packed
-`hyperdex::configuration` / `hyperdex::space` body after region interval
-correction. The next proven bad field is now the ID-allocation contract:
-Rust emits zero-based `space_id`, `subspace_id`, `region_id`, and especially
-`virtual_server_id=0`, while the original coordinator allocates those IDs from
-one shared counter seeded at `1`. But the concrete failing key `"large"`
-already routes to a non-null replica tuple on current `main`, so the active
-public blocker is now one step later than route selection. The next exact
-contract is the client-to-daemon routing header, especially whether the chosen
-`virtual_server_id` maps back to a real `server_id` and address and whether
-the stamped config version and `vidt` pass the daemon-side header gate. That
-header contract now appears sound for the concrete failing key, so the next
-exact question is the first body contract after an accepted daemon header. That
-first body contract also appears sound, so the next exact question is the first
-daemon-side processing or response contract after a structurally valid atomic
-request. That contract is now concrete: current Rust lacks upstream-equivalent
-atomic schema validation and the explicit `RESP_ATOMIC/NET_BADDIMSPEC`
-response path that follows it. That gap is now fixed on `main`, so the next
-active blocker is the multiprocess process-level `early eof` path exposed by
-the server harness.
+The earlier coordinator-side and request-shape gaps are now behind `main`.
+`acfdcdc` landed the missing atomic validation-and-explicit-error behavior, and
+the focused large-object public loop still reproduces. The next concrete
+blocker is now the multiprocess process-level `early eof` path, which is also
+failing the broader live-cluster harnesses and therefore prevents a trustworthy
+baseline for the remaining large-object mismatch.
 
 ## Next Bounded Step
 
-Own the next packed `hyperdex::configuration` / `hyperdex::space` body fix for
-the full `profiles` schema through the focused large-object `ClientGarbage`
-repro now that region intervals are corrected. Use the ID-allocation mismatch
-as a correctness fix if it is already in flight, but do not stop there: the
-concrete failing key is already past route selection, so drive until the next
-exact pre-daemon mismatch is exposed or fixed. The next exact target is the
-first daemon-side processing or response contract after the daemon would accept
-the header. Stay on the fast public loop until that path either clears or
-yields the next exact coordinator-side contract, which is now later than
-request structure itself. The atomic validation-and-explicit-error target is
-now landed, so the active target is the multiprocess `early eof` process-level
-path that blocks a clean live-cluster baseline for the remaining large-object
-failure.
+Own the multiprocess `early eof` process-level path from current `main`. Use
+`coordinator_space_add_reaches_multiple_daemon_processes` as the fast loop,
+clear the three failing process-level harnesses, and then rerun the focused
+large-object public check on top of that cleaner live-cluster baseline.
 
 ## Surprises & Discoveries
 
