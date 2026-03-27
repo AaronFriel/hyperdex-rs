@@ -88,12 +88,11 @@ One bounded design-or-implementation step with validation and a recorded verdict
 
 ## Current Hypothesis
 
-The runtime now has a verified distributed mutation path through the legacy
-public surface, but only in the multi-runtime network harness where the gRPC
-internode service is hosted explicitly. The next useful step is to make the
-daemon binary host and use that same internode gRPC service at process startup
-when `--transport=grpc` is selected, because that is the concrete blocker
-preventing the same proof from running across separate daemon processes.
+The runtime now proves routed legacy atomic mutation across separate daemon
+processes, so simple primary forwarding is no longer the limiting gap. The
+next useful step is to add the first real replication fanout beyond the
+primary, because the user asked for a real distributed system and the current
+runtime still stores each write on only one daemon.
 
 ## Milestones
 
@@ -179,11 +178,13 @@ preventing the same proof from running across separate daemon processes.
 - Done: the addressed `Put` path is now proven to carry scalar numeric mutation
   to the remote primary, matching the mutation shape the legacy atomic flow
   already uses.
-- Known gap: the distributed data path is now proven through the legacy atomic
-  frontend in the multi-runtime network harness, but the daemon binary still
-  does not host internode gRPC at process startup, so the same proof does not
-  yet run across separate daemon processes. Delete-group/search distribution
-  and replication fanout also remain unfinished.
+- Done: daemon startup now hosts the internode gRPC service on the daemon
+  control port when `--transport=grpc` is selected, and the multiprocess
+  harness now proves that a legacy `REQ_ATOMIC` sent to one daemon is routed
+  to the remote primary and observed with `REQ_GET` on the other daemon.
+- Known gap: writes are still primary-only even though forwarding now works
+  across real daemon processes. Delete-group/search distribution and
+  replication fanout remain unfinished.
 - Active: dedicated worktrees are now producing distributed control-plane,
   distributed data-plane, and multiprocess validation changes in parallel.
 - Next: broaden the distributed data path so more of the legacy request surface
@@ -191,10 +192,9 @@ preventing the same proof from running across separate daemon processes.
 
 ## Next Bounded Iteration
 
-Make the daemon binary host the internode gRPC service when `--transport=grpc`
-is selected, then move the legacy atomic remote-primary proof from the
-multi-runtime harness into the real multiprocess coordinator-plus-daemons
-harness.
+Use the existing placement replica list to fan a write out beyond the primary
+over internode gRPC, then prove in a focused test that a secondary daemon
+stores the replicated value after a write accepted through another daemon.
 
 ## Loop Ledger
 
@@ -230,3 +230,4 @@ harness.
 | 28 | After routed delete, `ConditionalPut` is the next highest-value distributed mutation because the legacy atomic request flow already relies on compare-and-write semantics and status mapping. | Extend `DataPlaneRequest` with `ConditionalPut`, route `ClientRequest::ConditionalPut` through the addressed transport abstraction, add a focused cross-runtime compare-and-write proof in the gRPC transport test, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `grpc_forwards_conditional_put_requests_between_two_runtimes`; `cargo test -p server` passes; `cargo test --workspace` passes after routed conditional write lands on `main`. | Confirmed. | advance | Extend the addressed transport path to the next legacy atomic mutation shape, starting with scalar numeric mutation. |
 | 29 | After routed `ConditionalPut`, the next distributed legacy mutation shape to verify is scalar numeric mutation, because the legacy atomic path already emits it through the existing `Put` mutation vector. | Add a focused cross-runtime numeric-mutation proof in the gRPC transport test, revalidate the transport tests, `server`, and the full workspace, and use the result to decide whether another transport variant is needed. | `cargo test -p transport-grpc --test public_frontend` passes with `grpc_forwards_numeric_mutation_requests_between_two_runtimes`; `cargo test -p server` passes; `cargo test --workspace` passes, confirming the existing routed `Put` path already carries scalar numeric mutation correctly to the remote primary. | Confirmed. | advance | Move up one layer and prove the distributed mutation path through the legacy atomic frontend itself across daemon boundaries. |
 | 30 | After the numeric mutation proof, the next useful check is to drive that same distributed mutation path through the public legacy atomic request surface instead of only the typed internal API. | Add a focused legacy-TCP proof in the gRPC transport test that sends `REQ_ATOMIC` to one runtime, forwards the write to the remote primary over real gRPC internode transport, verifies the result with `REQ_GET` on the remote runtime, remove the overreaching process-level test that assumed daemon gRPC hosting already existed, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `legacy_atomic_public_path_forwards_to_remote_primary_runtime`; `cargo test -p server` passes after removing the invalid process-level test; `cargo test --workspace` passes, proving the legacy public mutation path across real networked runtimes while also showing that daemon process startup still lacks internode gRPC hosting. | Confirmed, with a narrower boundary than first attempted. | advance | Make daemon startup host and use the internode gRPC service so the same legacy atomic proof can move from the multi-runtime harness into the real multiprocess daemon harness. |
+| 31 | The next limiting gap after the multi-runtime legacy proof is daemon-process internode hosting, because without it the same distributed mutation path cannot be proven across the real coordinator-plus-daemons harness. | Add a server-local tonic/prost build path for the internode RPC, make daemon startup install a gRPC transport adapter and host the internode service on `control_port` when `--transport=grpc` is selected, route remote gRPC dials to `control_port`, restore the multiprocess legacy atomic test, and revalidate `server` plus the full workspace. | `cargo test -p server --test dist_multiprocess_harness -- --nocapture` passes with `legacy_atomic_routes_numeric_update_to_remote_primary_process`; `cargo test -p server` passes; `cargo test --workspace` passes, proving a legacy `REQ_ATOMIC` can now cross real daemon processes through the coordinator-published cluster layout and the daemon-hosted internode gRPC service. | Confirmed. | advance | Add first real replication fanout beyond the primary and prove a secondary daemon stores replicated state after a distributed write. |
