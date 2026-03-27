@@ -189,3 +189,33 @@
 - Disposition: `advance`
 - Next move: hold until the product worker or another real-cluster failure
   needs a tighter repro.
+
+### Entry `mph-005` - Preregistration
+
+- Timestamp: `2026-03-27 07:50Z`
+- Kind: `preregister`
+- Hypothesis: extending the new large-object `ClientGarbage` repro to capture
+  the first bad legacy daemon request/response pair will give the product
+  worker a stronger target than the public failure string alone.
+- Owner: forked worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-probe`
+- Start commit: `0b2379d`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-probe` on
+    `clientgarbage-probe`
+- Mutable surface:
+  - `Cargo.toml`
+  - `crates/server/Cargo.toml`
+  - `crates/server/tests/**`
+  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+    is strictly necessary
+- Validator:
+  - fastest useful check: focused large-object repro with added capture or
+    summary
+  - strong checks:
+    - `cargo test -p server --test dist_multiprocess_harness -- --nocapture`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - a fast repro that also reports the first bad request/response edge
+  - clearer evidence for the daemon-path product worker
+  - one bounded commit ready for reconciliation

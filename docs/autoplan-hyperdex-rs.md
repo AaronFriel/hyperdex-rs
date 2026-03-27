@@ -121,7 +121,7 @@ split, sequencing, or validator set needs to change.
 | Workstream | Status | Owner | Dependencies / Blockers | Plan | Ledger | Worktree / Branch | Fastest Useful Check | Next Step | Latest Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
-| `multiprocess-harness` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-probe` on `clientgarbage-probe` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` | Hold until the product worker or another live-cluster failure needs another shorter repro. | `advance` |
+| `multiprocess-harness` | active | forked worker in `clientgarbage-probe` worktree | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-probe` on `clientgarbage-probe` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` | Capture the first bad daemon-path request/response pair around the large-object repro so the product worker gets wire-level evidence, not only a smaller failing subset. | `advance` |
 | `live-hyhac` | active | forked worker in `live-hyhac-data-plane` worktree | Coordinator bootstrap and admin compatibility are now working on `main`, but the legacy daemon request/response path still returns `ClientGarbage` once `hyhac` reaches pooled roundtrips and richer client operations. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on `live-hyhac-data-plane` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused server tests | Own the legacy daemon data-path compatibility step until the large-object `ClientGarbage` failure and the earlier pooled/client operations stop failing, or the next exact mismatch is captured. | `advance` |
 
 ## Progress
@@ -248,20 +248,23 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 07:45Z) Reconciled `0b2379d` (`Add fast hyhac ClientGarbage
   repro probes`), which reduces the first public daemon-path failure to the
   focused `*Can store a large object*` `hyhac` subset on `main`.
+- [x] (2026-03-27 07:50Z) Reopened the harness workstream immediately so the
+  daemon-path fix still has two active owners: one on product code, one on
+  wire-level repro evidence around the new fast large-object failure.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
 Drive the legacy daemon data-path fix with the newly shortened
-`*Can store a large object*` repro as the primary public check. The
-admin/bootstrap layer is no longer the blocker, and the reproducer workstream
-is back to holding state.
+`*Can store a large object*` repro as the primary public check while a parallel
+harness worker captures the first bad request/response pair on that path. The
+admin/bootstrap layer is no longer the blocker.
 
 ## Next Root Move
 
-Keep the daemon-data-path worker active and make sure it uses the new fast
-large-object `ClientGarbage` repro before falling back to broader `hyhac`
-coverage.
+Keep both daemon-path owners active: the product worker should use the new fast
+large-object `ClientGarbage` repro first, and the harness worker should return
+wire-level evidence for the first bad request/response pair on that path.
 
 ## Surprises & Discoveries
 

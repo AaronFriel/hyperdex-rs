@@ -73,17 +73,21 @@ waiting on the whole Haskell path every time.
 - [x] (2026-03-27 07:45Z) Reconciled `0b2379d` (`Add fast hyhac ClientGarbage
   repro probes`), which reduces the first daemon-path failure to the focused
   `*Can store a large object*` `hyhac` subset.
+- [x] (2026-03-27 07:50Z) Reopened this workstream again right after landing
+  the fast repro because the product worker still needs wire-level evidence for
+  the first bad request/response pair on that same large-object path.
 
 ## Current Hypothesis
 
-The short `ClientGarbage` repro is now on `main`, so this workstream is back in
-a good holding state. The next change here should come from a newly observed
-cluster-validation problem or a need for an even tighter repro.
+The short `ClientGarbage` repro is now on `main`, but the product worker still
+only has a smaller failing subset, not the first bad request/response pair.
+This workstream should now capture that wire-level evidence without taking over
+the product fix itself.
 
 ## Next Bounded Step
 
-Hold until the product worker or another real-cluster failure needs more
-harness work.
+Capture the first bad daemon-path request/response pair around the large-object
+`ClientGarbage` repro.
 
 ## Surprises & Discoveries
 
@@ -108,6 +112,11 @@ harness work.
   smaller public subset.
   Evidence: `legacy_hyhac_large_object_probe_hits_clientgarbage_fast` reaches
   `Left ClientGarbage` in about `107ms`.
+- Observation: the shorter repro still does not tell us exactly which daemon
+  request/response edge the legacy client rejects.
+  Evidence: the landed tests prove the public failure quickly, but they stop at
+  the failing subset rather than capturing the first bad legacy data-plane
+  exchange.
 
 ## Decision Log
 
@@ -127,4 +136,5 @@ harness work.
 - `6f061b3` adds that fast live admin probe loop, and the strongest next use of
   this workstream was to shorten the new `ClientGarbage` reproduction path.
 - `0b2379d` delivers that shorter repro, so this workstream can wait again
-  until the next measurement bottleneck appears.
+  unless the product worker benefits from wire-level evidence on that same
+  path. That is the current bounded step.
