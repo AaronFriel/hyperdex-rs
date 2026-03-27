@@ -260,3 +260,88 @@
 - Disposition: `advance`
 - Next move: relaunch the implementation worker with this initial handshake
   fact included explicitly in scope.
+
+### Entry `hyh-007` - Preregistration
+
+- Timestamp: `2026-03-27 04:46Z`
+- Kind: `preregister`
+- Hypothesis: implementing the verified BusyBee-framed, Replicant-compatible
+  coordinator admin behavior in one bounded worker will unblock the legacy
+  admin tools.
+- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+- Start commit: `801d20f`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+- Mutable surface:
+  - `crates/server/**`
+  - `crates/hyperdex-admin-protocol/**`
+- Validator:
+  - `cargo test -p server coordinator_control_service_ -- --nocapture`
+  - `cargo test --workspace`
+  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
+- Expected artifacts:
+  - legacy admin endpoint no longer timing out
+  - one bounded commit ready for reconciliation
+
+### Entry `hyh-007` - Outcome
+
+- Timestamp: `2026-03-27 04:56Z`
+- Kind: `outcome`
+- End commit: `801d20f`
+- Artifact location:
+  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+- Evidence summary:
+  - the worker again reported no file changes
+  - the worker named broad implementation design, not missing protocol facts,
+    as the blocker
+- Conclusion: the implementation must be split into narrower write scopes.
+- Disposition: `retry`
+- Next move: preregister separate admin-codec and server-integration steps.
+
+### Entry `hyh-008` - Preregistration
+
+- Timestamp: `2026-03-27 04:56Z`
+- Kind: `preregister`
+- Hypothesis: a dedicated admin-codec worker limited to BusyBee and Replicant
+  framing code will produce the reusable parser and encoder pieces without
+  getting blocked on server integration.
+- Owner: dedicated worker in a new admin-codec worktree
+- Start commit: `801d20f`
+- Worktree / branch:
+  - to be created by root
+- Mutable surface:
+  - `crates/hyperdex-admin-protocol/**`
+  - any tiny adjacent support code strictly needed for codec tests
+- Validator:
+  - targeted codec tests added by the worker
+  - `cargo test -p hyperdex-admin-protocol`
+  - `cargo test --workspace`
+- Expected artifacts:
+  - BusyBee frame reader/writer
+  - Replicant request and response codec for the admin path
+  - one bounded commit ready for reconciliation
+
+### Entry `hyh-009` - Preregistration
+
+- Timestamp: `2026-03-27 04:56Z`
+- Kind: `preregister`
+- Hypothesis: a dedicated server-integration worker limited to listener,
+  session state, and loop-completion behavior can wire the admin codec into the
+  coordinator path once the codec surface is available.
+- Owner: dedicated worker in a new admin-server worktree
+- Start commit: `801d20f`
+- Worktree / branch:
+  - to be created by root
+- Mutable surface:
+  - `crates/server/**`
+  - `crates/hyperdex-admin-protocol/**` only for tiny integration glue if
+    unavoidable
+- Validator:
+  - `cargo test -p server coordinator_control_service_ -- --nocapture`
+  - `cargo test --workspace`
+  - live admin tool probes after codec integration is available
+- Expected artifacts:
+  - coordinator-side admin session state machine
+  - loop-completion behavior
+  - one bounded commit ready for reconciliation

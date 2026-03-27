@@ -118,7 +118,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Hold until a new real-cluster failure requires deeper harness work. | `advance` |
-| `live-hyhac` | active | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane` for the replacement implementation step | Implement the BusyBee-framed, Replicant-compatible coordinator admin behavior for config follow, `space_add`, `wait_until_stable`, and loop completion, then rerun the bounded live probe. | `advance` |
+| `live-hyhac` | active | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus new dedicated worktrees for admin codec and server integration | Build the legacy coordinator admin path in two narrower delegated steps: BusyBee/Replicant codec first, then server-side listener and loop completion, then rerun the bounded live probe. | `retry` |
 
 ## Progress
 
@@ -155,20 +155,24 @@ split, sequencing, or validator set needs to change.
   Replicant framing.
 - [x] (2026-03-27 04:46Z) Finished the narrowed evidence steps for Replicant
   framing and dynamic packet capture.
-- [ ] Relaunch the coordinator-admin implementation worker on the now-complete
-  BusyBee and Replicant framing facts.
+- [x] (2026-03-27 04:56Z) Retired the third implementation thread cleanly when
+  it again reported no file changes and identified broad implementation design
+  as the blocker.
+- [ ] Launch the split implementation steps with disjoint write ownership:
+  admin codec first and server integration second.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
-Drive the next live-compatibility step on the now-complete transport facts. The
-remaining missing piece is implementation, not more protocol discovery.
+Drive the next live-compatibility step with narrower delegated write scopes.
+The missing piece is implementation, but one broad worker keeps stalling, so
+root must split the work into codec and server pieces and let workers own them
+separately.
 
 ## Next Root Move
 
-Relaunch the `dist-control-plane` implementation step with the verified BusyBee
-size header, Replicant message layouts, and initial `config` follow behavior in
-its scope and validator.
+Create dedicated worktrees for the admin codec and server integration, record
+those steps in `live-hyhac`, and launch both workers with disjoint write sets.
 
 ## Surprises & Discoveries
 
@@ -214,6 +218,10 @@ its scope and validator.
   framing and the Replicant request and response layouts, and the dynamic
   capture confirmed that both admin tools first emit the same 25-byte `config`
   follow request before any operation-specific traffic.
+- Observation: even with complete framing evidence, a single worker still did
+  not start code changes.
+  Evidence: the third implementation thread reported no touched files and named
+  broad implementation design as the blocker.
 
 ## Decision Log
 

@@ -75,23 +75,26 @@ surface.
   Replicant framing.
 - [x] (2026-03-27 04:46Z) Finished the narrowed evidence steps for Replicant
   framing and dynamic packet capture.
-- [ ] Implement the verified BusyBee-framed, Replicant-compatible legacy
-  coordinator admin behavior in the dedicated control-plane worktree.
+- [x] (2026-03-27 04:56Z) Retired the third implementation thread cleanly when
+  it again reported no file changes and broad implementation design as the
+  blocker.
+- [ ] Launch the split implementation steps with disjoint write ownership:
+  admin codec first and server integration second.
+- [ ] Reconcile those two implementation results onto `main`.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
 The first missing live contract is still the legacy coordinator admin frontend,
-and the framing facts are now concrete enough to implement: BusyBee size
-headers, Replicant message types and field layouts, the initial `config`
-follow, and request-id-plus-loop completion behavior.
+and the framing facts are concrete enough. The remaining risk is implementation
+scope: one worker keeps stalling when asked to do codec and server behavior at
+once, so the next attempt must split those writes.
 
 ## Next Bounded Step
 
-Implement the smallest legacy coordinator admin behavior that matches the
-verified BusyBee and Replicant framing for the initial `config` follow,
-`space_add`, `wait_until_stable`, and `hyperdex_admin_loop`, then rerun the
-bounded live probe.
+Implement the legacy coordinator admin path in two narrower steps:
+BusyBee/Replicant codec first, then server-side listener and loop completion,
+then rerun the bounded live probe.
 
 ## Surprises & Discoveries
 
@@ -126,6 +129,10 @@ bounded live probe.
   Evidence: the dynamic-capture pass observed the same 25-byte first packet for
   both tools, and the source-level pass ties that to `maintain_coord_connection`
   issuing `replicant_client_cond_follow(..., \"hyperdex\", \"config\", ...)`.
+- Observation: complete protocol evidence was still not enough for one broad
+  implementation worker to start editing.
+  Evidence: the third implementation thread again reported no touched files and
+  named broad implementation design as the blocker.
 
 ## Decision Log
 
