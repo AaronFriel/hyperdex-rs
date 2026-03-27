@@ -70,3 +70,42 @@
   - live legacy admin endpoint that no longer times out on `add_space`
   - live legacy admin endpoint that no longer times out on `wait_until_stable`
   - one bounded commit ready for reconciliation
+
+### Entry `hyh-002` - Outcome
+
+- Timestamp: `2026-03-27 04:39Z`
+- Kind: `outcome`
+- End commit: `d2c133c`
+- Artifact location:
+  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+- Evidence summary:
+  - the retired worker reported no file changes
+  - the retired worker identified insufficient verified wire detail for the
+    Replicant-backed admin path as the exact blocker
+- Conclusion: the bounded implementation attempt should not continue until the
+  original HyperDex admin framing and completion flow are concrete enough to
+  code without guessing.
+- Disposition: `retry`
+- Next move: preregister a read-only protocol evidence pass, then reopen the
+  implementation step with tighter verified scope.
+
+### Entry `hyh-003` - Preregistration
+
+- Timestamp: `2026-03-27 04:39Z`
+- Kind: `preregister`
+- Hypothesis: a read-only pass over the original HyperDex admin client path
+  can recover enough verified framing and completion detail to reopen the
+  bounded legacy-admin implementation safely.
+- Owner: read-only worker on the original HyperDex and `hyhac` sources
+- Start commit: `d2c133c`
+- Worktree / branch:
+  - root checkout on `main`
+  - no `hyperdex-rs` code edits for this pass
+- Mutable surface:
+  - none; read-only evidence gathering only
+- Validator:
+  - verified findings tied to concrete source paths in `/home/friel/c/aaronfriel/HyperDex`
+  - enough protocol detail to define the next bounded implementation surface
+- Expected artifacts:
+  - verified transport and completion facts for the original admin client path
+  - a tighter implementation target for the replacement legacy-admin worker

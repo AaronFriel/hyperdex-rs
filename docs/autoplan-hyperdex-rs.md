@@ -118,7 +118,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Hold until a new real-cluster failure requires deeper harness work. | `advance` |
-| `live-hyhac` | active | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane` for follow-up implementation | Implement the legacy coordinator admin frontend needed for `add_space` and `wait_until_stable`, then rerun the bounded live probe. | `advance` |
+| `live-hyhac` | active | Waiting on verified wire facts from the original HyperDex admin path before the next bounded implementation step | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout; read-only worker on original HyperDex admin protocol evidence | Finish the read-only protocol evidence pass, then reopen the bounded legacy admin frontend implementation with verified framing and flow details. | `retry` |
 
 ## Progress
 
@@ -144,24 +144,27 @@ split, sequencing, or validator set needs to change.
   compatibility gap from observed failures: the live probe reaches the
   coordinator admin path, the coordinator now survives malformed connections,
   and the remaining blocker is legacy admin protocol compatibility.
-- [ ] Implement the legacy coordinator admin frontend needed by the C admin
-  client path, starting with `add_space` and `wait_until_stable`.
+- [x] (2026-03-27 04:39Z) Retired the first legacy-admin implementation thread
+  without code changes because it did not yet have enough verified wire detail
+  to implement the protocol safely.
+- [ ] Finish the read-only protocol evidence pass for the original HyperDex
+  admin client path.
+- [ ] Reopen the bounded legacy coordinator admin implementation step once that
+  protocol evidence is in hand.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
-Drive the next live-compatibility step on the coordinator admin surface. The
-proof and multiprocess workstreams are in a good holding state now, so root
-should spend the next bounded move on the public admin contract that `hyhac`
-actually reaches first.
+Convert the legacy admin blocker from a broad diagnosis into verified protocol
+facts. The next implementation step should start only after the original
+HyperDex admin framing and completion flow are concrete enough to code without
+guessing.
 
 ## Next Root Move
 
-Preregister and launch a bounded legacy-admin implementation step in
-`worktrees/dist-control-plane`, keep `main` available for the next live probe,
-and narrow that implementation to the smallest public contract that unblocks
-`hyperdex-add-space`, `hyperdex-wait-until-stable`, and the first `hyhac`
-admin test.
+Finish the read-only evidence pass on the original HyperDex admin path, record
+that outcome in `live-hyhac`, then preregister a replacement implementation
+step narrowed by those verified protocol facts.
 
 ## Surprises & Discoveries
 
@@ -186,6 +189,12 @@ admin test.
   Evidence: the direct `hyhac` probe timed out against a live cluster, the
   coordinator stayed alive after `329a469`, and a direct
   `hyperdex-add-space` invocation also timed out against port `1982`.
+- Observation: the first legacy-admin implementation thread stopped at the
+  right boundary and made no code changes because the original admin wire
+  protocol is Replicant-backed and still under-specified in the current Rust
+  repo.
+  Evidence: the retired worker reported no file changes and identified the
+  missing verified wire detail as the exact blocker.
 
 ## Decision Log
 

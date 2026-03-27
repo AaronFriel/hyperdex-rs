@@ -64,22 +64,28 @@ surface.
 - [x] (2026-03-27 04:33Z) Narrowed the next compatibility change to the legacy
   coordinator admin frontend, with `add_space` and `wait_until_stable` as the
   first required operations.
-- [ ] Implement the legacy coordinator admin frontend needed by the C admin
-  client path.
+- [x] (2026-03-27 04:39Z) Retired the first implementation thread cleanly when
+  it reported no file changes and an explicit blocker on missing verified wire
+  detail for the original admin protocol.
+- [ ] Finish the read-only protocol evidence pass for the original HyperDex
+  admin path.
+- [ ] Reopen the legacy coordinator admin frontend implementation with that
+  evidence in hand.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
-The first missing live contract is the legacy coordinator admin frontend used
-by the C admin library. The runtime itself can already perform the needed admin
-operations, but the public coordinator endpoint does not yet speak the protocol
-that `hyhac` reaches first.
+The first missing live contract is still the legacy coordinator admin frontend,
+but the immediate blocker on implementation is protocol certainty: the original
+admin path is Replicant-backed, and the Rust repo still needs a verified,
+minimal description of the wire framing and completion flow for
+`add_space` / `wait_until_stable`.
 
 ## Next Bounded Step
 
-Implement the smallest legacy coordinator admin frontend that unblocks
-`hyperdex-add-space` and `hyperdex-wait-until-stable`, then rerun the bounded
-live `hyhac` probe against that endpoint.
+Finish the read-only protocol evidence pass on the original HyperDex admin
+path, then reopen the smallest legacy coordinator admin implementation step
+that unblocks `hyperdex-add-space` and `hyperdex-wait-until-stable`.
 
 ## Surprises & Discoveries
 
@@ -92,6 +98,11 @@ live `hyhac` probe against that endpoint.
   connections, but the live probe still times out on the legacy admin path.
   Evidence: the bounded direct Cabal probe timed out after `30s`, and a direct
   `hyperdex-add-space` invocation also timed out against `127.0.0.1:1982`.
+- Observation: the first implementation thread on the legacy admin frontend
+  stopped without code changes because the original wire behavior is not yet
+  concrete enough to implement safely.
+  Evidence: the retired worker reported no touched files and named the missing
+  verified wire detail as the exact blocker.
 
 ## Decision Log
 
