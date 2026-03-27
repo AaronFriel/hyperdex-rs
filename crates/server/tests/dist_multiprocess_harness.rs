@@ -19,6 +19,7 @@ use legacy_protocol::{
 use server::{
     request_coordinator_control_once, request_coordinator_control_with_body_once, ClusterRuntime,
 };
+use serial_test::serial;
 use tempfile::TempDir;
 use tokio::net::TcpStream;
 use tokio::time::sleep;
@@ -418,6 +419,7 @@ fn grpc_route_runtime(
 }
 
 #[tokio::test]
+#[serial]
 async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()> {
     let tempdir = TempDir::new()?;
     let coordinator_port = reserve_port()?;
@@ -544,6 +546,7 @@ async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()>
 }
 
 #[tokio::test]
+#[serial]
 async fn legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Result<()> {
     let tempdir = TempDir::new()?;
     let coordinator_port = reserve_port()?;
@@ -688,6 +691,7 @@ async fn legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Resu
 }
 
 #[tokio::test]
+#[serial]
 async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Result<()> {
     let tempdir = TempDir::new()?;
     let coordinator_port = reserve_port()?;

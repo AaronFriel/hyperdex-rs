@@ -40,3 +40,6 @@ tracing-subscriber.workspace = true
 [build-dependencies]
 protoc-bin-vendored = "3"
 tonic-build = "0.12"
+
+[dev-dependencies]
+serial_test.workspace = true
