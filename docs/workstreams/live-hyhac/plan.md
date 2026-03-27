@@ -91,21 +91,22 @@ surface.
   on top of the landed codec and the completed server map.
 - [x] (2026-03-27 05:11Z) Retired that server implementation attempt when the
   admin-server worktree still had no file changes after interruption.
+- [x] (2026-03-27 05:14Z) Retired the explicit-patch-target retry when the
+  admin-server worktree still had no file changes after interruption.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
 The first missing live contract is still the legacy coordinator admin frontend.
-The codec and the server-side shape now both exist, so the remaining problem is
-execution: the worker must patch the identified listener and session functions
-directly instead of continuing to explore.
+The codec and the server-side shape both exist, so the remaining problem is
+execution shape: repeating context-free server retries is not producing code.
 
 ## Next Bounded Step
 
 Implement the coordinator-side legacy admin listener, session state, request-id
 allocation, config-follow, `space_add`, and `wait_until_stable` loop
-completion by patching the concrete `main.rs` coordinator branch and the
-identified admin/session helpers in `crates/server/src/lib.rs`.
+completion using a forked implementation worker, while a separate read-only
+reviewer checks the exact session-state machine against the current server code.
 
 ## Surprises & Discoveries
 
@@ -162,6 +163,9 @@ identified admin/session helpers in `crates/server/src/lib.rs`.
   code.
   Evidence: the `admin-server` worktree remained clean at `928130e` until the
   worker was interrupted.
+- Observation: the explicit-patch-target retry also produced no code.
+  Evidence: the `admin-server` worktree remained clean at `ee09ee0` until the
+  retry worker was interrupted.
 
 ## Decision Log
 

@@ -548,3 +548,54 @@
   - initial config-follow handling
   - `space_add` and `wait_until_stable` loop completion
   - one bounded commit ready for reconciliation
+
+### Entry `hyh-013` - Outcome
+
+- Timestamp: `2026-03-27 05:14Z`
+- Kind: `outcome`
+- End commit: `ee09ee0`
+- Artifact location:
+  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Evidence summary:
+  - the explicit-patch-target retry was interrupted
+  - the `admin-server` worktree remained clean at `ee09ee0`
+  - no blocker report was returned before interruption
+- Conclusion: the problem is no longer task definition; it is the execution
+  shape of the delegated server step.
+- Disposition: `reframe`
+- Next move: relaunch the same substantial server implementation with a forked
+  implementation worker and a separate read-only reviewer on the session-state
+  machine.
+
+### Entry `hyh-014` - Preregistration
+
+- Timestamp: `2026-03-27 05:14Z`
+- Kind: `preregister`
+- Hypothesis: changing the execution shape will finally produce code. A forked
+  implementation worker should inherit enough context to patch the server, and
+  a separate reviewer can keep the session-state machine precise without
+  touching files.
+- Owner: root-coordinated pair
+- Start commit: `ee09ee0`
+- Worktree / branch:
+  - implementation: `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - reviewer: read-only, no code edits
+- Mutable surface:
+  - implementation worker:
+    - `crates/server/**`
+    - `crates/hyperdex-admin-protocol/**` only for small integration glue if
+      strictly necessary
+  - reviewer:
+    - none; read-only analysis only
+- Validator:
+  - `cargo test -p server`
+  - `cargo test --workspace`
+  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
+- Expected artifacts:
+  - coordinator-side legacy admin listener
+  - session state with request-id allocation and pending completions
+  - initial config-follow handling
+  - `space_add` and `wait_until_stable` loop completion
+  - read-only reviewer notes on the session-state machine and risky branches
+  - one bounded commit ready for reconciliation
