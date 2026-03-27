@@ -141,18 +141,21 @@ surface.
 - [x] (2026-03-27 06:29Z) Captured the exact first post-join timeout surface:
   the original admin client stops after the first `config` follow completion
   and never sends `space_add` or `wait_until-stable`.
+- [x] (2026-03-27 06:35Z) Narrowed that wire result one step further: the
+  first Rust reply is not merely the wrong `config` completion shape, it is
+  the wrong Replicant frame type for the bootstrap path.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
 The request core, session core, packed-space decoder hardening, same-port
 startup, binary config encoding, and daemon join are now on `main`. The next
-concrete gap is the exact compatibility of the first `config` follow
-completion after bootstrap.
+concrete gap is the exact compatibility of the first Replicant bootstrap
+response.
 
 ## Next Bounded Step
 
-Fix the exact `config` follow completion mismatch, then rerun the bounded
+Fix the exact Replicant bootstrap-response mismatch, then rerun the bounded
 admin-tool probes and the direct `hyhac` Cabal test if they advance.
 
 ## Surprises & Discoveries
@@ -239,6 +242,12 @@ admin-tool probes and the direct `hyhac` Cabal test if they advance.
   single-byte BusyBee payload `0x1c`, and `Replicant/client/client.cc` treats
   `REPLNET_BOOTSTRAP` as the special message that installs the coordinator set
   before any condition follows are processed.
+- Observation: the current Rust coordinator answers that first bootstrap with
+  the wrong Replicant message type, so the C admin client never reaches the
+  later `config`-follow or admin-operation path.
+  Evidence: the captured 88-byte reply decodes as
+  `REPLNET_CLIENT_RESPONSE`, while `/home/friel/HyperDex/Replicant/client/client.cc`
+  expects `REPLNET_BOOTSTRAP` on the first successful receive for that path.
 - Observation: the service-core portion of that session layer is no longer
   hypothetical; it is on `main` and validated locally.
   Evidence: `78162d5` adds `CoordinatorAdminLegacyService`, focused server

@@ -1241,6 +1241,60 @@
   - a live probe that progresses beyond bootstrap, or the next narrower wire
     mismatch
 
+### Entry `hyh-030` - Outcome
+
+- Timestamp: `2026-03-27 06:35Z`
+- Kind: `outcome`
+- End commit: `afcfcd8`
+- Artifact location:
+  - `/tmp/hyh-029.WZxvnF/admin-proxy.log`
+  - `/home/friel/HyperDex/Replicant/client/client.cc`
+  - `/home/friel/c/aaronfriel/HyperDex/admin/admin.cc`
+- Evidence summary:
+  - the captured 88-byte Rust reply decodes as a BusyBee-framed
+    `REPLNET_CLIENT_RESPONSE` with a success status and 64-byte data payload
+  - `/home/friel/HyperDex/Replicant/client/client.cc` expects the first
+    successful reply on this path to be `REPLNET_BOOTSTRAP`, not a client
+    response
+  - `/home/friel/c/aaronfriel/HyperDex/admin/admin.cc` only issues
+    `replicant_client_cond_follow(..., "hyperdex", "config", ...)` after that
+    Replicant bootstrap state exists
+  - the admin client therefore never advances to a second request, so the
+    current blocker sits before higher-level HyperDex `config` payload
+    compatibility
+- Conclusion: the next compatibility target is the exact first Replicant
+  bootstrap response from the coordinator, not the later `config`-follow
+  completion.
+- Disposition: `advance`
+- Next move: preregister a bounded implementation step that makes the
+  coordinator emit the correct Replicant bootstrap frame.
+
+### Entry `hyh-031` - Preregistration
+
+- Timestamp: `2026-03-27 06:35Z`
+- Kind: `preregister`
+- Hypothesis: if the coordinator answers the initial 25-byte bootstrap request
+  with a proper Replicant `REPLNET_BOOTSTRAP` frame carrying the expected
+  bootstrap payload, the original admin client will progress past bootstrap
+  and expose the next concrete compatibility gap, or reach `space_add` /
+  `wait_until_stable` successfully.
+- Owner: delegated implementation worker to be launched from `main`
+- Start commit: `afcfcd8`
+- Worktree / branch:
+  - delegated worker branch from `main`
+- Mutable surface:
+  - `crates/server/src/lib.rs`
+  - `crates/hyperdex-admin-protocol/**` only if small codec support is
+    strictly necessary
+- Validator:
+  - `cargo test -p server`
+  - `cargo test --workspace`
+  - free-port admin-tool probe with captured wire
+- Expected artifacts:
+  - exact fix for the first Replicant bootstrap response
+  - a live probe that sends a second client request after bootstrap, or the
+    next narrower wire mismatch
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`

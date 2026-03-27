@@ -122,7 +122,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Hold until a new real-cluster failure requires deeper harness work. | `advance` |
-| `live-hyhac` | active | The request core, service core, decoder hardening, same-port startup, binary config payload encoding, and daemon join are now all working on `main`, but the original admin client still stops after the first `config` follow completion and never sends `space_add` or `wait_until_stable`. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus one active config-follow-compat worker | Fix the exact mismatch in the first `config` follow completion, then rerun the admin tools and `hyhac`. | `advance` |
+| `live-hyhac` | active | The request core, service core, decoder hardening, same-port startup, binary config payload encoding, and daemon join are now all working on `main`, but the original admin client still stops at the first Replicant bootstrap response because Rust replies with a condition-completion frame where the client expects a Replicant bootstrap frame. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus one active bootstrap-response worker | Fix the exact mismatch in the first Replicant bootstrap response, then rerun the admin tools and `hyhac`. | `advance` |
 
 ## Progress
 
@@ -226,6 +226,10 @@ split, sequencing, or validator set needs to change.
   surface: both original admin tools send only the 25-byte Replicant
   bootstrap, receive one 88-byte `config` follow completion, and then never
   send a second request.
+- [x] (2026-03-27 06:35Z) Narrowed that timeout one step further: the first
+  Rust reply is not only the wrong payload shape, it is the wrong Replicant
+  frame type. The C admin client expects `REPLNET_BOOTSTRAP` there and never
+  advances after seeing `REPLNET_CLIENT_RESPONSE` instead.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
@@ -233,11 +237,11 @@ split, sequencing, or validator set needs to change.
 Drive the remaining live coordinator compatibility gap now that the request
 core, service core, decoder hardening, same-port startup, binary config
 payload encoding, and daemon join all work on `main`. The next blocker is now
-precisely scoped to the very first `config` follow completion after bootstrap.
+precisely scoped to the very first Replicant bootstrap response frame.
 
 ## Next Root Move
 
-Fix the exact mismatch in the first `config` follow completion, then rerun
+Fix the exact mismatch in the first Replicant bootstrap response, then rerun
 `hyperdex-add-space`, `hyperdex-wait-until-stable`, and the direct `hyhac`
 probe.
 
@@ -291,6 +295,13 @@ probe.
   single-byte BusyBee payload `0x1c`, and `Replicant/client/client.cc` handles
   `REPLNET_BOOTSTRAP` as the bootstrap-install path before condition-follow
   traffic proceeds.
+- Observation: the current coordinator still answers that bootstrap with the
+  wrong Replicant message type, before higher-level HyperDex condition payload
+  compatibility even matters.
+  Evidence: the captured 88-byte reply decodes as
+  `REPLNET_CLIENT_RESPONSE`, while `Replicant/client/client.cc` expects the
+  first successful reply on that path to be `REPLNET_BOOTSTRAP` carrying the
+  coordinator-set install.
 - Observation: the packed-space and request-core gap is now closed.
   Evidence: `df633ac` adds `decode_packed_hyperdex_space`,
   `ReplicantAdminRequestMessage::into_coordinator_request`, focused protocol
