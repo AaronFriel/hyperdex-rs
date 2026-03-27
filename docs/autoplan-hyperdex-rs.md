@@ -255,21 +255,25 @@ split, sequencing, or validator set needs to change.
   the interrupted worker left unrelated product files dirty in the old
   worktree, then preregistered a fresh harness owner on a clean replacement
   worktree.
+- [x] (2026-03-27 19:52Z) Rearmed the watchdog, relaunched the replacement
+  harness owner on `clientgarbage-wire`, and confirmed the short large-object
+  repro plus `cargo test -p server` both still return the expected signal on
+  `main`.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
 Drive the legacy daemon data-path fix with the newly shortened
-`*Can store a large object*` repro as the primary public check while a parallel
-harness worker captures the first bad request/response pair on that path. The
-admin/bootstrap layer is no longer the blocker.
+`*Can store a large object*` repro as the shared short loop for both active
+owners. The product worker is responsible for clearing `ClientGarbage`, while
+the replacement harness worker should capture the first bad request/response
+pair on that same path. The admin/bootstrap layer is no longer the blocker.
 
 ## Next Root Move
 
-Keep both daemon-path owners active: the product worker should use the new fast
-large-object `ClientGarbage` repro first, and the replacement harness worker in
-`clientgarbage-wire` should return wire-level evidence for the first bad
-request/response pair on that path.
+Wait for the first substantial result from either active daemon-path owner,
+reconcile it onto `main`, and rerun the focused large-object repro before
+deciding whether the next pass belongs in product code or in the harness.
 
 ## Surprises & Discoveries
 
@@ -356,6 +360,11 @@ request/response pair on that path.
   `crates/hyperdex-admin-protocol/src/lib.rs`, `crates/legacy-frontend/src/lib.rs`,
   `crates/legacy-protocol/src/lib.rs`, `crates/server/src/lib.rs`, and
   `crates/simulation-harness/src/lib.rs`.
+- Observation: the short public daemon-path loop still gives fast, stable
+  signal on clean `main`.
+  Evidence: `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
+  completed in about `86ms` of probe time and still reported the expected
+  `Left ClientGarbage` output, while `cargo test -p server` stayed green.
 - Observation: the packed-space and request-core gap is now closed.
   Evidence: `df633ac` adds `decode_packed_hyperdex_space`,
   `ReplicantAdminRequestMessage::into_coordinator_request`, focused protocol
