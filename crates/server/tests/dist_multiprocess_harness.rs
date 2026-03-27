@@ -3,12 +3,13 @@ use std::io;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
 use cluster_config::{ClusterConfig, ClusterNode, TransportBackend};
 use data_model::parse_hyperdex_space;
-use hyperdex_admin_protocol::{CoordinatorAdminRequest, CoordinatorReturnCode};
+use hyperdex_admin_protocol::{ConfigView, CoordinatorAdminRequest, CoordinatorReturnCode};
 use legacy_frontend::request_once;
 use legacy_protocol::{
     AtomicRequest, AtomicResponse, CountRequest, CountResponse, GetAttribute, GetRequest,
@@ -21,13 +22,48 @@ use server::{
 };
 use serial_test::serial;
 use tempfile::TempDir;
-use tokio::net::TcpStream;
+use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::sleep;
+use transport_core::{
+    DataPlaneRequest, DataPlaneResponse, InternodeRequest, InternodeResponse, DATA_PLANE_METHOD,
+};
+
+pub mod grpc_api {
+    pub mod v1 {
+        tonic::include_proto!("hyperdex.v1");
+    }
+}
+
+static MULTIPROCESS_HARNESS_LOCK: LazyLock<AsyncMutex<()>> = LazyLock::new(|| AsyncMutex::new(()));
 
 struct ChildProcess {
     name: &'static str,
     child: Child,
     log_path: PathBuf,
+}
+
+struct ReservedPort {
+    port: u16,
+    listener: Option<std::net::TcpListener>,
+}
+
+impl ReservedPort {
+    fn new() -> Result<Self> {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+        let port = listener.local_addr()?.port();
+        Ok(Self {
+            port,
+            listener: Some(listener),
+        })
+    }
+
+    fn port(&self) -> u16 {
+        self.port
+    }
+
+    fn release(&mut self) {
+        drop(self.listener.take());
+    }
 }
 
 impl ChildProcess {
@@ -77,6 +113,7 @@ impl ChildProcess {
                     if err.downcast_ref::<io::Error>().is_some_and(|io_err| {
                         io_err.kind() == io::ErrorKind::ConnectionRefused
                             || io_err.kind() == io::ErrorKind::TimedOut
+                            || io_err.kind() == io::ErrorKind::UnexpectedEof
                     }) =>
                 {
                     self.ensure_running()?;
@@ -116,15 +153,9 @@ impl ChildProcess {
                     return Ok(());
                 }
                 Ok(_) => self.ensure_running()?,
-                Err(err)
-                    if err.downcast_ref::<io::Error>().is_some_and(|io_err| {
-                        io_err.kind() == io::ErrorKind::ConnectionRefused
-                            || io_err.kind() == io::ErrorKind::TimedOut
-                    }) =>
-                {
+                Err(_) => {
                     self.ensure_running()?;
                 }
-                Err(err) => return Err(err.into()),
             }
 
             if Instant::now() >= deadline {
@@ -139,20 +170,52 @@ impl ChildProcess {
         }
     }
 
-    async fn wait_for_log(&mut self, needle: &str) -> Result<()> {
+    async fn wait_for_config_view<F>(
+        &mut self,
+        address: SocketAddr,
+        description: &str,
+        predicate: F,
+    ) -> Result<ConfigView>
+    where
+        F: Fn(&ConfigView) -> bool,
+    {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            let logs = self.read_logs()?;
-            if logs.contains(needle) {
-                return Ok(());
+            match request_coordinator_control_with_body_once(
+                address,
+                CoordinatorAdminRequest::ConfigGet.method_name(),
+                &CoordinatorAdminRequest::ConfigGet,
+            )
+            .await
+            {
+                Ok(response)
+                    if CoordinatorReturnCode::decode(&response.status)
+                        .is_ok_and(|status| status == CoordinatorReturnCode::Success) =>
+                {
+                    let view: ConfigView = serde_json::from_slice(&response.body)?;
+                    if predicate(&view) {
+                        return Ok(view);
+                    }
+                    self.ensure_running()?;
+                }
+                Ok(_) => self.ensure_running()?,
+                Err(err)
+                    if err.downcast_ref::<io::Error>().is_some_and(|io_err| {
+                        io_err.kind() == io::ErrorKind::ConnectionRefused
+                            || io_err.kind() == io::ErrorKind::TimedOut
+                            || io_err.kind() == io::ErrorKind::UnexpectedEof
+                    }) =>
+                {
+                    self.ensure_running()?;
+                }
+                Err(err) => return Err(err),
             }
 
-            self.ensure_running()?;
             if Instant::now() >= deadline {
                 return Err(anyhow!(
-                    "timed out waiting for {} log containing `{needle}`\n{}",
+                    "timed out waiting for {} coordinator config: {description}\n{}",
                     self.name,
-                    logs
+                    self.read_logs()?
                 ));
             }
 
@@ -160,26 +223,26 @@ impl ChildProcess {
         }
     }
 
-    async fn wait_for_tcp_listener(&mut self, address: SocketAddr) -> Result<()> {
+    async fn wait_for_internode_space(&mut self, address: SocketAddr, space: &str) -> Result<()> {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            match TcpStream::connect(address).await {
-                Ok(stream) => {
-                    drop(stream);
-                    return Ok(());
-                }
-                Err(err)
-                    if err.kind() == io::ErrorKind::ConnectionRefused
-                        || err.kind() == io::ErrorKind::TimedOut =>
-                {
-                    self.ensure_running()?;
-                }
-                Err(err) => return Err(err.into()),
+            match request_internode_data_plane(
+                address,
+                DataPlaneRequest::Get {
+                    space: space.to_owned(),
+                    key: b"readiness-probe".to_vec().into(),
+                },
+            )
+            .await
+            {
+                Ok(DataPlaneResponse::Record(_)) => return Ok(()),
+                Ok(_) => self.ensure_running()?,
+                Err(_) => self.ensure_running()?,
             }
 
             if Instant::now() >= deadline {
                 return Err(anyhow!(
-                    "timed out waiting for {} tcp listener on {address}\n{}",
+                    "timed out waiting for {} internode data-plane readiness for space `{space}` on {address}\n{}",
                     self.name,
                     self.read_logs()?
                 ));
@@ -248,9 +311,8 @@ fn server_binary_path() -> Result<PathBuf> {
     }
 }
 
-fn reserve_port() -> Result<u16> {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-    Ok(listener.local_addr()?.port())
+fn localhost(port: u16) -> Result<SocketAddr> {
+    Ok(format!("127.0.0.1:{port}").parse()?)
 }
 
 fn count_request_header(nonce: u64) -> RequestHeader {
@@ -390,6 +452,29 @@ async fn request_search_all(
     }
 }
 
+async fn request_internode_data_plane(
+    address: SocketAddr,
+    request: DataPlaneRequest,
+) -> Result<DataPlaneResponse> {
+    let mut client = grpc_api::v1::internode_transport_client::InternodeTransportClient::connect(
+        format!("http://{address}"),
+    )
+    .await?;
+    let request = InternodeRequest::encode(DATA_PLANE_METHOD, &request)?;
+    let response = client
+        .send(grpc_api::v1::InternodeRpcRequest {
+            method: request.method,
+            body: request.body.to_vec(),
+        })
+        .await?
+        .into_inner();
+    let response = InternodeResponse {
+        status: response.status as u16,
+        body: response.body.into(),
+    };
+    Ok(response.decode()?)
+}
+
 fn grpc_route_runtime(
     daemon_one_control_port: u16,
     daemon_one_data_port: u16,
@@ -421,27 +506,27 @@ fn grpc_route_runtime(
 #[tokio::test]
 #[serial]
 async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let tempdir = TempDir::new()?;
-    let coordinator_port = reserve_port()?;
-    let daemon_one_port = reserve_port()?;
-    let daemon_two_port = reserve_port()?;
-    let daemon_one_control_port = reserve_port()?;
-    let daemon_two_control_port = reserve_port()?;
-    let coordinator_address: SocketAddr = format!("127.0.0.1:{coordinator_port}").parse()?;
-    let daemon_one_address: SocketAddr = format!("127.0.0.1:{daemon_one_port}").parse()?;
-    let daemon_two_address: SocketAddr = format!("127.0.0.1:{daemon_two_port}").parse()?;
-    let daemon_one_control_address: SocketAddr =
-        format!("127.0.0.1:{daemon_one_control_port}").parse()?;
-    let daemon_two_control_address: SocketAddr =
-        format!("127.0.0.1:{daemon_two_control_port}").parse()?;
+    let mut coordinator_port = ReservedPort::new()?;
+    let mut daemon_one_port = ReservedPort::new()?;
+    let mut daemon_two_port = ReservedPort::new()?;
+    let mut daemon_one_control_port = ReservedPort::new()?;
+    let mut daemon_two_control_port = ReservedPort::new()?;
+    let coordinator_address = localhost(coordinator_port.port())?;
+    let daemon_one_address = localhost(daemon_one_port.port())?;
+    let daemon_two_address = localhost(daemon_two_port.port())?;
+    let daemon_one_control_address = localhost(daemon_one_control_port.port())?;
+    let daemon_two_control_address = localhost(daemon_two_control_port.port())?;
 
+    coordinator_port.release();
     let mut coordinator = ChildProcess::spawn(
         "coordinator",
         &[
             "coordinator".to_owned(),
             format!("--data={}", tempdir.path().join("coordinator").display()),
             "--listen=127.0.0.1".to_owned(),
-            format!("--listen-port={coordinator_port}"),
+            format!("--listen-port={}", coordinator_port.port()),
         ],
         tempdir.path(),
     )?;
@@ -449,6 +534,8 @@ async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()>
         .wait_for_coordinator(coordinator_address)
         .await?;
 
+    daemon_one_port.release();
+    daemon_one_control_port.release();
     let mut daemon_one = ChildProcess::spawn(
         "daemon-one",
         &[
@@ -457,16 +544,18 @@ async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()>
             "--threads=1".to_owned(),
             format!("--data={}", tempdir.path().join("daemon-one").display()),
             "--listen=127.0.0.1".to_owned(),
-            format!("--listen-port={daemon_one_port}"),
-            format!("--control-port={daemon_one_control_port}"),
+            format!("--listen-port={}", daemon_one_port.port()),
+            format!("--control-port={}", daemon_one_control_port.port()),
             "--coordinator=127.0.0.1".to_owned(),
-            format!("--coordinator-port={coordinator_port}"),
+            format!("--coordinator-port={}", coordinator_port.port()),
             "--transport=grpc".to_owned(),
         ],
         tempdir.path(),
     )?;
     daemon_one.wait_for_daemon(daemon_one_address).await?;
 
+    daemon_two_port.release();
+    daemon_two_control_port.release();
     let mut daemon_two = ChildProcess::spawn(
         "daemon-two",
         &[
@@ -475,21 +564,21 @@ async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()>
             "--threads=1".to_owned(),
             format!("--data={}", tempdir.path().join("daemon-two").display()),
             "--listen=127.0.0.1".to_owned(),
-            format!("--listen-port={daemon_two_port}"),
-            format!("--control-port={daemon_two_control_port}"),
+            format!("--listen-port={}", daemon_two_port.port()),
+            format!("--control-port={}", daemon_two_control_port.port()),
             "--coordinator=127.0.0.1".to_owned(),
-            format!("--coordinator-port={coordinator_port}"),
+            format!("--coordinator-port={}", coordinator_port.port()),
             "--transport=grpc".to_owned(),
         ],
         tempdir.path(),
     )?;
     daemon_two.wait_for_daemon(daemon_two_address).await?;
 
-    daemon_one
-        .wait_for_tcp_listener(daemon_one_control_address)
-        .await?;
-    daemon_two
-        .wait_for_tcp_listener(daemon_two_control_address)
+    coordinator
+        .wait_for_config_view(coordinator_address, "both daemon registrations", |view| {
+            view.cluster.nodes.iter().any(|node| node.id == 1)
+                && view.cluster.nodes.iter().any(|node| node.id == 2)
+        })
         .await?;
 
     let ready = request_coordinator_control_with_body_once(
@@ -523,14 +612,19 @@ async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()>
         CoordinatorReturnCode::Success
     );
 
+    coordinator
+        .wait_for_config_view(
+            coordinator_address,
+            "space `profiles` in config view",
+            |view| view.spaces.iter().any(|space| space.name == "profiles"),
+        )
+        .await?;
     daemon_one
-        .wait_for_log("daemon synchronized coordinator config")
+        .wait_for_internode_space(daemon_one_control_address, "profiles")
         .await?;
     daemon_two
-        .wait_for_log("daemon synchronized coordinator config")
+        .wait_for_internode_space(daemon_two_control_address, "profiles")
         .await?;
-    daemon_one.wait_for_log("version=3").await?;
-    daemon_two.wait_for_log("version=3").await?;
 
     let (daemon_one_header, daemon_one_count) =
         request_count(daemon_one_address, "profiles", 1).await?;
@@ -548,27 +642,27 @@ async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()>
 #[tokio::test]
 #[serial]
 async fn legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let tempdir = TempDir::new()?;
-    let coordinator_port = reserve_port()?;
-    let daemon_one_port = reserve_port()?;
-    let daemon_two_port = reserve_port()?;
-    let daemon_one_control_port = reserve_port()?;
-    let daemon_two_control_port = reserve_port()?;
-    let coordinator_address: SocketAddr = format!("127.0.0.1:{coordinator_port}").parse()?;
-    let daemon_one_address: SocketAddr = format!("127.0.0.1:{daemon_one_port}").parse()?;
-    let daemon_two_address: SocketAddr = format!("127.0.0.1:{daemon_two_port}").parse()?;
-    let daemon_one_control_address: SocketAddr =
-        format!("127.0.0.1:{daemon_one_control_port}").parse()?;
-    let daemon_two_control_address: SocketAddr =
-        format!("127.0.0.1:{daemon_two_control_port}").parse()?;
+    let mut coordinator_port = ReservedPort::new()?;
+    let mut daemon_one_port = ReservedPort::new()?;
+    let mut daemon_two_port = ReservedPort::new()?;
+    let mut daemon_one_control_port = ReservedPort::new()?;
+    let mut daemon_two_control_port = ReservedPort::new()?;
+    let coordinator_address = localhost(coordinator_port.port())?;
+    let daemon_one_address = localhost(daemon_one_port.port())?;
+    let daemon_two_address = localhost(daemon_two_port.port())?;
+    let daemon_one_control_address = localhost(daemon_one_control_port.port())?;
+    let daemon_two_control_address = localhost(daemon_two_control_port.port())?;
 
+    coordinator_port.release();
     let mut coordinator = ChildProcess::spawn(
         "coordinator",
         &[
             "coordinator".to_owned(),
             format!("--data={}", tempdir.path().join("coordinator").display()),
             "--listen=127.0.0.1".to_owned(),
-            format!("--listen-port={coordinator_port}"),
+            format!("--listen-port={}", coordinator_port.port()),
         ],
         tempdir.path(),
     )?;
@@ -576,6 +670,8 @@ async fn legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Resu
         .wait_for_coordinator(coordinator_address)
         .await?;
 
+    daemon_one_port.release();
+    daemon_one_control_port.release();
     let mut daemon_one = ChildProcess::spawn(
         "daemon-one",
         &[
@@ -584,16 +680,18 @@ async fn legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Resu
             "--threads=1".to_owned(),
             format!("--data={}", tempdir.path().join("daemon-one").display()),
             "--listen=127.0.0.1".to_owned(),
-            format!("--listen-port={daemon_one_port}"),
-            format!("--control-port={daemon_one_control_port}"),
+            format!("--listen-port={}", daemon_one_port.port()),
+            format!("--control-port={}", daemon_one_control_port.port()),
             "--coordinator=127.0.0.1".to_owned(),
-            format!("--coordinator-port={coordinator_port}"),
+            format!("--coordinator-port={}", coordinator_port.port()),
             "--transport=grpc".to_owned(),
         ],
         tempdir.path(),
     )?;
     daemon_one.wait_for_daemon(daemon_one_address).await?;
 
+    daemon_two_port.release();
+    daemon_two_control_port.release();
     let mut daemon_two = ChildProcess::spawn(
         "daemon-two",
         &[
@@ -602,28 +700,28 @@ async fn legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Resu
             "--threads=1".to_owned(),
             format!("--data={}", tempdir.path().join("daemon-two").display()),
             "--listen=127.0.0.1".to_owned(),
-            format!("--listen-port={daemon_two_port}"),
-            format!("--control-port={daemon_two_control_port}"),
+            format!("--listen-port={}", daemon_two_port.port()),
+            format!("--control-port={}", daemon_two_control_port.port()),
             "--coordinator=127.0.0.1".to_owned(),
-            format!("--coordinator-port={coordinator_port}"),
+            format!("--coordinator-port={}", coordinator_port.port()),
             "--transport=grpc".to_owned(),
         ],
         tempdir.path(),
     )?;
     daemon_two.wait_for_daemon(daemon_two_address).await?;
 
-    daemon_one
-        .wait_for_tcp_listener(daemon_one_control_address)
-        .await?;
-    daemon_two
-        .wait_for_tcp_listener(daemon_two_control_address)
+    coordinator
+        .wait_for_config_view(coordinator_address, "both daemon registrations", |view| {
+            view.cluster.nodes.iter().any(|node| node.id == 1)
+                && view.cluster.nodes.iter().any(|node| node.id == 2)
+        })
         .await?;
 
     let route_runtime = grpc_route_runtime(
-        daemon_one_control_port,
-        daemon_one_port,
-        daemon_two_control_port,
-        daemon_two_port,
+        daemon_one_control_port.port(),
+        daemon_one_port.port(),
+        daemon_two_control_port.port(),
+        daemon_two_port.port(),
     );
     let key = (0..4096)
         .map(|i| format!("remote-atomic-{i}"))
@@ -649,14 +747,19 @@ async fn legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Resu
         CoordinatorReturnCode::Success
     );
 
+    coordinator
+        .wait_for_config_view(
+            coordinator_address,
+            "space `profiles` in config view",
+            |view| view.spaces.iter().any(|space| space.name == "profiles"),
+        )
+        .await?;
     daemon_one
-        .wait_for_log("daemon synchronized coordinator config")
+        .wait_for_internode_space(daemon_one_control_address, "profiles")
         .await?;
     daemon_two
-        .wait_for_log("daemon synchronized coordinator config")
+        .wait_for_internode_space(daemon_two_control_address, "profiles")
         .await?;
-    daemon_one.wait_for_log("version=3").await?;
-    daemon_two.wait_for_log("version=3").await?;
 
     let (atomic_header, atomic_response) = request_atomic(
         daemon_one_address,
@@ -693,27 +796,27 @@ async fn legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Resu
 #[tokio::test]
 #[serial]
 async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let tempdir = TempDir::new()?;
-    let coordinator_port = reserve_port()?;
-    let daemon_one_port = reserve_port()?;
-    let daemon_two_port = reserve_port()?;
-    let daemon_one_control_port = reserve_port()?;
-    let daemon_two_control_port = reserve_port()?;
-    let coordinator_address: SocketAddr = format!("127.0.0.1:{coordinator_port}").parse()?;
-    let daemon_one_address: SocketAddr = format!("127.0.0.1:{daemon_one_port}").parse()?;
-    let daemon_two_address: SocketAddr = format!("127.0.0.1:{daemon_two_port}").parse()?;
-    let daemon_one_control_address: SocketAddr =
-        format!("127.0.0.1:{daemon_one_control_port}").parse()?;
-    let daemon_two_control_address: SocketAddr =
-        format!("127.0.0.1:{daemon_two_control_port}").parse()?;
+    let mut coordinator_port = ReservedPort::new()?;
+    let mut daemon_one_port = ReservedPort::new()?;
+    let mut daemon_two_port = ReservedPort::new()?;
+    let mut daemon_one_control_port = ReservedPort::new()?;
+    let mut daemon_two_control_port = ReservedPort::new()?;
+    let coordinator_address = localhost(coordinator_port.port())?;
+    let daemon_one_address = localhost(daemon_one_port.port())?;
+    let daemon_two_address = localhost(daemon_two_port.port())?;
+    let daemon_one_control_address = localhost(daemon_one_control_port.port())?;
+    let daemon_two_control_address = localhost(daemon_two_control_port.port())?;
 
+    coordinator_port.release();
     let mut coordinator = ChildProcess::spawn(
         "coordinator",
         &[
             "coordinator".to_owned(),
             format!("--data={}", tempdir.path().join("coordinator").display()),
             "--listen=127.0.0.1".to_owned(),
-            format!("--listen-port={coordinator_port}"),
+            format!("--listen-port={}", coordinator_port.port()),
         ],
         tempdir.path(),
     )?;
@@ -721,6 +824,8 @@ async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Resu
         .wait_for_coordinator(coordinator_address)
         .await?;
 
+    daemon_one_port.release();
+    daemon_one_control_port.release();
     let mut daemon_one = ChildProcess::spawn(
         "daemon-one",
         &[
@@ -729,16 +834,18 @@ async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Resu
             "--threads=1".to_owned(),
             format!("--data={}", tempdir.path().join("daemon-one").display()),
             "--listen=127.0.0.1".to_owned(),
-            format!("--listen-port={daemon_one_port}"),
-            format!("--control-port={daemon_one_control_port}"),
+            format!("--listen-port={}", daemon_one_port.port()),
+            format!("--control-port={}", daemon_one_control_port.port()),
             "--coordinator=127.0.0.1".to_owned(),
-            format!("--coordinator-port={coordinator_port}"),
+            format!("--coordinator-port={}", coordinator_port.port()),
             "--transport=grpc".to_owned(),
         ],
         tempdir.path(),
     )?;
     daemon_one.wait_for_daemon(daemon_one_address).await?;
 
+    daemon_two_port.release();
+    daemon_two_control_port.release();
     let mut daemon_two = ChildProcess::spawn(
         "daemon-two",
         &[
@@ -747,21 +854,21 @@ async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Resu
             "--threads=1".to_owned(),
             format!("--data={}", tempdir.path().join("daemon-two").display()),
             "--listen=127.0.0.1".to_owned(),
-            format!("--listen-port={daemon_two_port}"),
-            format!("--control-port={daemon_two_control_port}"),
+            format!("--listen-port={}", daemon_two_port.port()),
+            format!("--control-port={}", daemon_two_control_port.port()),
             "--coordinator=127.0.0.1".to_owned(),
-            format!("--coordinator-port={coordinator_port}"),
+            format!("--coordinator-port={}", coordinator_port.port()),
             "--transport=grpc".to_owned(),
         ],
         tempdir.path(),
     )?;
     daemon_two.wait_for_daemon(daemon_two_address).await?;
 
-    daemon_one
-        .wait_for_tcp_listener(daemon_one_control_address)
-        .await?;
-    daemon_two
-        .wait_for_tcp_listener(daemon_two_control_address)
+    coordinator
+        .wait_for_config_view(coordinator_address, "both daemon registrations", |view| {
+            view.cluster.nodes.iter().any(|node| node.id == 1)
+                && view.cluster.nodes.iter().any(|node| node.id == 2)
+        })
         .await?;
 
     let space = parse_hyperdex_space(
@@ -783,14 +890,19 @@ async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Resu
         CoordinatorReturnCode::Success
     );
 
+    coordinator
+        .wait_for_config_view(
+            coordinator_address,
+            "space `profiles` in config view",
+            |view| view.spaces.iter().any(|space| space.name == "profiles"),
+        )
+        .await?;
     daemon_one
-        .wait_for_log("daemon synchronized coordinator config")
+        .wait_for_internode_space(daemon_one_control_address, "profiles")
         .await?;
     daemon_two
-        .wait_for_log("daemon synchronized coordinator config")
+        .wait_for_internode_space(daemon_two_control_address, "profiles")
         .await?;
-    daemon_one.wait_for_log("version=3").await?;
-    daemon_two.wait_for_log("version=3").await?;
 
     for (nonce, key, views) in [
         (100_u64, "degraded-search-a", 7_i64),
