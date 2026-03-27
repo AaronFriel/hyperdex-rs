@@ -2,3 +2,5 @@
 Cargo.lock
 /worktrees/*
 /tmp
+/.hegel/
+**/.hegel/
