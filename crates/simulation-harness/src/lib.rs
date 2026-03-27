@@ -948,6 +948,80 @@ mod tests {
         .run();
     }
 
+    #[test]
+    fn hegel_distributed_runtime_routes_delete() {
+        let _guard = HEGEL_ENV_LOCK.lock().unwrap();
+        let hegel_server_command = ensure_hegel_server_command();
+        unsafe {
+            std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
+        }
+
+        hegel::Hegel::new(|tc: hegel::TestCase| {
+            let key_suffix: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(4095));
+            let value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
+
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            runtime.block_on(async move {
+                let (runtime1, runtime2) = distributed_runtime_pair().await;
+                let routed_key = (0..65536)
+                    .map(|i| format!("delete-{key_suffix}-{i}"))
+                    .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
+                    .expect("expected a key routed to node 2");
+                let expected_value = format!("v{value_id}");
+
+                let put = HyperdexClientService::handle(
+                    runtime1.as_ref(),
+                    ClientRequest::Put {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(routed_key.clone().into_bytes()),
+                        mutations: vec![Mutation::Set(Attribute {
+                            name: "name".to_owned(),
+                            value: Value::String(expected_value),
+                        })],
+                    },
+                )
+                .await
+                .unwrap();
+                assert_eq!(put, ClientResponse::Unit);
+
+                let delete = HyperdexClientService::handle(
+                    runtime1.as_ref(),
+                    ClientRequest::Delete {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(routed_key.clone().into_bytes()),
+                    },
+                )
+                .await
+                .unwrap();
+                assert_eq!(delete, ClientResponse::Unit);
+
+                let routed_get = HyperdexClientService::handle(
+                    runtime1.as_ref(),
+                    ClientRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(routed_key.clone().into_bytes()),
+                    },
+                )
+                .await
+                .unwrap();
+                assert_eq!(routed_get, ClientResponse::Record(None));
+
+                let primary_get = HyperdexClientService::handle(
+                    runtime2.as_ref(),
+                    ClientRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(routed_key.into_bytes()),
+                    },
+                )
+                .await
+                .unwrap();
+                assert_eq!(primary_get, ClientResponse::Record(None));
+            });
+        })
+        .settings(hegel::Settings::new().test_cases(15))
+        .run();
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig {
             cases: 64,
