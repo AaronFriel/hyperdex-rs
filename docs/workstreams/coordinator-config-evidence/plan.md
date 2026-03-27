@@ -108,20 +108,19 @@ first atomic write.
 
 ## Current Hypothesis
 
-The sender-id mismatch is fixed, but the focused large-object path still does
-not leave bootstrap. The active comparison target is now the next acceptance
-rule after wire-visible sender-id consistency: the original Replicant client’s
-anonymous-channel bootstrap handling versus the handcrafted Rust BusyBee session
-behavior. One downstream daemon gap is still queued behind that barrier:
-current Rust has no `ReqGetPartial -> RespGetPartial` support.
+The sender-id mismatch and the repeated-identify mismatch are both fixed, and
+the corrected BusyBee proxy now shows the focused large-object path advancing
+into coordinator `CondWait` traffic. This workstream no longer owns the active
+blocker. It should stay read-only and ready for the next exact comparison once
+the post-follow path needs another source-backed reduction.
 
 ## Next Bounded Step
 
-Keep this workstream read-only. The next bounded step is to compare the
-original Replicant client's anonymous-channel bootstrap acceptance and retry
-behavior against the current Rust BusyBee session behavior after sender-id
-consistency is fixed, and name the next exact acceptance mismatch that still
-prevents a non-bootstrap Replicant request from appearing.
+Keep this workstream read-only and parked until the post-follow path needs
+another exact comparison. The next bounded step, when reopened, is to compare
+the original HyperDex/Replicant behavior against the corrected coordinator
+baseline after the first non-bootstrap `CondWait` traffic, not to revisit
+bootstrap acceptance again.
 
 ## Surprises & Discoveries
 

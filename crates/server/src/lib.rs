@@ -142,6 +142,8 @@ pub struct CoordinatorControlResponse {
 struct CoordinatorAdminSession {
     next_robust_nonce: u64,
     sender_id: u64,
+    identified: bool,
+    peer_local_id: u64,
     pending_config_waits: BTreeMap<u64, u64>,
     pending_waits: BTreeMap<u64, u64>,
     pending_completions: VecDeque<BusyBeeFrame>,
@@ -823,16 +825,40 @@ impl CoordinatorAdminSession {
         Self {
             next_robust_nonce: 1,
             sender_id: LEGACY_COORDINATOR_SERVER_ID,
+            identified: false,
+            peer_local_id: 0,
             pending_config_waits: BTreeMap::new(),
             pending_waits: BTreeMap::new(),
             pending_completions: VecDeque::new(),
         }
     }
 
-    fn observe_identify(&mut self, peer_remote_id: u64) {
-        if peer_remote_id != 0 {
-            self.sender_id = peer_remote_id;
+    fn observe_identify(&mut self, peer_local_id: u64, peer_remote_id: u64) -> Result<bool> {
+        if !self.identified {
+            if peer_remote_id != 0 {
+                self.sender_id = peer_remote_id;
+            }
+            self.peer_local_id = peer_local_id;
+            self.identified = true;
+            return Ok(true);
         }
+
+        if peer_remote_id != 0 && peer_remote_id != self.sender_id {
+            anyhow::bail!(
+                "legacy admin identify remote id {} does not match established sender id {}",
+                peer_remote_id,
+                self.sender_id
+            );
+        }
+        if peer_local_id != 0 && self.peer_local_id != 0 && peer_local_id != self.peer_local_id {
+            anyhow::bail!(
+                "legacy admin identify local id {} does not match established peer id {}",
+                peer_local_id,
+                self.peer_local_id
+            );
+        }
+
+        Ok(false)
     }
 
     fn queue_identify_response(&mut self, peer_local_id: u64) {
@@ -1620,8 +1646,9 @@ async fn handle_coordinator_admin_frame(
         }
         let peer_local_id = u64::from_be_bytes(frame.payload[..8].try_into().unwrap());
         let peer_remote_id = u64::from_be_bytes(frame.payload[8..16].try_into().unwrap());
-        session.observe_identify(peer_remote_id);
-        session.queue_identify_response(peer_local_id);
+        if session.observe_identify(peer_local_id, peer_remote_id)? {
+            session.queue_identify_response(peer_local_id);
+        }
         return Ok(());
     }
 
@@ -5348,6 +5375,72 @@ mod tests {
             id: 19,
             address,
         }]);
+
+        drop(stream);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn coordinator_admin_legacy_service_repeated_identify_is_validate_only() {
+        let runtime = Arc::new(bootstrap_runtime());
+        let service = CoordinatorAdminLegacyService::bind_with_codecs(
+            "127.0.0.1:0".parse().unwrap(),
+            Arc::new(dsl_space_add_decoder),
+            Arc::new(default_legacy_config_encoder),
+        )
+        .await
+        .unwrap();
+        let address = service.local_addr().unwrap();
+
+        let server =
+            tokio::spawn(async move { service.serve_once(runtime.as_ref()).await.unwrap() });
+
+        let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        let mut identify_request = Vec::new();
+        encode_u64_be(&mut identify_request, 7);
+        encode_u64_be(&mut identify_request, 19);
+        stream
+            .write_all(&BusyBeeFrame::identify(identify_request).encode().unwrap())
+            .await
+            .unwrap();
+        stream.flush().await.unwrap();
+        let identify = read_admin_response_frame(&mut stream).await;
+        assert_eq!(
+            identify.flags & hyperdex_admin_protocol::BUSYBEE_HEADER_IDENTIFY,
+            hyperdex_admin_protocol::BUSYBEE_HEADER_IDENTIFY
+        );
+
+        let mut repeated_identify = Vec::new();
+        encode_u64_be(&mut repeated_identify, 0);
+        encode_u64_be(&mut repeated_identify, 19);
+        stream
+            .write_all(&BusyBeeFrame::identify(repeated_identify).encode().unwrap())
+            .await
+            .unwrap();
+        stream.flush().await.unwrap();
+
+        let repeated = tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            read_busybee_frame_from_stream(&mut stream),
+        )
+        .await;
+        assert!(
+            repeated.is_err(),
+            "repeated identify should not trigger another identify reply"
+        );
+
+        let bootstrap_request = BusyBeeFrame::new(vec![ReplicantNetworkMsgtype::Bootstrap.encode()])
+            .encode()
+            .unwrap();
+        stream
+            .write_all(&bootstrap_request)
+            .await
+            .unwrap();
+        stream.flush().await.unwrap();
+
+        let bootstrap = read_admin_response_frame(&mut stream).await;
+        let bootstrap = ReplicantBootstrapResponse::decode(&bootstrap.payload).unwrap();
+        assert_eq!(bootstrap.server.id, 19);
 
         drop(stream);
         server.await.unwrap();

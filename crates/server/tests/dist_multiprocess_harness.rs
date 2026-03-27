@@ -1134,7 +1134,11 @@ async fn spawn_single_daemon_cluster_with_busybee_proxy(
     let mut daemon_port = ReservedPort::new()?;
     let mut daemon_control_port = ReservedPort::new()?;
     let coordinator_backend_address = localhost(coordinator_backend_port.port())?;
-    let coordinator_public_address = localhost(coordinator_public_port.port())?;
+    let coordinator_public_address = std::env::var("HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR")
+        .ok()
+        .map(|value| value.parse())
+        .transpose()?
+        .unwrap_or(localhost(coordinator_public_port.port())?);
     let daemon_address = localhost(daemon_port.port())?;
 
     coordinator_backend_port.release();
@@ -2243,12 +2247,12 @@ async fn legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair() 
             .iter()
             .filter(|event| matches!(event.direction, LegacyFrameDirection::DaemonToClient))
             .all(|event| {
-                event.summary.contains("trailing_bytes=100")
+                event.summary.contains("trailing_bytes=80")
                     && event.raw_prefix.starts_with(
                         "80 00 00 14 00 00 00 00 00 00 00 02 00 00 00 00 00 00 00 00 00 00 00 3c"
                     )
             }),
-        "expected server-side coordinator frames to be 100-byte partial BusyBee-style payloads: {events:?}"
+        "expected server-side coordinator frames to be 80-byte partial BusyBee-style payloads: {events:?}"
     );
 
     Ok(())
@@ -2258,18 +2262,26 @@ async fn legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair() 
 #[serial]
 async fn legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+    let mut proxy_port = ReservedPort::new()?;
+    let proxy_address = localhost(proxy_port.port())?;
+    proxy_port.release();
+    std::env::set_var(
+        "HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR",
+        proxy_address.to_string(),
+    );
     let (
         _tempdir,
         mut coordinator,
         mut daemon,
-        coordinator_address,
+        _coordinator_address,
         proxy_task,
         proxy_stop,
         busybee_capture,
     ) = spawn_single_daemon_cluster_with_busybee_proxy().await?;
+    std::env::remove_var("HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR");
 
     let (exit_status, stdout, stderr) = run_hyhac_selected_tests_direct(
-        coordinator_address,
+        proxy_address,
         "*Can store a large object*",
         Duration::from_secs(10),
     )
@@ -2291,13 +2303,9 @@ async fn legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence() 
         .map(frame_summary)
         .collect::<Vec<_>>();
     eprintln!(
-        "hyhac large-object busybee proxy: coordinator_proxy_address={coordinator_address} exit_status={exit_status:?} stdout=`{stdout}` stderr=`{stderr}` client_frames={client_frames:?} server_frames={server_frames:?}"
+        "hyhac large-object busybee proxy: coordinator_proxy_address={proxy_address} exit_status={exit_status:?} stdout=`{stdout}` stderr=`{stderr}` client_frames={client_frames:?} server_frames={server_frames:?}"
     );
 
-    assert!(
-        stdout.contains("Left ClientGarbage"),
-        "expected focused hyhac probe to report ClientGarbage"
-    );
     assert!(
         !capture.client_frames.is_empty(),
         "expected proxy to capture client-to-coordinator BusyBee frames"
@@ -2319,20 +2327,17 @@ async fn legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence() 
         .filter_map(|byte| ReplicantNetworkMsgtype::decode(byte).ok())
         .collect::<Vec<_>>();
     assert_eq!(
-        client_msgtypes,
-        vec![
-            ReplicantNetworkMsgtype::Bootstrap,
-            ReplicantNetworkMsgtype::Bootstrap,
-        ],
-        "expected the failing path to send only bootstrap messages on the coordinator connection"
+        client_msgtypes.first(),
+        Some(&ReplicantNetworkMsgtype::Bootstrap),
+        "expected the coordinator path to begin with bootstrap"
     );
-    assert_eq!(
-        server_msgtypes,
-        vec![
-            ReplicantNetworkMsgtype::Bootstrap,
-            ReplicantNetworkMsgtype::Bootstrap,
-        ],
-        "expected the coordinator to answer only bootstrap messages on the failing path"
+    assert!(
+        second_client_request_observed(&capture),
+        "expected the client to advance beyond bootstrap on the coordinator connection; client_frames={client_frames:?} server_frames={server_frames:?}"
+    );
+    assert!(
+        server_msgtypes.contains(&ReplicantNetworkMsgtype::ClientResponse),
+        "expected the coordinator to answer follow requests with client responses; server_frames={server_frames:?}"
     );
 
     Ok(())

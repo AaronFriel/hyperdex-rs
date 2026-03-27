@@ -682,3 +682,30 @@
 - Expected artifacts:
   - the next exact non-wire bootstrap acceptance mismatch
   - concrete producer/consumer pointers in original Replicant and current Rust
+
+### Entry `cce-013` - Outcome
+
+- Timestamp: `2026-03-27 22:55Z`
+- Kind: `outcome`
+- End commit: `main after the repeated-identify fix and corrected BusyBee proxy probe`
+- Artifact location:
+  - `/home/friel/HyperDex/busybee/busybee.cc`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence summary:
+  - the original BusyBee accept path sends an identify reply only on the first
+    transition from anonymous to identified; later identify frames on that
+    channel are validate-only
+  - current Rust `CoordinatorAdminSession` was still replying to every identify
+    frame
+  - `CoordinatorAdminSession` now tracks whether the channel is already
+    identified and suppresses the second identify reply while still validating
+    repeated identify payloads
+  - the corrected BusyBee proxy probe now shows non-bootstrap `CondWait`
+    traffic and `ClientResponse` completions on the coordinator connection,
+    proving the bootstrap acceptance path is no longer the active blocker
+- Conclusion: `cce-013` is resolved. The next comparison, if needed, belongs
+  later in the post-follow path rather than in bootstrap acceptance.
+- Disposition: `advance`
+- Next move: park this workstream until the corrected post-follow baseline
+  needs another read-only comparison.

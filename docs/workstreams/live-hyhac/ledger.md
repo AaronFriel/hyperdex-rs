@@ -1805,7 +1805,70 @@
   - code or an exact reduction of the next non-wire bootstrap acceptance
     mismatch
   - focused validator evidence that the client either leaves bootstrap or that
-    the next exact acceptance rule is isolated
+  the next exact acceptance rule is isolated
+
+### Entry `hyh-039` - Outcome
+
+- Timestamp: `2026-03-27 23:05Z`
+- Kind: `outcome`
+- End commit: `working tree on main after the repeated-identify fix and probe corrections`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence summary:
+  - `cce-013` identified repeated server identify handling on an already-
+    identified anonymous BusyBee channel as the next exact mismatch after
+    sender-id consistency
+  - `CoordinatorAdminSession` now tracks whether the legacy admin channel is
+    already identified and treats later identify frames as validation-only
+    instead of replying again
+  - `coordinator_admin_legacy_service_repeated_identify_is_validate_only`
+    proves the Rust coordinator now emits only one identify reply for the
+    anonymous-to-identified transition
+  - `legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence`
+    now captures non-bootstrap `CondWait` requests and `ClientResponse`
+    completions on the coordinator connection once the bootstrap address is
+    forced through the proxy
+  - `legacy_hyhac_large_object_probe_hits_clientgarbage_fast` still reports
+    `Left ClientGarbage`
+  - `cargo test -p server` passed
+- Conclusion: the remaining large-object failure is no longer a bootstrap
+  acceptance problem. The coordinator path now advances through follow traffic,
+  so the next exact target is the first post-follow mismatch on the corrected
+  baseline, most likely at the daemon path or the remaining coordinator state
+  consumed just before the daemon request.
+- Disposition: `advance`
+- Next move: capture the first daemon-side request/response or reduce the
+  remaining post-follow mismatch exactly enough to explain the still-failing
+  direct Hyhac loop.
+
+### Entry `hyh-040` - Preregistration
+
+- Timestamp: `2026-03-27 23:05Z`
+- Kind: `preregister`
+- Hypothesis: now that the corrected proxy proves the focused Hyhac path
+  advances beyond bootstrap into coordinator `CondWait` traffic, the remaining
+  large-object `ClientGarbage` failure can be reduced by capturing the first
+  daemon-side request/response or by isolating the exact post-follow mismatch
+  that still prevents that request from succeeding.
+- Owner: root
+- Start commit: `main after hyh-039 reconciliation`
+- Worktree / branch:
+  - root checkout on `main`
+- Mutable surface:
+  - `crates/server/**`
+  - `crates/server/tests/**`
+  - `crates/legacy-frontend/**` only if a tiny focused probe helper is needed
+- Validator:
+  - fastest useful check:
+    `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence -- --nocapture`
+  - strong checks:
+    - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
+    - `cargo test -p server`
+- Expected artifacts:
+  - the first daemon-side request/response evidence on the corrected baseline,
+    or the next exact post-follow mismatch
+  - focused tests or probes that lock in the new reduction
 
 ### Entry `hyh-025` - Preregistration
 

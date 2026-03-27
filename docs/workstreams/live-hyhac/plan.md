@@ -211,19 +211,20 @@ stronger live probe before returning control.
 ## Current Hypothesis
 
 The earlier coordinator-side, request-shape, and process-level `early eof`
-gaps are now behind `main`. The coordinator now reuses one session-chosen
-sender id consistently across BusyBee identify, bootstrap `server.id`, and the
-bootstrap config server list, but the focused Hyhac failure still sends only
-bootstrap traffic on the coordinator connection and never advances to a
-follow/config request.
+gaps are now behind `main`. The coordinator now also handles repeated BusyBee
+identify frames like the original anonymous-channel accept path, and the
+corrected BusyBee proxy proves the focused Hyhac path advances beyond
+bootstrap into `CondWait` requests with `ClientResponse` completions on the
+coordinator connection. The remaining blocker is later than bootstrap and now
+has to be reduced through the post-follow path.
 
 ## Next Bounded Step
 
-Keep the coordinator BusyBee proxy as the fastest useful check and reduce the
-remaining bootstrap-only failure to the next exact acceptance mismatch after
-wire-visible sender-id consistency. Do not widen back out to the daemon path
-again until the coordinator connection produces one non-bootstrap Replicant
-request on the focused Hyhac path.
+Keep the coordinator BusyBee proxy as the fastest useful coordinator-side
+check, but stop treating the failure as bootstrap-only. The next bounded step
+is to capture the first daemon-side request/response on the corrected baseline
+or reduce the remaining post-follow mismatch exactly enough to explain why the
+direct large-object Hyhac loop still ends in `Left ClientGarbage`.
 
 ## Surprises & Discoveries
 
