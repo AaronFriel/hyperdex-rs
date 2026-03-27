@@ -93,6 +93,23 @@ enum LegacyFrameDirection {
     DaemonToClient,
 }
 
+const MINIMAL_PROFILES_SPACE_DESC: &str = "space profiles\n\
+    key username\n\
+    attributes\n\
+        string first,\n\
+        int profile_views\n\
+    subspace first\n\
+    create 8 partitions\n\
+    tolerate 0 failures\n";
+
+#[derive(Debug)]
+struct ClientTraceResult {
+    exit_status: Option<std::process::ExitStatus>,
+    stdout: String,
+    stderr: String,
+    trace: String,
+}
+
 impl ReservedPort {
     fn new() -> Result<Self> {
         let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
@@ -906,24 +923,16 @@ async fn run_add_space_probe_via_proxy(
         capture,
         "hyperdex-add-space",
         &["-h", "127.0.0.1", "-p", &proxy_addr.port().to_string()],
-        Some(
-            "space profiles\n\
-             key username\n\
-             attributes\n\
-                 string first,\n\
-                 int profile_views\n\
-             subspace first\n\
-             create 8 partitions\n\
-             tolerate 0 failures\n",
-        ),
+        Some(MINIMAL_PROFILES_SPACE_DESC),
         Duration::from_secs(5),
         false,
     )
     .await
 }
 
-async fn run_add_space_direct(
+async fn run_add_space_direct_with_schema(
     address: SocketAddr,
+    schema: &str,
 ) -> Result<(Option<std::process::ExitStatus>, String, String)> {
     let stdout_path = std::env::temp_dir().join(format!(
         "legacy-admin-add-space-stdout-{}.log",
@@ -955,16 +964,7 @@ async fn run_add_space_direct(
             .stdin
             .as_mut()
             .context("hyperdex-add-space stdin missing")?
-            .write_all(
-                b"space profiles\n\
-                  key username\n\
-                  attributes\n\
-                      string first,\n\
-                      int profile_views\n\
-                  subspace first\n\
-                  create 8 partitions\n\
-                  tolerate 0 failures\n",
-            )?;
+            .write_all(schema.as_bytes())?;
         child.stdin.take();
     }
 
@@ -987,6 +987,12 @@ async fn run_add_space_direct(
         fs::read_to_string(stdout_path).unwrap_or_default(),
         fs::read_to_string(stderr_path).unwrap_or_default(),
     ))
+}
+
+async fn run_add_space_direct(
+    address: SocketAddr,
+) -> Result<(Option<std::process::ExitStatus>, String, String)> {
+    run_add_space_direct_with_schema(address, MINIMAL_PROFILES_SPACE_DESC).await
 }
 
 async fn run_hyhac_selected_tests_direct(
@@ -1022,6 +1028,343 @@ async fn run_hyhac_selected_tests_direct(
         .with_context(|| format!("failed to spawn hyhac selected test `{pattern}`"))?;
 
     let deadline = Instant::now() + deadline_span;
+    let exit_status = loop {
+        if let Some(status) = child.try_wait()? {
+            break Some(status);
+        }
+
+        if Instant::now() >= deadline {
+            child.kill().ok();
+            break child.wait().ok();
+        }
+
+        sleep(Duration::from_millis(20)).await;
+    };
+
+    Ok((
+        exit_status,
+        fs::read_to_string(stdout_path).unwrap_or_default(),
+        fs::read_to_string(stderr_path).unwrap_or_default(),
+    ))
+}
+
+fn compile_client_trace_preload(work_dir: &Path) -> Result<(PathBuf, PathBuf)> {
+    let source_path = work_dir.join("client-trace-preload.c");
+    let library_path = work_dir.join("libclient-trace-preload.so");
+    let log_path = work_dir.join("client-trace.log");
+    let source = r#"
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <hyperdex/client.h>
+#include <inttypes.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+static FILE* open_trace_file(void) {
+    const char* path = getenv("HYPERDEX_RS_CLIENT_TRACE");
+    if (!path || !path[0]) {
+        return NULL;
+    }
+    return fopen(path, "a");
+}
+
+int64_t hyperdex_client_put(struct hyperdex_client* client,
+                            const char* space,
+                            const char* key, size_t key_sz,
+                            const struct hyperdex_client_attribute* attrs, size_t attrs_sz,
+                            enum hyperdex_client_returncode* status) {
+    static int64_t (*real_fn)(struct hyperdex_client*, const char*, const char*, size_t,
+                              const struct hyperdex_client_attribute*, size_t,
+                              enum hyperdex_client_returncode*) = NULL;
+    if (!real_fn) {
+        real_fn = dlsym(RTLD_NEXT, "hyperdex_client_put");
+    }
+    int64_t handle = real_fn(client, space, key, key_sz, attrs, attrs_sz, status);
+    FILE* trace = open_trace_file();
+    if (trace) {
+        fprintf(trace,
+                "put handle=%" PRId64 " status=%d space=%s key=%.*s attrs_sz=%zu\n",
+                handle,
+                status ? (int)*status : -1,
+                space ? space : "(null)",
+                (int)key_sz,
+                key ? key : "",
+                attrs_sz);
+        fclose(trace);
+    }
+    return handle;
+}
+
+int64_t hyperdex_client_loop(struct hyperdex_client* client,
+                             int timeout,
+                             enum hyperdex_client_returncode* status) {
+    static int64_t (*real_fn)(struct hyperdex_client*, int, enum hyperdex_client_returncode*) = NULL;
+    if (!real_fn) {
+        real_fn = dlsym(RTLD_NEXT, "hyperdex_client_loop");
+    }
+    int64_t handle = real_fn(client, timeout, status);
+    FILE* trace = open_trace_file();
+    if (trace) {
+        fprintf(trace,
+                "loop handle=%" PRId64 " status=%d timeout=%d\n",
+                handle,
+                status ? (int)*status : -1,
+                timeout);
+        fclose(trace);
+    }
+    return handle;
+}
+"#;
+    fs::write(&source_path, source)?;
+    let output = Command::new("cc")
+        .arg("-shared")
+        .arg("-fPIC")
+        .arg("-O0")
+        .arg("-g")
+        .arg("-I")
+        .arg(legacy_hyperdex_root().join("include"))
+        .arg("-o")
+        .arg(&library_path)
+        .arg(&source_path)
+        .arg("-ldl")
+        .output()
+        .context("failed to compile client-trace preload")?;
+    if !output.status.success() {
+        return Err(anyhow!(
+            "client-trace preload compile failed: stdout=`{}` stderr=`{}`",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok((library_path, log_path))
+}
+
+async fn run_hyhac_selected_tests_with_client_trace(
+    address: SocketAddr,
+    pattern: &str,
+    deadline_span: Duration,
+) -> Result<ClientTraceResult> {
+    let tempdir = TempDir::new()?;
+    let (preload_path, trace_path) = compile_client_trace_preload(tempdir.path())?;
+    let stdout_path = tempdir.path().join("hyhac-client-trace-stdout.log");
+    let stderr_path = tempdir.path().join("hyhac-client-trace-stderr.log");
+    let stdout_file = File::create(&stdout_path)?;
+    let stderr_file = File::create(&stderr_path)?;
+
+    let mut child = Command::new(hyhac_test_binary_path()?)
+        .arg("--plain")
+        .arg("--test-seed=1")
+        .arg(format!("--select-tests={pattern}"))
+        .env("LD_LIBRARY_PATH", hyhac_runtime_library_path())
+        .env("LD_PRELOAD", &preload_path)
+        .env("HYPERDEX_RS_CLIENT_TRACE", &trace_path)
+        .env("HYPERDEX_ROOT", legacy_hyperdex_root())
+        .env("HYPERDEX_COORD_HOST", "127.0.0.1")
+        .env("HYPERDEX_COORD_PORT", address.port().to_string())
+        .current_dir(hyhac_root())
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file))
+        .spawn()
+        .with_context(|| format!("failed to spawn traced hyhac selected test `{pattern}`"))?;
+
+    let deadline = Instant::now() + deadline_span;
+    let exit_status = loop {
+        if let Some(status) = child.try_wait()? {
+            break Some(status);
+        }
+
+        if Instant::now() >= deadline {
+            child.kill().ok();
+            break child.wait().ok();
+        }
+
+        sleep(Duration::from_millis(20)).await;
+    };
+
+    Ok(ClientTraceResult {
+        exit_status,
+        stdout: fs::read_to_string(stdout_path).unwrap_or_default(),
+        stderr: fs::read_to_string(stderr_path).unwrap_or_default(),
+        trace: fs::read_to_string(trace_path).unwrap_or_default(),
+    })
+}
+
+fn compile_native_large_object_probe(work_dir: &Path) -> Result<PathBuf> {
+    let source_path = work_dir.join("native-large-object-probe.c");
+    let binary_path = work_dir.join("native-large-object-probe");
+    let source = r#"
+#include <hyperdex/client.h>
+#include <hyperdex/datastructures.h>
+#include <inttypes.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static void set_empty_attr(struct hyperdex_client_attribute* attr,
+                           const char* name,
+                           enum hyperdatatype datatype) {
+    static const char empty[] = "";
+    attr->attr = name;
+    attr->value = empty;
+    attr->value_sz = 0;
+    attr->datatype = datatype;
+}
+
+static int set_int_attr(struct hyperdex_ds_arena* arena,
+                        struct hyperdex_client_attribute* attr,
+                        const char* name,
+                        int64_t value) {
+    enum hyperdex_ds_returncode ds_status = HYPERDEX_DS_SUCCESS;
+    const char* encoded = NULL;
+    size_t encoded_sz = 0;
+    if (hyperdex_ds_copy_int(arena, value, &ds_status, &encoded, &encoded_sz) < 0) {
+        fprintf(stderr, "hyperdex_ds_copy_int failed for %s with status=%d\n", name, (int)ds_status);
+        return -1;
+    }
+    attr->attr = name;
+    attr->value = encoded;
+    attr->value_sz = encoded_sz;
+    attr->datatype = HYPERDATATYPE_INT64;
+    return 0;
+}
+
+static int set_float_attr(struct hyperdex_ds_arena* arena,
+                          struct hyperdex_client_attribute* attr,
+                          const char* name,
+                          double value) {
+    enum hyperdex_ds_returncode ds_status = HYPERDEX_DS_SUCCESS;
+    const char* encoded = NULL;
+    size_t encoded_sz = 0;
+    if (hyperdex_ds_copy_float(arena, value, &ds_status, &encoded, &encoded_sz) < 0) {
+        fprintf(stderr, "hyperdex_ds_copy_float failed for %s with status=%d\n", name, (int)ds_status);
+        return -1;
+    }
+    attr->attr = name;
+    attr->value = encoded;
+    attr->value_sz = encoded_sz;
+    attr->datatype = HYPERDATATYPE_FLOAT;
+    return 0;
+}
+
+int main(int argc, char** argv) {
+    if (argc != 3) {
+        fprintf(stderr, "usage: %s <host> <port>\n", argv[0]);
+        return 2;
+    }
+
+    const char* host = argv[1];
+    int port = atoi(argv[2]);
+    struct hyperdex_client* client = hyperdex_client_create(host, (uint16_t)port);
+    if (!client) {
+        fprintf(stderr, "hyperdex_client_create failed\n");
+        return 3;
+    }
+
+    struct hyperdex_ds_arena* arena = hyperdex_ds_arena_create();
+    if (!arena) {
+        fprintf(stderr, "hyperdex_ds_arena_create failed\n");
+        hyperdex_client_destroy(client);
+        return 4;
+    }
+
+    struct hyperdex_client_attribute* attrs = hyperdex_ds_allocate_attribute(arena, 19);
+    if (!attrs) {
+        fprintf(stderr, "hyperdex_ds_allocate_attribute failed\n");
+        hyperdex_ds_arena_destroy(arena);
+        hyperdex_client_destroy(client);
+        return 5;
+    }
+
+    set_empty_attr(&attrs[0], "first", HYPERDATATYPE_STRING);
+    set_empty_attr(&attrs[1], "last", HYPERDATATYPE_STRING);
+    if (set_float_attr(arena, &attrs[2], "score", 0.0) < 0) return 6;
+    if (set_int_attr(arena, &attrs[3], "profile_views", 0) < 0) return 7;
+    set_empty_attr(&attrs[4], "pending_requests", HYPERDATATYPE_LIST_STRING);
+    set_empty_attr(&attrs[5], "rankings", HYPERDATATYPE_LIST_FLOAT);
+    set_empty_attr(&attrs[6], "todolist", HYPERDATATYPE_LIST_INT64);
+    set_empty_attr(&attrs[7], "hobbies", HYPERDATATYPE_SET_STRING);
+    set_empty_attr(&attrs[8], "imonafloat", HYPERDATATYPE_SET_FLOAT);
+    set_empty_attr(&attrs[9], "friendids", HYPERDATATYPE_SET_INT64);
+    set_empty_attr(&attrs[10], "unread_messages", HYPERDATATYPE_MAP_STRING_STRING);
+    set_empty_attr(&attrs[11], "upvotes", HYPERDATATYPE_MAP_STRING_INT64);
+    set_empty_attr(&attrs[12], "friendranks", HYPERDATATYPE_MAP_STRING_FLOAT);
+    set_empty_attr(&attrs[13], "posts", HYPERDATATYPE_MAP_INT64_STRING);
+    set_empty_attr(&attrs[14], "friendremapping", HYPERDATATYPE_MAP_INT64_INT64);
+    set_empty_attr(&attrs[15], "intfloatmap", HYPERDATATYPE_MAP_INT64_FLOAT);
+    set_empty_attr(&attrs[16], "still_looking", HYPERDATATYPE_MAP_FLOAT_STRING);
+    set_empty_attr(&attrs[17], "for_a_reason", HYPERDATATYPE_MAP_FLOAT_INT64);
+    set_empty_attr(&attrs[18], "for_float_keyed_map", HYPERDATATYPE_MAP_FLOAT_FLOAT);
+
+    enum hyperdex_client_returncode put_status = HYPERDEX_CLIENT_GARBAGE;
+    int64_t handle = hyperdex_client_put(
+        client,
+        "profiles",
+        "large",
+        strlen("large"),
+        attrs,
+        19,
+        &put_status);
+    printf("put handle=%" PRId64 " status=%d\n", handle, (int)put_status);
+    fflush(stdout);
+
+    enum hyperdex_client_returncode loop_status = HYPERDEX_CLIENT_GARBAGE;
+    int64_t loop_handle = hyperdex_client_loop(client, -1, &loop_status);
+    printf("loop handle=%" PRId64 " status=%d\n", loop_handle, (int)loop_status);
+    fflush(stdout);
+
+    hyperdex_ds_arena_destroy(arena);
+    hyperdex_client_destroy(client);
+    return 0;
+}
+"#;
+    fs::write(&source_path, source)?;
+    let library_dir = legacy_hyperdex_root().join(".libs");
+    let output = Command::new("cc")
+        .arg("-O0")
+        .arg("-g")
+        .arg("-I")
+        .arg(legacy_hyperdex_root().join("include"))
+        .arg("-L")
+        .arg(&library_dir)
+        .arg(format!("-Wl,-rpath,{}", library_dir.display()))
+        .arg("-o")
+        .arg(&binary_path)
+        .arg(&source_path)
+        .arg("-lhyperdex-client")
+        .output()
+        .context("failed to compile native large-object probe")?;
+    if !output.status.success() {
+        return Err(anyhow!(
+            "native large-object probe compile failed: stdout=`{}` stderr=`{}`",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(binary_path)
+}
+
+async fn run_native_large_object_probe(
+    address: SocketAddr,
+) -> Result<(Option<std::process::ExitStatus>, String, String)> {
+    let tempdir = TempDir::new()?;
+    let binary_path = compile_native_large_object_probe(tempdir.path())?;
+    let stdout_path = tempdir.path().join("native-large-object-probe-stdout.log");
+    let stderr_path = tempdir.path().join("native-large-object-probe-stderr.log");
+    let stdout_file = File::create(&stdout_path)?;
+    let stderr_file = File::create(&stderr_path)?;
+
+    let mut child = Command::new(&binary_path)
+        .arg("127.0.0.1")
+        .arg(address.port().to_string())
+        .env("LD_LIBRARY_PATH", legacy_tool_library_path())
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file))
+        .spawn()
+        .context("failed to spawn native large-object probe")?;
+
+    let deadline = Instant::now() + Duration::from_secs(5);
     let exit_status = loop {
         if let Some(status) = child.try_wait()? {
             break Some(status);
@@ -2195,6 +2538,79 @@ async fn legacy_hyhac_large_object_probe_reports_no_daemon_traffic_after_startup
     assert!(
         capture.trim().is_empty(),
         "expected no daemon legacy frontend traffic after clearing the harness startup probe; capture=`{capture}`"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn legacy_hyhac_large_object_probe_reports_immediate_unknownspace_before_deferred_loop(
+) -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+    let capture_file = tempfile::NamedTempFile::new()?;
+    let capture_path = capture_file.path().to_path_buf();
+    drop(capture_file);
+
+    std::env::set_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE", &capture_path);
+    let mut cluster = spawn_single_daemon_cluster().await?;
+    std::env::remove_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE");
+    fs::write(&capture_path, "")?;
+
+    let hyhac = run_hyhac_selected_tests_with_client_trace(
+        cluster.coordinator_address,
+        "*Can store a large object*",
+        Duration::from_secs(10),
+    )
+    .await?;
+    let native = run_native_large_object_probe(cluster.coordinator_address).await?;
+
+    cluster._coordinator.ensure_running()?;
+    cluster._daemon.ensure_running()?;
+
+    let capture = fs::read_to_string(&capture_path).unwrap_or_default();
+    eprintln!(
+        "hyhac immediate-handle probe: hyhac_exit={:?} hyhac_stdout=`{}` hyhac_stderr=`{}` hyhac_trace=`{}` native_exit={:?} native_stdout=`{}` native_stderr=`{}` capture=`{}`",
+        hyhac.exit_status,
+        hyhac.stdout,
+        hyhac.stderr,
+        hyhac.trace,
+        native.0,
+        native.1,
+        native.2,
+        capture
+    );
+
+    assert!(
+        hyhac.stdout.contains("Left ClientGarbage"),
+        "expected the focused hyhac probe to report ClientGarbage"
+    );
+    assert!(
+        hyhac.trace.contains("put handle=-1 status=8512"),
+        "expected hyhac to receive immediate UnknownSpace from hyperdex_client_put; trace=`{}`",
+        hyhac.trace
+    );
+    assert!(
+        hyhac.trace.contains("loop handle=-1 status=8523"),
+        "expected hyhac to hit NonePending in hyperdex_client_loop after demanding the negative handle; trace=`{}`",
+        hyhac.trace
+    );
+    assert!(
+        native.1.contains("put handle=-1 status=8512"),
+        "expected the native C probe to receive the same immediate UnknownSpace status; stdout=`{}` stderr=`{}`",
+        native.1,
+        native.2
+    );
+    assert!(
+        native.1.contains("loop handle=-1 status=8523"),
+        "expected the native C probe to report NonePending after the failed put; stdout=`{}` stderr=`{}`",
+        native.1,
+        native.2
+    );
+    assert!(
+        capture.trim().is_empty(),
+        "expected no daemon legacy frontend traffic because the request fails before send; capture=`{}`",
+        capture
     );
 
     Ok(())
