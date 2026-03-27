@@ -15,6 +15,7 @@ const REPLICANT_CONDITION_STABLE: &[u8] = b"stable";
 const REPLICANT_FUNCTION_SPACE_ADD: &[u8] = b"space_add";
 const REPLICANT_FUNCTION_SPACE_RM: &[u8] = b"space_rm";
 const REPLICANT_ROBUST_PARAMS_BYTES: usize = 16;
+const HYPERDEX_ATTRIBUTE_SECRET: &str = "__secret";
 const HYPERDATATYPE_STRING: u16 = 9217;
 const HYPERDATATYPE_INT64: u16 = 9218;
 const HYPERDATATYPE_FLOAT: u16 = 9219;
@@ -24,6 +25,8 @@ const HYPERDATATYPE_SET_GENERIC: u16 = 9344;
 const HYPERDATATYPE_MAP_GENERIC: u16 = 9408;
 const HYPERDATATYPE_TIMESTAMP_GENERIC: u16 = 9472;
 const HYPERDATATYPE_MACAROON_SECRET: u16 = 9664;
+const INDEX_TYPE_NORMAL: u8 = 0;
+const INDEX_TYPE_DOCUMENT: u8 = 1;
 const CAPTURED_INITIAL_CONFIG_FOLLOW_REQUEST: [u8; 25] = [
     0x80, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x1c,
@@ -193,6 +196,11 @@ struct PackedSpaceAttribute {
 struct PackedSpaceSubspace {
     attrs: Vec<u16>,
     regions_len: usize,
+}
+
+struct PackedSpaceDecoder<'a> {
+    bytes: &'a [u8],
+    cursor: usize,
 }
 
 impl CoordinatorAdminRequest {
@@ -785,18 +793,25 @@ fn decode_u64_be(bytes: &[u8], cursor: &mut usize) -> Result<u64> {
 }
 
 pub fn decode_packed_hyperdex_space(bytes: &[u8]) -> Result<Space> {
-    let mut cursor = 0;
-    let _space_id = decode_u64_be(bytes, &mut cursor)?;
-    let name = decode_len32_string(bytes, &mut cursor, "space name")?;
-    let fault_tolerance = decode_u64_be(bytes, &mut cursor)?;
-    let attrs_len = decode_u16_be(bytes, &mut cursor)? as usize;
-    let subspaces_len = decode_u16_be(bytes, &mut cursor)? as usize;
-    let indices_len = decode_u16_be(bytes, &mut cursor)? as usize;
+    let mut decoder = PackedSpaceDecoder::new(bytes);
+    let _space_id = decoder.read_u64("space id")?;
+    let name = decoder.read_string("space name")?;
+    let fault_tolerance = decoder.read_u64("fault tolerance")?;
+    let attrs_len = decoder.read_u16("attribute count")? as usize;
+    let subspaces_len = decoder.read_u16("subspace count")? as usize;
+    let indices_len = decoder.read_u16("index count")? as usize;
 
     let mut attrs = Vec::with_capacity(attrs_len);
     for _ in 0..attrs_len {
-        let attr_name = decode_len32_string(bytes, &mut cursor, "attribute name")?;
-        let datatype = decode_u16_be(bytes, &mut cursor)?;
+        let attr_name = decoder.read_string("attribute name")?;
+        let datatype = decoder.read_u16("attribute datatype")?;
+
+        if datatype == HYPERDATATYPE_MACAROON_SECRET && attr_name != HYPERDEX_ATTRIBUTE_SECRET {
+            bail!(
+                "packed hyperdex::space uses authorization attribute name `{attr_name}`, expected `{HYPERDEX_ATTRIBUTE_SECRET}`"
+            );
+        }
+
         attrs.push(PackedSpaceAttribute {
             name: attr_name,
             datatype,
@@ -807,16 +822,25 @@ pub fn decode_packed_hyperdex_space(bytes: &[u8]) -> Result<Space> {
         bail!("packed hyperdex::space did not include a key attribute");
     }
 
+    if attrs[0].datatype == HYPERDATATYPE_MACAROON_SECRET {
+        bail!("packed hyperdex::space key attribute cannot be the authorization secret");
+    }
+
     let mut subspaces = Vec::with_capacity(subspaces_len);
+    let mut partitions = None;
     for _ in 0..subspaces_len {
-        subspaces.push(decode_packed_subspace(bytes, &mut cursor)?);
+        subspaces.push(decode_packed_subspace(
+            &mut decoder,
+            attrs.len(),
+            &mut partitions,
+        )?);
     }
 
     for _ in 0..indices_len {
-        decode_packed_index(bytes, &mut cursor)?;
+        decode_packed_index(&mut decoder, attrs.len())?;
     }
 
-    expect_consumed(bytes, cursor, "packed hyperdex::space")?;
+    decoder.finish("packed hyperdex::space")?;
 
     let key_attribute = attrs[0].name.clone();
     let mut attribute_defs = Vec::new();
@@ -834,9 +858,7 @@ pub fn decode_packed_hyperdex_space(bytes: &[u8]) -> Result<Space> {
     for subspace in subspaces.iter().skip(1) {
         let mut dimensions = Vec::with_capacity(subspace.attrs.len());
         for attr_index in &subspace.attrs {
-            let attr = attrs
-                .get(*attr_index as usize)
-                .ok_or_else(|| anyhow!("subspace attribute index {attr_index} out of range"))?;
+            let attr = &attrs[*attr_index as usize];
             if attr.name == key_attribute || attr.datatype == HYPERDATATYPE_MACAROON_SECRET {
                 continue;
             }
@@ -847,9 +869,7 @@ pub fn decode_packed_hyperdex_space(bytes: &[u8]) -> Result<Space> {
         }
     }
 
-    let partitions = subspaces
-        .first()
-        .map(|subspace| subspace.regions_len as u32)
+    let partitions = partitions
         .filter(|count| *count > 0)
         .unwrap_or_else(|| SpaceOptions::default().partitions);
 
@@ -867,47 +887,136 @@ pub fn decode_packed_hyperdex_space(bytes: &[u8]) -> Result<Space> {
     })
 }
 
-fn decode_packed_subspace(bytes: &[u8], cursor: &mut usize) -> Result<PackedSpaceSubspace> {
-    let _subspace_id = decode_u64_be(bytes, cursor)?;
-    let attrs_len = decode_u16_be(bytes, cursor)? as usize;
-    let regions_len = decode_u32_be(bytes, cursor)? as usize;
+fn decode_packed_subspace(
+    decoder: &mut PackedSpaceDecoder<'_>,
+    attribute_count: usize,
+    partitions: &mut Option<u32>,
+) -> Result<PackedSpaceSubspace> {
+    let _subspace_id = decoder.read_u64("subspace id")?;
+    let attrs_len = decoder.read_u16("subspace attribute count")? as usize;
+    let regions_len = decoder.read_u32("subspace region count")?;
     let mut attrs = Vec::with_capacity(attrs_len);
 
+    if let Some(existing) = *partitions {
+        if existing != regions_len {
+            bail!(
+                "packed hyperdex::space subspaces disagree on partition count: {existing} vs {regions_len}"
+            );
+        }
+    } else {
+        *partitions = Some(regions_len);
+    }
+
     for _ in 0..attrs_len {
-        attrs.push(decode_u16_be(bytes, cursor)?);
+        let attr = decoder.read_u16("subspace attribute index")?;
+        if attr as usize >= attribute_count {
+            bail!(
+                "packed hyperdex::space subspace references attribute index {attr}, but only {attribute_count} attributes were decoded"
+            );
+        }
+        attrs.push(attr);
     }
 
-    for _ in 0..regions_len {
-        decode_packed_region(bytes, cursor)?;
+    for _ in 0..regions_len as usize {
+        decode_packed_region(decoder)?;
     }
 
-    Ok(PackedSpaceSubspace { attrs, regions_len })
+    Ok(PackedSpaceSubspace {
+        attrs,
+        regions_len: regions_len as usize,
+    })
 }
 
-fn decode_packed_region(bytes: &[u8], cursor: &mut usize) -> Result<()> {
-    let _region_id = decode_u64_be(bytes, cursor)?;
-    let hashes_len = decode_u16_be(bytes, cursor)? as usize;
-    let replicas_len = decode_u8(bytes, cursor)? as usize;
+fn decode_packed_region(decoder: &mut PackedSpaceDecoder<'_>) -> Result<()> {
+    let _region_id = decoder.read_u64("region id")?;
+    let hashes_len = decoder.read_u16("region hash count")? as usize;
+    let replicas_len = decoder.read_u8("region replica count")? as usize;
 
-    for _ in 0..hashes_len {
-        let _lower = decode_u64_be(bytes, cursor)?;
-        let _upper = decode_u64_be(bytes, cursor)?;
-    }
+    let coord_bytes = hashes_len
+        .checked_mul(16)
+        .ok_or_else(|| anyhow!("region coordinate byte count overflow in packed hyperdex::space"))?;
+    decoder.read_exact(coord_bytes, "region coordinates")?;
 
-    for _ in 0..replicas_len {
-        let _server_id = decode_u64_be(bytes, cursor)?;
-        let _virtual_server_id = decode_u64_be(bytes, cursor)?;
-    }
+    let replica_bytes = replicas_len
+        .checked_mul(16)
+        .ok_or_else(|| anyhow!("region replica byte count overflow in packed hyperdex::space"))?;
+    decoder.read_exact(replica_bytes, "region replicas")?;
 
     Ok(())
 }
 
-fn decode_packed_index(bytes: &[u8], cursor: &mut usize) -> Result<()> {
-    let _index_type = decode_u8(bytes, cursor)?;
-    let _index_id = decode_u64_be(bytes, cursor)?;
-    let _attr = decode_u16_be(bytes, cursor)?;
-    let _extra = decode_len32_slice(bytes, cursor, "index extra")?;
+fn decode_packed_index(decoder: &mut PackedSpaceDecoder<'_>, attribute_count: usize) -> Result<()> {
+    let index_type = decoder.read_u8("index type")?;
+    match index_type {
+        INDEX_TYPE_NORMAL | INDEX_TYPE_DOCUMENT => {}
+        other => bail!("packed hyperdex::space uses unknown index type {other}"),
+    }
+
+    let _index_id = decoder.read_u64("index id")?;
+    let attr = decoder.read_u16("index attribute")?;
+    if attr as usize >= attribute_count {
+        bail!(
+            "packed hyperdex::space index references attribute index {attr}, but only {attribute_count} attributes were decoded"
+        );
+    }
+    let _extra = decoder.read_slice("index extra payload")?;
     Ok(())
+}
+
+impl<'a> PackedSpaceDecoder<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, cursor: 0 }
+    }
+
+    fn read_u8(&mut self, label: &str) -> Result<u8> {
+        Ok(self.read_exact(1, label)?[0])
+    }
+
+    fn read_u16(&mut self, label: &str) -> Result<u16> {
+        Ok(u16::from_be_bytes(self.read_exact(2, label)?.try_into().unwrap()))
+    }
+
+    fn read_u32(&mut self, label: &str) -> Result<u32> {
+        Ok(u32::from_be_bytes(self.read_exact(4, label)?.try_into().unwrap()))
+    }
+
+    fn read_u64(&mut self, label: &str) -> Result<u64> {
+        Ok(u64::from_be_bytes(self.read_exact(8, label)?.try_into().unwrap()))
+    }
+
+    fn read_slice(&mut self, label: &str) -> Result<&'a [u8]> {
+        let len = self.read_u32(label)? as usize;
+        self.read_exact(len, label)
+    }
+
+    fn read_string(&mut self, label: &str) -> Result<String> {
+        let slice = self.read_slice(label)?;
+        let text = std::str::from_utf8(slice)
+            .map_err(|_| anyhow!("{label} is not valid UTF-8 in packed hyperdex::space"))?;
+        Ok(text.to_owned())
+    }
+
+    fn read_exact(&mut self, len: usize, label: &str) -> Result<&'a [u8]> {
+        let end = self
+            .cursor
+            .checked_add(len)
+            .ok_or_else(|| anyhow!("{label} length overflow in packed hyperdex::space"))?;
+
+        if end > self.bytes.len() {
+            bail!(
+                "{label} is truncated in packed hyperdex::space: need {len} bytes but only {} remain",
+                self.bytes.len().saturating_sub(self.cursor)
+            );
+        }
+
+        let slice = &self.bytes[self.cursor..end];
+        self.cursor = end;
+        Ok(slice)
+    }
+
+    fn finish(&self, context: &str) -> Result<()> {
+        expect_consumed(self.bytes, self.cursor, context)
+    }
 }
 
 fn decode_hyperdatatype(datatype: u16) -> Result<ValueKind> {
@@ -983,60 +1092,6 @@ fn decode_c_string(bytes: &[u8]) -> Result<&str> {
     Ok(std::str::from_utf8(prefix)?)
 }
 
-fn decode_len32_string(bytes: &[u8], cursor: &mut usize, label: &str) -> Result<String> {
-    let slice = decode_len32_slice(bytes, cursor, label)?;
-    Ok(std::str::from_utf8(&slice)?.to_owned())
-}
-
-fn decode_len32_slice(bytes: &[u8], cursor: &mut usize, label: &str) -> Result<Vec<u8>> {
-    let len = decode_u32_be(bytes, cursor)? as usize;
-    let end = cursor
-        .checked_add(len)
-        .ok_or_else(|| anyhow!("cursor overflow while decoding {label}"))?;
-    if end > bytes.len() {
-        bail!("buffer too short for {label}");
-    }
-    let slice = bytes[*cursor..end].to_vec();
-    *cursor = end;
-    Ok(slice)
-}
-
-fn decode_u32_be(bytes: &[u8], cursor: &mut usize) -> Result<u32> {
-    let end = cursor
-        .checked_add(4)
-        .ok_or_else(|| anyhow!("cursor overflow while decoding u32"))?;
-    if end > bytes.len() {
-        bail!("buffer too short for u32");
-    }
-    let value = u32::from_be_bytes(bytes[*cursor..end].try_into().unwrap());
-    *cursor = end;
-    Ok(value)
-}
-
-fn decode_u16_be(bytes: &[u8], cursor: &mut usize) -> Result<u16> {
-    let end = cursor
-        .checked_add(2)
-        .ok_or_else(|| anyhow!("cursor overflow while decoding u16"))?;
-    if end > bytes.len() {
-        bail!("buffer too short for u16");
-    }
-    let value = u16::from_be_bytes(bytes[*cursor..end].try_into().unwrap());
-    *cursor = end;
-    Ok(value)
-}
-
-fn decode_u8(bytes: &[u8], cursor: &mut usize) -> Result<u8> {
-    let end = cursor
-        .checked_add(1)
-        .ok_or_else(|| anyhow!("cursor overflow while decoding u8"))?;
-    if end > bytes.len() {
-        bail!("buffer too short for u8");
-    }
-    let value = bytes[*cursor];
-    *cursor = end;
-    Ok(value)
-}
-
 fn decode_return_code_at(bytes: &[u8], cursor: &mut usize) -> Result<ReplicantReturnCode> {
     let end = cursor
         .checked_add(2)
@@ -1071,7 +1126,51 @@ fn expect_consumed(bytes: &[u8], cursor: usize, context: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use data_model::{AttributeDefinition, SchemaFormat, SpaceOptions, Subspace, ValueKind};
+    use data_model::{AttributeDefinition, SchemaFormat, SpaceOptions, Subspace, TimeUnit, ValueKind};
+
+    #[derive(Clone, Debug)]
+    struct PackedAttribute<'a> {
+        name: &'a str,
+        datatype: u16,
+    }
+
+    #[derive(Clone, Debug)]
+    struct PackedReplica {
+        server_id: u64,
+        virtual_server_id: u64,
+    }
+
+    #[derive(Clone, Debug)]
+    struct PackedRegion {
+        id: u64,
+        bounds: Vec<(u64, u64)>,
+        replicas: Vec<PackedReplica>,
+    }
+
+    #[derive(Clone, Debug)]
+    struct PackedSubspace {
+        id: u64,
+        attrs: Vec<u16>,
+        regions: Vec<PackedRegion>,
+    }
+
+    #[derive(Clone, Debug)]
+    struct PackedIndex<'a> {
+        index_type: u8,
+        id: u64,
+        attr: u16,
+        extra: &'a [u8],
+    }
+
+    #[derive(Clone, Debug)]
+    struct PackedSpace<'a> {
+        id: u64,
+        name: &'a str,
+        fault_tolerance: u64,
+        attributes: Vec<PackedAttribute<'a>>,
+        subspaces: Vec<PackedSubspace>,
+        indices: Vec<PackedIndex<'a>>,
+    }
 
     #[test]
     fn busybee_frame_round_trip() {
@@ -1146,13 +1245,24 @@ mod tests {
                         name: "profile_views".to_owned(),
                         kind: ValueKind::Int,
                     },
+                    AttributeDefinition {
+                        name: "upvotes".to_owned(),
+                        kind: ValueKind::Map {
+                            key: Box::new(ValueKind::String),
+                            value: Box::new(ValueKind::Int),
+                        },
+                    },
+                    AttributeDefinition {
+                        name: "created".to_owned(),
+                        kind: ValueKind::Timestamp(TimeUnit::Day),
+                    },
                 ],
                 subspaces: vec![Subspace {
-                    dimensions: vec!["profile_views".to_owned()],
+                    dimensions: vec!["profile_views".to_owned(), "upvotes".to_owned()],
                 }],
                 options: SpaceOptions {
                     fault_tolerance: 2,
-                    partitions: 4,
+                    partitions: 2,
                     schema_format: SchemaFormat::HyperDexDsl,
                 },
             }
@@ -1180,17 +1290,152 @@ mod tests {
                         name: "profile_views".to_owned(),
                         kind: ValueKind::Int,
                     },
+                    AttributeDefinition {
+                        name: "upvotes".to_owned(),
+                        kind: ValueKind::Map {
+                            key: Box::new(ValueKind::String),
+                            value: Box::new(ValueKind::Int),
+                        },
+                    },
+                    AttributeDefinition {
+                        name: "created".to_owned(),
+                        kind: ValueKind::Timestamp(TimeUnit::Day),
+                    },
                 ],
                 subspaces: vec![Subspace {
-                    dimensions: vec!["profile_views".to_owned()],
+                    dimensions: vec!["profile_views".to_owned(), "upvotes".to_owned()],
                 }],
                 options: SpaceOptions {
                     fault_tolerance: 2,
-                    partitions: 4,
+                    partitions: 2,
                     schema_format: SchemaFormat::HyperDexDsl,
                 },
             })
         );
+    }
+
+    #[test]
+    fn packed_space_decoder_rejects_secret_attribute_with_wrong_name() {
+        let encoded_space = pack_space(PackedSpace {
+            id: 1,
+            name: "profiles",
+            fault_tolerance: 0,
+            attributes: vec![
+                PackedAttribute {
+                    name: "username",
+                    datatype: HYPERDATATYPE_STRING,
+                },
+                PackedAttribute {
+                    name: "api_secret",
+                    datatype: HYPERDATATYPE_MACAROON_SECRET,
+                },
+            ],
+            subspaces: vec![packed_primary_subspace(&[0], 1)],
+            indices: vec![],
+        });
+
+        let err = decode_packed_hyperdex_space(&encoded_space).unwrap_err().to_string();
+
+        assert!(err.contains("authorization attribute name `api_secret`, expected `__secret`"));
+    }
+
+    #[test]
+    fn packed_space_decoder_rejects_secret_key_attribute() {
+        let encoded_space = pack_space(PackedSpace {
+            id: 1,
+            name: "profiles",
+            fault_tolerance: 0,
+            attributes: vec![PackedAttribute {
+                name: HYPERDEX_ATTRIBUTE_SECRET,
+                datatype: HYPERDATATYPE_MACAROON_SECRET,
+            }],
+            subspaces: vec![packed_primary_subspace(&[0], 1)],
+            indices: vec![],
+        });
+
+        let err = decode_packed_hyperdex_space(&encoded_space).unwrap_err().to_string();
+
+        assert!(err.contains("key attribute cannot be the authorization secret"));
+    }
+
+    #[test]
+    fn packed_space_decoder_rejects_inconsistent_partition_counts() {
+        let encoded_space = pack_space(PackedSpace {
+            id: 1,
+            name: "profiles",
+            fault_tolerance: 0,
+            attributes: vec![
+                PackedAttribute {
+                    name: "username",
+                    datatype: HYPERDATATYPE_STRING,
+                },
+                PackedAttribute {
+                    name: "profile_views",
+                    datatype: HYPERDATATYPE_INT64,
+                },
+            ],
+            subspaces: vec![
+                packed_primary_subspace(&[0], 2),
+                packed_secondary_subspace(2, &[1], 3),
+            ],
+            indices: vec![],
+        });
+
+        let err = decode_packed_hyperdex_space(&encoded_space).unwrap_err().to_string();
+
+        assert!(err.contains("subspaces disagree on partition count: 2 vs 3"));
+    }
+
+    #[test]
+    fn packed_space_decoder_rejects_unknown_index_type() {
+        let mut packed = test_packed_space();
+        packed.indices[0].index_type = 9;
+
+        let err = decode_packed_hyperdex_space(&pack_space(packed))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("uses unknown index type 9"));
+    }
+
+    #[test]
+    fn packed_space_decoder_rejects_index_attribute_out_of_range() {
+        let mut packed = test_packed_space();
+        packed.indices[0].attr = 99;
+
+        let err = decode_packed_hyperdex_space(&pack_space(packed))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("index references attribute index 99, but only 6 attributes were decoded"));
+    }
+
+    #[test]
+    fn packed_space_decoder_reports_truncated_region_replicas() {
+        let mut packed = test_packed_space();
+        packed.indices.clear();
+        let mut encoded_space = pack_space(packed);
+        encoded_space.pop();
+
+        let err = decode_packed_hyperdex_space(&encoded_space)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("region replicas is truncated"));
+    }
+
+    #[test]
+    fn packed_space_decoder_reports_truncated_index_extra_payload() {
+        let mut packed = test_packed_space();
+        packed.indices[1].extra = b"comments.author";
+        let mut encoded_space = pack_space(packed);
+        encoded_space.pop();
+
+        let err = decode_packed_hyperdex_space(&encoded_space)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("index extra payload is truncated"));
     }
 
     #[test]
@@ -1329,46 +1574,134 @@ mod tests {
     }
 
     fn encode_test_space_payload() -> Vec<u8> {
-        let mut out = Vec::new();
-        encode_u64(&mut out, 0);
-        encode_slice32(&mut out, b"profiles");
-        encode_u64(&mut out, 2);
-        encode_u16(&mut out, 3);
-        encode_u16(&mut out, 2);
-        encode_u16(&mut out, 1);
-
-        encode_slice32(&mut out, b"username");
-        encode_u16(&mut out, HYPERDATATYPE_STRING);
-        encode_slice32(&mut out, b"first");
-        encode_u16(&mut out, HYPERDATATYPE_STRING);
-        encode_slice32(&mut out, b"profile_views");
-        encode_u16(&mut out, HYPERDATATYPE_INT64);
-
-        encode_subspace(&mut out, 0, &[0], 4);
-        encode_subspace(&mut out, 1, &[2], 4);
-
-        encode_u8(&mut out, 0);
-        encode_u64(&mut out, 0);
-        encode_u16(&mut out, 2);
-        encode_slice32(&mut out, b"");
-
-        out
+        pack_space(test_packed_space())
     }
 
-    fn encode_subspace(out: &mut Vec<u8>, id: u64, attrs: &[u16], partitions: u32) {
-        encode_u64(out, id);
-        encode_u16(out, attrs.len() as u16);
-        encode_u32(out, partitions);
-        for attr in attrs {
-            encode_u16(out, *attr);
+    fn test_packed_space<'a>() -> PackedSpace<'a> {
+        PackedSpace {
+            id: 17,
+            name: "profiles",
+            fault_tolerance: 2,
+            attributes: vec![
+                PackedAttribute {
+                    name: "username",
+                    datatype: HYPERDATATYPE_STRING,
+                },
+                PackedAttribute {
+                    name: "first",
+                    datatype: HYPERDATATYPE_STRING,
+                },
+                PackedAttribute {
+                    name: "profile_views",
+                    datatype: HYPERDATATYPE_INT64,
+                },
+                PackedAttribute {
+                    name: "upvotes",
+                    datatype: 9418,
+                },
+                PackedAttribute {
+                    name: "created",
+                    datatype: 9476,
+                },
+                PackedAttribute {
+                    name: HYPERDEX_ATTRIBUTE_SECRET,
+                    datatype: HYPERDATATYPE_MACAROON_SECRET,
+                },
+            ],
+            subspaces: vec![
+                packed_primary_subspace(&[0], 2),
+                packed_secondary_subspace(32, &[2, 3], 2),
+            ],
+            indices: vec![
+                PackedIndex {
+                    index_type: INDEX_TYPE_NORMAL,
+                    id: 41,
+                    attr: 2,
+                    extra: b"",
+                },
+                PackedIndex {
+                    index_type: INDEX_TYPE_DOCUMENT,
+                    id: 42,
+                    attr: 3,
+                    extra: b"comments.author",
+                },
+            ],
         }
+    }
+
+    fn packed_primary_subspace(attrs: &[u16], partitions: u32) -> PackedSubspace {
+        packed_secondary_subspace(31, attrs, partitions)
+    }
+
+    fn packed_secondary_subspace(id: u64, attrs: &[u16], partitions: u32) -> PackedSubspace {
+        let bounds = vec![(0_u64, 100_u64); attrs.len().max(1)];
+        let mut regions = Vec::new();
         for partition in 0..partitions {
-            encode_u64(out, partition as u64);
-            encode_u16(out, 1);
-            encode_u8(out, 0);
-            encode_u64(out, partition as u64);
-            encode_u64(out, partition as u64);
+            let base = partition as u64 + 1;
+            regions.push(PackedRegion {
+                id: id * 10 + partition as u64,
+                bounds: bounds.clone(),
+                replicas: vec![PackedReplica {
+                    server_id: base,
+                    virtual_server_id: base * 10,
+                }],
+            });
         }
+        PackedSubspace {
+            id,
+            attrs: attrs.to_vec(),
+            regions,
+        }
+    }
+
+    fn pack_space(space: PackedSpace<'_>) -> Vec<u8> {
+        let mut out = Vec::new();
+        encode_u64(&mut out, space.id);
+        encode_slice32(&mut out, space.name.as_bytes());
+        encode_u64(&mut out, space.fault_tolerance);
+        encode_u16(&mut out, space.attributes.len() as u16);
+        encode_u16(&mut out, space.subspaces.len() as u16);
+        encode_u16(&mut out, space.indices.len() as u16);
+
+        for attribute in space.attributes {
+            encode_slice32(&mut out, attribute.name.as_bytes());
+            encode_u16(&mut out, attribute.datatype);
+        }
+
+        for subspace in space.subspaces {
+            encode_u64(&mut out, subspace.id);
+            encode_u16(&mut out, subspace.attrs.len() as u16);
+            encode_u32(&mut out, subspace.regions.len() as u32);
+
+            for attr in subspace.attrs {
+                encode_u16(&mut out, attr);
+            }
+
+            for region in subspace.regions {
+                encode_u64(&mut out, region.id);
+                encode_u16(&mut out, region.bounds.len() as u16);
+                encode_u8(&mut out, region.replicas.len() as u8);
+
+                for (lower, upper) in region.bounds {
+                    encode_u64(&mut out, lower);
+                    encode_u64(&mut out, upper);
+                }
+
+                for replica in region.replicas {
+                    encode_u64(&mut out, replica.server_id);
+                    encode_u64(&mut out, replica.virtual_server_id);
+                }
+            }
+        }
+
+        for index in space.indices {
+            encode_u8(&mut out, index.index_type);
+            encode_u64(&mut out, index.id);
+            encode_u16(&mut out, index.attr);
+            encode_slice32(&mut out, index.extra);
+        }
+
+        out
     }
 
     fn encode_slice32(out: &mut Vec<u8>, bytes: &[u8]) {
