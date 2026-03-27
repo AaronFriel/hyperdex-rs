@@ -1187,19 +1187,24 @@ fn encode_legacy_subspace(
     server_ids: &[u64],
     ids: &mut LegacyConfigIds,
 ) -> Result<()> {
+    let regions = legacy_partition_regions(attr_indexes.len(), partitions);
+
     encode_u64_be(out, ids.next_subspace_id);
     ids.next_subspace_id += 1;
     encode_u16_be(
         out,
         u16::try_from(attr_indexes.len()).map_err(|_| anyhow!("legacy subspace is too wide"))?,
     );
-    encode_u32_be(out, partitions);
+    encode_u32_be(
+        out,
+        u32::try_from(regions.len()).map_err(|_| anyhow!("legacy region count exceeds u32"))?,
+    );
 
     for attr_index in attr_indexes {
         encode_u16_be(out, *attr_index);
     }
 
-    for partition in 0..partitions {
+    for (lower_coord, upper_coord) in regions {
         encode_u64_be(out, ids.next_region_id);
         ids.next_region_id += 1;
         encode_u16_be(
@@ -1212,10 +1217,9 @@ fn encode_legacy_subspace(
                 .map_err(|_| anyhow!("legacy replica count exceeds u8"))?,
         );
 
-        for _ in attr_indexes {
-            let hash = u64::from(partition);
-            encode_u64_be(out, hash);
-            encode_u64_be(out, hash);
+        for (lower_hash, upper_hash) in lower_coord.iter().zip(upper_coord.iter()) {
+            encode_u64_be(out, *lower_hash);
+            encode_u64_be(out, *upper_hash);
         }
 
         for server_id in server_ids {
@@ -1226,6 +1230,108 @@ fn encode_legacy_subspace(
     }
 
     Ok(())
+}
+
+fn legacy_partition_regions(num_attrs: usize, partitions: u32) -> Vec<(Vec<u64>, Vec<u64>)> {
+    assert!(num_attrs > 0, "legacy partitioning requires at least one attribute");
+    assert!(partitions > 0, "legacy partitioning requires at least one partition");
+
+    let mut attrs_per_dimension = f64::from(partitions);
+    attrs_per_dimension = attrs_per_dimension.powf(1.0 / num_attrs as f64);
+    let mut dimensions = vec![attrs_per_dimension as u64; num_attrs];
+    let mut partition_count = dimensions.len() as u64 * dimensions[0];
+
+    for dimension in dimensions.iter_mut().take(num_attrs) {
+        if partition_count >= u64::from(partitions) {
+            break;
+        }
+        partition_count = partition_count / *dimension;
+        *dimension += 1;
+        partition_count *= *dimension;
+    }
+
+    let bigger = dimensions[0];
+    let (bigger_lbs, bigger_ubs) = legacy_partition_points(bigger);
+    let smaller = dimensions[dimensions.len() - 1];
+    let (smaller_lbs, smaller_ubs) = legacy_partition_points(smaller);
+    let mut lower_coord = vec![0_u64; num_attrs];
+    let mut upper_coord = vec![0_u64; num_attrs];
+    let mut regions = Vec::new();
+    legacy_generate_regions(
+        0,
+        &dimensions,
+        bigger,
+        &bigger_lbs,
+        &bigger_ubs,
+        smaller,
+        &smaller_lbs,
+        &smaller_ubs,
+        &mut lower_coord,
+        &mut upper_coord,
+        &mut regions,
+    );
+    regions
+}
+
+fn legacy_partition_points(intervals: u64) -> (Vec<u64>, Vec<u64>) {
+    let interval = (0x8000_0000_0000_0000_u64 / intervals) * 2;
+    let mut lowers = Vec::with_capacity(intervals as usize);
+    let mut uppers = Vec::with_capacity(intervals as usize);
+
+    for index in 0..intervals {
+        lowers.push(index * interval);
+    }
+
+    for lower in lowers.iter().skip(1) {
+        uppers.push(*lower - 1);
+    }
+    uppers.push(u64::MAX);
+    (lowers, uppers)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn legacy_generate_regions(
+    idx: usize,
+    dimensions: &[u64],
+    bigger: u64,
+    bigger_lbs: &[u64],
+    bigger_ubs: &[u64],
+    smaller: u64,
+    smaller_lbs: &[u64],
+    smaller_ubs: &[u64],
+    lower_coord: &mut [u64],
+    upper_coord: &mut [u64],
+    regions: &mut Vec<(Vec<u64>, Vec<u64>)>,
+) {
+    if idx >= dimensions.len() {
+        regions.push((lower_coord.to_vec(), upper_coord.to_vec()));
+        return;
+    }
+
+    let (lbs, ubs) = if dimensions[idx] == bigger {
+        (bigger_lbs, bigger_ubs)
+    } else {
+        debug_assert_eq!(dimensions[idx], smaller);
+        (smaller_lbs, smaller_ubs)
+    };
+
+    for (lower, upper) in lbs.iter().zip(ubs.iter()) {
+        lower_coord[idx] = *lower;
+        upper_coord[idx] = *upper;
+        legacy_generate_regions(
+            idx + 1,
+            dimensions,
+            bigger,
+            bigger_lbs,
+            bigger_ubs,
+            smaller,
+            smaller_lbs,
+            smaller_ubs,
+            lower_coord,
+            upper_coord,
+            regions,
+        );
+    }
 }
 
 fn legacy_hyperdatatype(kind: &ValueKind) -> Result<u16> {
@@ -4833,6 +4939,25 @@ mod tests {
                 ],
             }]
         );
+    }
+
+    #[test]
+    fn legacy_partition_regions_cover_full_u64_space_for_single_dimension() {
+        let regions = legacy_partition_regions(1, 64);
+        let interval = (0x8000_0000_0000_0000_u64 / 64) * 2;
+
+        assert_eq!(regions.len(), 64);
+        assert_eq!(regions.first().unwrap(), &(vec![0], vec![interval - 1]));
+        assert_eq!(
+            regions.last().unwrap(),
+            &(vec![interval * 63], vec![u64::MAX])
+        );
+
+        for window in regions.windows(2) {
+            let (_, lhs_upper) = &window[0];
+            let (rhs_lower, _) = &window[1];
+            assert_eq!(lhs_upper[0].saturating_add(1), rhs_lower[0]);
+        }
     }
 
     #[tokio::test]
