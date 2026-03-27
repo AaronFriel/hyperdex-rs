@@ -88,10 +88,11 @@ One bounded design-or-implementation step with validation and a recorded verdict
 
 ## Current Hypothesis
 
-The control plane can now move ahead in bounded steps if each daemon first
-registers its identity and then consumes coordinator-published cluster state.
-That should create a real distributed foundation for the later data-plane
-forwarding work, instead of leaving each daemon on an isolated startup config.
+Now that daemon startup consumes coordinator-published config and the
+multiprocess harness proves shared control-plane state, the next useful
+distributed step is the first real cross-daemon data path. A routed write/read
+proof between separate daemons should expose whether the transport abstraction
+is strong enough before replication fanout or failure handling grow around it.
 
 ## Milestones
 
@@ -161,22 +162,25 @@ forwarding work, instead of leaving each daemon on an isolated startup config.
 - Done: coordinator mode now accepts `daemon_register`, tracks live daemon
   identity in `ConfigView.cluster.nodes`, and updates placement layout metadata
   as registrations arrive.
-- Known gap: daemons still bootstrap their own local runtime state and do not
-  yet register with or consume coordinator-published cluster config during
-  startup.
+- Done: daemon startup now registers with the coordinator, fetches
+  coordinator-published config on startup, and keeps polling for later config
+  changes while serving the legacy frontend.
+- Done: a new multiprocess harness proves one coordinator process plus two
+  daemon processes share remotely-created space state instead of behaving like
+  isolated local runtimes.
 - Known gap: internode transport and consensus backends remain in-process
   scaffolding rather than live cross-process replication.
 - Active: dedicated worktrees are now producing distributed control-plane,
   distributed data-plane, and multiprocess validation changes in parallel.
-- Next: wire daemon startup into the new registration and config-consumption
-  path, then prove that multiple daemons stop behaving like isolated runtimes.
+- Next: land the first real distributed data path so writes and reads can cross
+  daemon boundaries instead of stopping at shared control-plane state.
 
 ## Next Bounded Iteration
 
-Make daemon startup use the distributed control plane for real: register the
-daemon with the coordinator, fetch or follow the coordinator config, and prove
-that multiple daemons consume one shared cluster view instead of isolated local
-startup state.
+Implement the first real distributed data-plane step: route `put` and `get`
+between separate daemons over the transport abstraction, and prove a write
+accepted through one daemon can be read back through another according to
+placement.
 
 ## Loop Ledger
 
@@ -206,3 +210,4 @@ startup state.
 | 22 | The next useful step after in-process admin dispatch is a live coordinator control service, because it turns the existing method handler into an actual network boundary without yet forcing full Replicant compatibility. | Add a TCP control listener for coordinator mode, frame control requests as method plus typed body, serve `space_add` and `space_rm` through `handle_coordinator_admin_method`, add focused TCP listener tests, and revalidate the full workspace. | `cargo test -p server` passes with the new control-service tests, and `cargo test --workspace` passes after coordinator mode begins serving the control port on `main`. | Confirmed. | advance | Extend the live coordinator control path next with `wait_until_stable` and a minimal config-follow path that a compatibility client can actually consume. |
 | 23 | Once the live control service exists, the next useful compatibility increment is to add `wait_until_stable` and a minimal config-follow path so a client can observe coordinator state instead of only issuing space mutations. | Extend `CoordinatorAdminRequest` with `WaitUntilStable` and `ConfigGet`, add an optional-body control response path, serve stable-version and config-snapshot bodies from coordinator mode, add focused TCP tests for both operations, and revalidate the full workspace. | `cargo test -p server` passes with the new stable/config control-service tests, and `cargo test --workspace` passes after the live control service grows those two operations on `main`. | Confirmed. | advance | Build the first legacy-admin client compatibility path next, starting with deferred-call and event-loop semantics that can back `hyperdex_admin_loop`, `add_space`, `rm_space`, and `wait_until_stable`. |
 | 24 | Real distributed control-plane progress starts with the coordinator owning daemon membership instead of every daemon keeping a fixed local node list. | Cherry-pick the daemon-registration worktree onto `main`, add coordinator-side daemon registration plumbing plus daemon identity parsing, validate control-plane protocol/runtime behavior with focused tests, and reframe the next move around daemon startup consuming shared coordinator state. | Commit `7c864a6` lands `daemon_register` on `main`; `cargo test -p control-plane -p hyperdex-admin-protocol -p server` passes with new registration tests; the coordinator now updates both `ConfigView.cluster.nodes` and placement layout membership as daemons register. | Confirmed. | advance | Make daemon startup register and synchronize against coordinator state so real multi-daemon formation exists outside the coordinator process. |
+| 25 | Once the coordinator owns daemon membership, the next control-plane proof is to make daemon processes consume shared coordinator state during startup and after later config changes. | Add coordinator config synchronization into daemon startup, keep a background refresh loop alive while the daemon serves requests, add a multiprocess harness that boots one coordinator plus two daemon processes, creates a space through the coordinator, waits for daemon sync, and verifies both daemons can serve `REQ_COUNT` for that space, then revalidate the workspace. | `cargo test -p server --test dist_multiprocess_harness -- --nocapture` passes on `main`; `cargo test -p server` passes with the new process harness included; `cargo test --workspace` passes after daemon startup begins synchronizing config from the coordinator. | Confirmed. | advance | Land the first real cross-daemon data path next, starting with routed `put` / `get` between separate daemons over the transport abstraction. |
