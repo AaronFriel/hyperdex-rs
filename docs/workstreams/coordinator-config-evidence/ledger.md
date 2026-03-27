@@ -732,3 +732,52 @@
 - Expected artifacts:
   - the next exact post-follow mismatch on the corrected baseline
   - concrete pointers for the next product change
+
+### Entry `cce-014` - Outcome
+
+- Timestamp: `2026-03-27 23:18Z`
+- Kind: `outcome`
+- End commit: `64104e7`
+- Artifact location:
+  - discarded read-only notes that contradicted the interval-corrected `main`
+    baseline
+- Evidence summary:
+  - the attempted follow-up analysis revisited the already-landed primary-region
+    interval mismatch instead of starting from the corrected post-follow probe
+  - current `main` already contains `1d6093c`, and the interval-focused tests
+    and later proxy evidence show the client now advances past bootstrap into
+    `CondWait` plus `ClientResponse`
+  - that return did not reduce the remaining post-follow mismatch on the
+    corrected baseline
+- Conclusion: `cce-014` should not be reused. The next read-only round must
+  start from the corrected post-follow probe and avoid re-opening fixed
+  bootstrap or region-interval diagnoses unless current `main` evidence
+  disproves them.
+- Disposition: `retry`
+- Next move: preregister a fresh read-only comparison that starts from the
+  corrected post-follow trace and names the first exact remaining mismatch.
+
+### Entry `cce-015` - Preregistration
+
+- Timestamp: `2026-03-27 23:18Z`
+- Kind: `preregister`
+- Hypothesis: a fresh read-only comparison that starts from the corrected
+  post-follow probe will identify the first exact mismatch after the observed
+  `CondWait` / `ClientResponse` phase, without regressing into already-fixed
+  bootstrap or interval analysis.
+- Owner: delegated worker `019d316c-58c6-7981-b76e-86a5a507a3a3` (`Nietzsche`)
+- Start commit: `64104e7`
+- Worktree / branch:
+  - none required; read-only evidence gathering only
+- Mutable surface:
+  - none
+- Validator:
+  - source-backed explanation of the first exact mismatch after the corrected
+    coordinator `CondWait` / `ClientResponse` phase on current `main`
+  - concrete producer/consumer pointers in the original HyperDex/Replicant
+    path and the current Rust path
+  - explicit confirmation that already-fixed bootstrap sender-id, repeated
+    identify, and region-interval issues were not reintroduced
+- Expected artifacts:
+  - the first exact post-follow mismatch on the corrected current baseline
+  - concrete pointers for the next product change
