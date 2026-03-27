@@ -22,3 +22,51 @@
   - observed first failing operation from a real `hyhac` run
   - captured admin or client error surface
   - next bounded compatibility step chosen from that evidence
+
+### Entry `hyh-001` - Outcome
+
+- Timestamp: `2026-03-27 04:33Z`
+- Kind: `outcome`
+- End commit: `329a469`
+- Artifact location:
+  - live probe against `/tmp/hyperdex-rs-live`
+  - `/tmp/hyperdex-rs-live/coordinator.log`
+  - `/tmp/hyperdex-rs-live/daemon.log`
+- Evidence summary:
+  - `timeout 30s ... hyhac/scripts/cabal.sh test ...` timed out against a live
+    `hyperdex-rs` coordinator plus daemon cluster
+  - after `329a469`, the coordinator stayed alive instead of crashing on
+    malformed admin connections
+  - `timeout 5s ... hyperdex-add-space -h 127.0.0.1 -p 1982` also timed out
+- Conclusion: the next missing public contract is the legacy coordinator admin
+  frontend used by the C admin library, starting with `add_space` and
+  `wait_until_stable`.
+- Disposition: `advance`
+- Next move: preregister and launch a bounded implementation step for the
+  legacy coordinator admin frontend.
+
+### Entry `hyh-002` - Preregistration
+
+- Timestamp: `2026-03-27 04:33Z`
+- Kind: `preregister`
+- Hypothesis: implementing the legacy coordinator admin frontend for
+  `add_space` and `wait_until_stable` will unblock the first `hyhac` admin test
+  and the matching HyperDex admin tools.
+- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+- Start commit: `faa6cb6`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+- Mutable surface:
+  - `crates/server/**`
+  - `crates/hyperdex-admin-protocol/**`
+  - any new crate added only if it is strictly for the legacy coordinator admin
+    frontend
+- Validator:
+  - `cargo test -p server coordinator_control_service_ -- --nocapture`
+  - `cargo test --workspace`
+  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
+- Expected artifacts:
+  - live legacy admin endpoint that no longer times out on `add_space`
+  - live legacy admin endpoint that no longer times out on `wait_until_stable`
+  - one bounded commit ready for reconciliation

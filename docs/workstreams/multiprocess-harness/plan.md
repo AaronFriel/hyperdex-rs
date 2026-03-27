@@ -53,21 +53,19 @@ parts one at a time: ephemeral port reuse, then log-text waits.
   and recorded the in-flight harness stabilization step.
 - [x] (2026-03-27 04:22Z) Reconciled the `serial_test` containment fix into
   `98def36` (`Stabilize multiprocess harness concurrency`).
-- [ ] Replace ephemeral port reuse and log-text waits with protocol-based
-  readiness once the containment fix is merged.
+- [x] (2026-03-27 04:33Z) Replaced ephemeral port reuse and log-text waits
+  with protocol-based readiness in `faa6cb6`
+  (`Use protocol readiness in multiprocess harness`).
 
 ## Current Hypothesis
 
-The current workspace false failure is contained. The next real harness weakness
-is startup and port-selection brittleness inside individual tests, and the next
-bounded pass should remove that with protocol-based readiness rather than more
-blanket serialization.
+The harness is in a good holding state now. The next change here should be
+driven by a newly observed cluster-validation failure, not by another
+speculative cleanup pass.
 
 ## Next Bounded Step
 
-Replace ephemeral port reuse and log-text waits with protocol-based readiness,
-validate the multiprocess harness plus the full workspace, and record the
-outcome in this workstream ledger.
+Wait for the next real-cluster failure that requires another harness change.
 
 ## Surprises & Discoveries
 
@@ -89,3 +87,5 @@ outcome in this workstream ledger.
 
 - `98def36` restored stable workspace runs by serializing the three
   process-spawning multiprocess tests without touching product code.
+- `faa6cb6` replaced ephemeral port reuse and log-text waits with held port
+  reservations plus protocol-based readiness checks.

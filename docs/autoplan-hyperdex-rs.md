@@ -116,9 +116,9 @@ split, sequencing, or validator set needs to change.
 
 | Workstream | Status | Dependencies / Blockers | Plan | Ledger | Worktree / Branch | Next Step | Latest Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `simulation-proof` | active | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Tighten the remaining schema-permissive single-node Hegel sequence test in the dedicated worktree while root advances live compatibility. | `advance` |
-| `multiprocess-harness` | active | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Replace ephemeral port reuse and log-text waits with protocol-based readiness in the dedicated worktree while root advances live compatibility. | `advance` |
-| `live-hyhac` | active | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout | Run the live `hyhac` harness against current `main`, capture the next failing admin or client path, and narrow the next compatibility step to that evidence. | `advance` |
+| `simulation-proof` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
+| `multiprocess-harness` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Hold until a new real-cluster failure requires deeper harness work. | `advance` |
+| `live-hyhac` | active | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane` for follow-up implementation | Implement the legacy coordinator admin frontend needed for `add_space` and `wait_until_stable`, then rerun the bounded live probe. | `advance` |
 
 ## Progress
 
@@ -137,27 +137,31 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 04:22Z) Reconciled the in-flight `multiprocess-harness` edit
   into `98def36` (`Stabilize multiprocess harness concurrency`) with green
   harness and workspace validators.
-- [ ] Launch the next three unblocked steps in parallel:
-  `live-hyhac` on `main`, the single-node Hegel cleanup in
-  `worktrees/sim-coverage`, and the multiprocess readiness cleanup in
-  `worktrees/dist-multiprocess-harness`.
-- [ ] Advance `live-hyhac` by rerunning the Haskell harness against the updated
-  cluster and narrowing the next compatibility gap from observed failures.
+- [x] (2026-03-27 04:33Z) Launched the next three unblocked steps in parallel
+  and reconciled all three code results onto `main`:
+  `329a469`, `5cc0cf8`, and `faa6cb6`.
+- [x] (2026-03-27 04:33Z) Advanced `live-hyhac` far enough to isolate the next
+  compatibility gap from observed failures: the live probe reaches the
+  coordinator admin path, the coordinator now survives malformed connections,
+  and the remaining blocker is legacy admin protocol compatibility.
+- [ ] Implement the legacy coordinator admin frontend needed by the C admin
+  client path, starting with `add_space` and `wait_until_stable`.
+- [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
-Use the now-clean `main` branch to push three independent steps at once: root
-should run the first live `hyhac` probe, while the existing worktrees take the
-next bounded proof cleanup and the next bounded multiprocess readiness cleanup.
-The immediate aim is to convert the current clean state into new evidence rather
-than add another round of preparatory edits on `main`.
+Drive the next live-compatibility step on the coordinator admin surface. The
+proof and multiprocess workstreams are in a good holding state now, so root
+should spend the next bounded move on the public admin contract that `hyhac`
+actually reaches first.
 
 ## Next Root Move
 
-Preregister the next bounded steps for all three active workstreams, launch the
-two worktree-backed implementation threads, run the first post-restructure live
-`hyhac` probe on `main`, and record each result in the relevant ledger before
-choosing the next compatibility change.
+Preregister and launch a bounded legacy-admin implementation step in
+`worktrees/dist-control-plane`, keep `main` available for the next live probe,
+and narrow that implementation to the smallest public contract that unblocks
+`hyperdex-add-space`, `hyperdex-wait-until-stable`, and the first `hyhac`
+admin test.
 
 ## Surprises & Discoveries
 
@@ -177,6 +181,11 @@ choosing the next compatibility change.
   probe rather than more local cleanup.
   Evidence: `6d55620` and `98def36` are now on `main`, and `cargo test --workspace`
   passed after both landed.
+- Observation: the first live compatibility blocker is the missing legacy
+  coordinator admin frontend, not simulation coverage or multiprocess startup.
+  Evidence: the direct `hyhac` probe timed out against a live cluster, the
+  coordinator stayed alive after `329a469`, and a direct
+  `hyperdex-add-space` invocation also timed out against port `1982`.
 
 ## Decision Log
 

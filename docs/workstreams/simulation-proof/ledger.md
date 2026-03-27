@@ -65,3 +65,20 @@
   - green `simulation-harness`
   - green workspace
   - one bounded commit ready for reconciliation
+
+### Entry `sim-002` - Outcome
+
+- Timestamp: `2026-03-27 04:33Z`
+- Kind: `outcome`
+- End commit: `5cc0cf8`
+- Artifact location:
+  - `crates/simulation-harness/src/lib.rs`
+- Evidence summary:
+  - `cargo test -p simulation-harness hegel_single_node_runtime_matches_sequence_model -- --nocapture` passed
+  - `cargo test -p simulation-harness` passed
+  - `cargo test --workspace` passed
+- Conclusion: the single-node Hegel sequence model now uses declared schema
+  attributes and no longer relies on the permissive undeclared `name` field.
+- Disposition: `advance`
+- Next move: hold until the live compatibility thread exposes the next proof
+  gap worth capturing deterministically.

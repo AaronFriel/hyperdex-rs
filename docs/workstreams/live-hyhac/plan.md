@@ -58,23 +58,28 @@ surface.
 - [x] (2026-03-27 04:22Z) Confirmed that `hyhac`'s checked-in launcher still
   hardwires the original C++ `hyperdex` binary, so the live probe must use a
   manual `hyperdex-rs` cluster plus the direct Cabal test command.
-- [ ] Run the live `hyhac` harness against the updated `main`.
-- [ ] Record the next failing operation in the workstream ledger.
-- [ ] Narrow the next compatibility change to that observed failure.
+- [x] (2026-03-27 04:33Z) Ran the bounded live `hyhac` probe against a real
+  `hyperdex-rs` coordinator-plus-daemon cluster and confirmed the first block
+  is the coordinator admin path.
+- [x] (2026-03-27 04:33Z) Narrowed the next compatibility change to the legacy
+  coordinator admin frontend, with `add_space` and `wait_until_stable` as the
+  first required operations.
+- [ ] Implement the legacy coordinator admin frontend needed by the C admin
+  client path.
+- [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
-The first live failure is likely to be admin `create space` or
-`waitUntilStable`, because `hyhac` starts there before it reaches client
-traffic, and the checked-in compatibility notes already identify that part of
-the public surface as the first live contract.
+The first missing live contract is the legacy coordinator admin frontend used
+by the C admin library. The runtime itself can already perform the needed admin
+operations, but the public coordinator endpoint does not yet speak the protocol
+that `hyhac` reaches first.
 
 ## Next Bounded Step
 
-Start one `hyperdex-rs` coordinator and one daemon, run the direct Cabal test
-command with `HYPERDEX_COORD_HOST` and `HYPERDEX_COORD_PORT` pointed at that
-cluster, capture the first failing operation, and preregister the follow-up
-implementation step in this ledger.
+Implement the smallest legacy coordinator admin frontend that unblocks
+`hyperdex-add-space` and `hyperdex-wait-until-stable`, then rerun the bounded
+live `hyhac` probe against that endpoint.
 
 ## Surprises & Discoveries
 
@@ -83,6 +88,10 @@ implementation step in this ledger.
   original `hyperdex` and `hyperdex-show-config` executables.
   Evidence: `hyhac/scripts/test-with-hyperdex.sh` execs `start-hyperdex.sh`,
   and `hyhac/scripts/start-hyperdex.sh` exits unless those two binaries exist.
+- Observation: after `329a469`, the coordinator survives malformed admin
+  connections, but the live probe still times out on the legacy admin path.
+  Evidence: the bounded direct Cabal probe timed out after `30s`, and a direct
+  `hyperdex-add-space` invocation also timed out against `127.0.0.1:1982`.
 
 ## Decision Log
 

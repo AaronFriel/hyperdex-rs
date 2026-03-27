@@ -66,3 +66,20 @@
   - green multiprocess harness
   - green workspace
   - one bounded commit ready for reconciliation
+
+### Entry `mph-002` - Outcome
+
+- Timestamp: `2026-03-27 04:33Z`
+- Kind: `outcome`
+- End commit: `faa6cb6`
+- Artifact location:
+  - `crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence summary:
+  - `cargo test -p server --test dist_multiprocess_harness -- --nocapture` passed
+  - `cargo test --workspace` passed
+- Conclusion: the multiprocess harness now uses held port reservations and
+  protocol-based readiness checks, so it no longer depends on ephemeral port
+  reuse or log-text polling.
+- Disposition: `advance`
+- Next move: hold until a new real-cluster failure requires another harness
+  change.
