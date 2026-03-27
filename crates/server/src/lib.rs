@@ -803,9 +803,26 @@ impl CoordinatorControlService {
         F: std::future::Future<Output = Result<CoordinatorControlResponse>>,
     {
         loop {
-            self.serve_once_with(&handler).await?;
+            match self.serve_once_with(&handler).await {
+                Ok(()) => {}
+                Err(err) if is_recoverable_coordinator_control_error(&err) => continue,
+                Err(err) => return Err(err),
+            }
         }
     }
+}
+
+fn is_recoverable_coordinator_control_error(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<std::io::Error>().is_some_and(|io_err| {
+        matches!(
+            io_err.kind(),
+            std::io::ErrorKind::UnexpectedEof
+                | std::io::ErrorKind::ConnectionReset
+                | std::io::ErrorKind::BrokenPipe
+                | std::io::ErrorKind::InvalidData
+        )
+    }) || err.downcast_ref::<serde_json::Error>().is_some()
+        || err.downcast_ref::<std::string::FromUtf8Error>().is_some()
 }
 
 impl ConsensusRuntime {
@@ -2622,6 +2639,54 @@ mod tests {
         assert_eq!(config_view.stable_through, 1);
         assert_eq!(config_view.spaces.len(), 1);
         assert_eq!(config_view.spaces[0].name, "profiles");
+    }
+
+    #[tokio::test]
+    async fn coordinator_control_service_ignores_early_eof_and_continues() {
+        let runtime = Arc::new(bootstrap_runtime());
+        let service = CoordinatorControlService::bind("127.0.0.1:0".parse().unwrap())
+            .await
+            .unwrap();
+        let address = service.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            service
+                .serve_forever_with(move |method, request| {
+                    let runtime = runtime.clone();
+                    async move {
+                        handle_coordinator_control_method(runtime.as_ref(), &method, request).await
+                    }
+                })
+                .await
+        });
+
+        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        drop(stream);
+
+        let response = request_coordinator_control_once(
+            address,
+            "space_add",
+            &CoordinatorAdminRequest::SpaceAdd(
+                parse_hyperdex_space(
+                    "space profiles\n\
+                     key username\n\
+                     attributes\n\
+                        string first,\n\
+                        int profile_views\n\
+                     tolerate 0 failures\n",
+                )
+                .unwrap(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        server.abort();
+        let _ = server.await;
+        assert_eq!(
+            CoordinatorReturnCode::decode(&response).unwrap(),
+            CoordinatorReturnCode::Success
+        );
     }
 
     #[tokio::test]
