@@ -2245,7 +2245,7 @@ async fn legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair() 
             .all(|event| {
                 event.summary.contains("trailing_bytes=100")
                     && event.raw_prefix.starts_with(
-                        "80 00 00 14 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 3c"
+                        "80 00 00 14 00 00 00 00 00 00 00 02 00 00 00 00 00 00 00 00 00 00 00 3c"
                     )
             }),
         "expected server-side coordinator frames to be 100-byte partial BusyBee-style payloads: {events:?}"

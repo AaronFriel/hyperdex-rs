@@ -141,6 +141,7 @@ pub struct CoordinatorControlResponse {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct CoordinatorAdminSession {
     next_robust_nonce: u64,
+    sender_id: u64,
     pending_config_waits: BTreeMap<u64, u64>,
     pending_waits: BTreeMap<u64, u64>,
     pending_completions: VecDeque<BusyBeeFrame>,
@@ -821,16 +822,23 @@ impl CoordinatorAdminSession {
     fn new() -> Self {
         Self {
             next_robust_nonce: 1,
+            sender_id: LEGACY_COORDINATOR_SERVER_ID,
             pending_config_waits: BTreeMap::new(),
             pending_waits: BTreeMap::new(),
             pending_completions: VecDeque::new(),
         }
     }
 
-    fn queue_identify_response(&mut self, remote_id: u64) {
+    fn observe_identify(&mut self, peer_remote_id: u64) {
+        if peer_remote_id != 0 {
+            self.sender_id = peer_remote_id;
+        }
+    }
+
+    fn queue_identify_response(&mut self, peer_local_id: u64) {
         let mut payload = Vec::with_capacity(16);
-        encode_u64_be(&mut payload, LEGACY_COORDINATOR_SERVER_ID);
-        encode_u64_be(&mut payload, remote_id);
+        encode_u64_be(&mut payload, self.sender_id);
+        encode_u64_be(&mut payload, peer_local_id);
         self.pending_completions
             .push_back(BusyBeeFrame::identify(payload));
     }
@@ -891,10 +899,10 @@ impl CoordinatorAdminSession {
         self.pending_completions.push_back(BusyBeeFrame::new(
             ReplicantBootstrapResponse {
                 server: ReplicantBootstrapServer {
-                    id: LEGACY_COORDINATOR_SERVER_ID,
+                    id: self.sender_id,
                     address: bootstrap_address,
                 },
-                configuration: legacy_bootstrap_configuration(bootstrap_address),
+                configuration: legacy_bootstrap_configuration(self.sender_id, bootstrap_address),
             }
             .encode(),
         ));
@@ -1036,7 +1044,10 @@ fn default_legacy_config_encoder(view: &ConfigView) -> Result<Vec<u8>> {
 
 const LEGACY_COORDINATOR_CLUSTER_ID: u64 = 1;
 const LEGACY_COORDINATOR_FIRST_SLOT: u64 = 1;
-const LEGACY_COORDINATOR_SERVER_ID: u64 = 1;
+// BusyBee deanonymizes the first anonymous peer connection to sender token 2.
+// The original Replicant client accepts a bootstrap reply only when the reply
+// body server id matches the BusyBee sender id it observed on that channel.
+const LEGACY_COORDINATOR_SERVER_ID: u64 = 2;
 const LEGACY_REPLICANT_TICK_STATE: u64 = 1;
 
 fn legacy_condition_state(version: u64) -> u64 {
@@ -1044,6 +1055,7 @@ fn legacy_condition_state(version: u64) -> u64 {
 }
 
 fn legacy_bootstrap_configuration(
+    sender_id: u64,
     bootstrap_address: SocketAddr,
 ) -> ReplicantBootstrapConfiguration {
     let bootstrap_address = effective_legacy_bootstrap_address(bootstrap_address);
@@ -1052,7 +1064,7 @@ fn legacy_bootstrap_configuration(
         version: legacy_condition_state(0),
         first_slot: LEGACY_COORDINATOR_FIRST_SLOT,
         servers: vec![ReplicantBootstrapServer {
-            id: LEGACY_COORDINATOR_SERVER_ID,
+            id: sender_id,
             address: bootstrap_address,
         }],
     }
@@ -1606,8 +1618,10 @@ async fn handle_coordinator_admin_frame(
                 "legacy admin identify frame must contain exactly two u64 values"
             );
         }
-        let remote_id = u64::from_be_bytes(frame.payload[..8].try_into().unwrap());
-        session.queue_identify_response(remote_id);
+        let peer_local_id = u64::from_be_bytes(frame.payload[..8].try_into().unwrap());
+        let peer_remote_id = u64::from_be_bytes(frame.payload[8..16].try_into().unwrap());
+        session.observe_identify(peer_remote_id);
+        session.queue_identify_response(peer_local_id);
         return Ok(());
     }
 
@@ -1630,7 +1644,8 @@ async fn handle_coordinator_admin_frame(
             state,
         } => {
             if object == b"replicant" && condition == b"configuration" {
-                let configuration = legacy_bootstrap_configuration(bootstrap_address);
+                let configuration =
+                    legacy_bootstrap_configuration(session.sender_id, bootstrap_address);
                 if state <= configuration.version {
                     session.queue_condition_completion(
                         nonce,
@@ -4731,6 +4746,28 @@ mod tests {
         assert!(config.spaces.is_empty());
     }
 
+    #[test]
+    fn legacy_bootstrap_response_matches_replicant_sender_identity_contract() {
+        let address: std::net::SocketAddr = "127.0.0.1:1982".parse().unwrap();
+        let response = ReplicantBootstrapResponse {
+            server: ReplicantBootstrapServer {
+                id: LEGACY_COORDINATOR_SERVER_ID,
+                address,
+            },
+            configuration: legacy_bootstrap_configuration(LEGACY_COORDINATOR_SERVER_ID, address),
+        };
+
+        let sender_id = LEGACY_COORDINATOR_SERVER_ID;
+        assert_eq!(sender_id, response.server.id);
+        assert!(
+            response
+                .configuration
+                .servers
+                .iter()
+                .any(|server| server.id == response.server.id)
+        );
+    }
+
     #[tokio::test]
     async fn coordinator_admin_space_rm_maps_to_exact_coordinator_code() {
         let runtime = bootstrap_runtime();
@@ -5228,7 +5265,7 @@ mod tests {
 
         let initial = read_admin_response_frame(&mut legacy_stream).await;
         let bootstrap = ReplicantBootstrapResponse::decode(&initial.payload).unwrap();
-        assert_eq!(bootstrap.server.id, 1);
+        assert_eq!(bootstrap.server.id, LEGACY_COORDINATOR_SERVER_ID);
         assert_eq!(bootstrap.configuration.version, 1);
 
         let response = request_coordinator_control_once(
@@ -5274,8 +5311,11 @@ mod tests {
             tokio::spawn(async move { service.serve_once(runtime.as_ref()).await.unwrap() });
 
         let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        let mut identify_request = Vec::new();
+        encode_u64_be(&mut identify_request, 7);
+        encode_u64_be(&mut identify_request, 19);
         stream
-            .write_all(&BusyBeeFrame::identify(vec![0_u8; 16]).encode().unwrap())
+            .write_all(&BusyBeeFrame::identify(identify_request).encode().unwrap())
             .await
             .unwrap();
         stream.flush().await.unwrap();
@@ -5285,8 +5325,8 @@ mod tests {
             hyperdex_admin_protocol::BUSYBEE_HEADER_IDENTIFY
         );
         let mut identify_cursor = 0;
-        assert_eq!(decode_u64(&identify.payload, &mut identify_cursor), 1);
-        assert_eq!(decode_u64(&identify.payload, &mut identify_cursor), 0);
+        assert_eq!(decode_u64(&identify.payload, &mut identify_cursor), 19);
+        assert_eq!(decode_u64(&identify.payload, &mut identify_cursor), 7);
         assert_eq!(identify_cursor, identify.payload.len());
         let bootstrap_request = BusyBeeFrame::new(vec![ReplicantNetworkMsgtype::Bootstrap.encode()])
             .encode()
@@ -5299,13 +5339,13 @@ mod tests {
 
         let frame = read_admin_response_frame(&mut stream).await;
         let bootstrap = ReplicantBootstrapResponse::decode(&frame.payload).unwrap();
-        assert_eq!(bootstrap.server.id, 1);
+        assert_eq!(bootstrap.server.id, 19);
         assert_eq!(bootstrap.server.address, address);
         assert_eq!(bootstrap.configuration.cluster_id, 1);
         assert_eq!(bootstrap.configuration.version, 1);
         assert_eq!(bootstrap.configuration.first_slot, 1);
         assert_eq!(bootstrap.configuration.servers, vec![ReplicantBootstrapServer {
-            id: 1,
+            id: 19,
             address,
         }]);
 
