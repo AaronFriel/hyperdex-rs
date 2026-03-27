@@ -90,9 +90,10 @@ One bounded design-or-implementation step with validation and a recorded verdict
 
 The runtime now has enough distributed substrate to start exercising real
 replication semantics instead of only request forwarding. The next useful step
-is to extend the new addressed internode path beyond routed `put`/`get` so the
-legacy frontend can drive writes that remain visible across daemon boundaries
-without depending on direct client retries to the primary.
+is to extend the new addressed internode path to conditional mutation behavior,
+because the legacy frontend already depends on conditional writes through the
+atomic request path. That should expose whether the distributed data-plane model
+can preserve write-result semantics instead of only basic CRUD routing.
 
 ## Milestones
 
@@ -171,9 +172,10 @@ without depending on direct client retries to the primary.
 - Done: the transport abstraction now carries addressed internode data-plane
   requests, and the gRPC transport can route `put` and `get` to a remote
   primary between separate runtimes.
-- Known gap: the distributed data path is still bounded to routed `put` and
-  `get`; delete, conditional writes beyond the existing local handling, and
-  replication fanout are not yet distributed.
+- Done: the addressed internode path now also routes delete to the remote
+  primary, with a focused cross-runtime delete proof.
+- Known gap: the distributed data path still stops short of conditional writes,
+  delete-group/search distribution, and replication fanout.
 - Active: dedicated worktrees are now producing distributed control-plane,
   distributed data-plane, and multiprocess validation changes in parallel.
 - Next: broaden the distributed data path so more of the legacy request surface
@@ -181,10 +183,9 @@ without depending on direct client retries to the primary.
 
 ## Next Bounded Iteration
 
-Extend the distributed data path beyond routed `put` / `get`: choose the next
-highest-value legacy operation that should cross daemon boundaries, implement
-it over the addressed transport abstraction, and prove it with a focused
-multi-runtime or multiprocess test.
+Extend the distributed data path to routed conditional mutation behavior:
+implement remote `ConditionalPut` over the addressed transport abstraction and
+prove the compare-and-write result semantics with a focused multi-runtime test.
 
 ## Loop Ledger
 
@@ -216,3 +217,4 @@ multi-runtime or multiprocess test.
 | 24 | Real distributed control-plane progress starts with the coordinator owning daemon membership instead of every daemon keeping a fixed local node list. | Cherry-pick the daemon-registration worktree onto `main`, add coordinator-side daemon registration plumbing plus daemon identity parsing, validate control-plane protocol/runtime behavior with focused tests, and reframe the next move around daemon startup consuming shared coordinator state. | Commit `7c864a6` lands `daemon_register` on `main`; `cargo test -p control-plane -p hyperdex-admin-protocol -p server` passes with new registration tests; the coordinator now updates both `ConfigView.cluster.nodes` and placement layout membership as daemons register. | Confirmed. | advance | Make daemon startup register and synchronize against coordinator state so real multi-daemon formation exists outside the coordinator process. |
 | 25 | Once the coordinator owns daemon membership, the next control-plane proof is to make daemon processes consume shared coordinator state during startup and after later config changes. | Add coordinator config synchronization into daemon startup, keep a background refresh loop alive while the daemon serves requests, add a multiprocess harness that boots one coordinator plus two daemon processes, creates a space through the coordinator, waits for daemon sync, and verifies both daemons can serve `REQ_COUNT` for that space, then revalidate the workspace. | `cargo test -p server --test dist_multiprocess_harness -- --nocapture` passes on `main`; `cargo test -p server` passes with the new process harness included; `cargo test --workspace` passes after daemon startup begins synchronizing config from the coordinator. | Confirmed. | advance | Land the first real cross-daemon data path next, starting with routed `put` / `get` between separate daemons over the transport abstraction. |
 | 26 | With shared coordinator state in place, the next bounded distributed proof is a real cross-daemon data path that routes requests to the primary instead of keeping every client request local. | Cherry-pick the data-plane worktree onto `main`, resolve the runtime merge against the newer coordinator-sync code, preserve coordinator runtimes with empty node lists, validate the new gRPC internode forwarding path plus the full workspace, and reframe the next step around broadening distributed operations beyond `put` / `get`. | Commit `02420f5` lands addressed internode forwarding on `main`; the follow-up coordinator-runtime fix keeps empty-node coordinator runtimes valid; `cargo test -p transport-grpc --test public_frontend` passes with `grpc_forwards_data_plane_requests_between_two_runtimes`; `cargo test -p server` and `cargo test --workspace` both pass after the merge. | Confirmed. | advance | Extend the addressed internode path to the next highest-value legacy operation and add tighter deterministic coverage for the distributed behavior. |
+| 27 | After routed `put` / `get`, delete is the smallest next distributed legacy operation because it uses the same primary-routing mechanism while changing remote record state. | Extend `DataPlaneRequest` with delete, route `ClientRequest::Delete` through the addressed transport abstraction, add a focused cross-runtime delete proof in the gRPC transport test, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `grpc_forwards_delete_requests_between_two_runtimes`; `cargo test -p server` passes; `cargo test --workspace` passes after routed delete lands on `main`. | Confirmed. | advance | Extend the addressed transport path to remote `ConditionalPut` next so distributed mutation semantics cover the legacy atomic compare-and-write flow. |
