@@ -102,6 +102,30 @@ const MINIMAL_PROFILES_SPACE_DESC: &str = "space profiles\n\
     create 8 partitions\n\
     tolerate 0 failures\n";
 
+const FULL_PROFILES_SPACE_DESC: &str = "space profiles                         \n\
+key username                             \n\
+attributes                               \n\
+   string first,                         \n\
+   string last,                          \n\
+   float score,                          \n\
+   int profile_views,                    \n\
+   list(string) pending_requests,        \n\
+   list(float) rankings,                 \n\
+   list(int) todolist,                   \n\
+   set(string) hobbies,                  \n\
+   set(float) imonafloat,                \n\
+   set(int) friendids,                   \n\
+   map(string, string) unread_messages,  \n\
+   map(string, int) upvotes,             \n\
+   map(string, float) friendranks,       \n\
+   map(int, string) posts,               \n\
+   map(int, int) friendremapping,        \n\
+   map(int, float) intfloatmap,          \n\
+   map(float, string) still_looking,     \n\
+   map(float, int) for_a_reason,         \n\
+   map(float, float) for_float_keyed_map \n\
+tolerate 0 failures\n";
+
 #[derive(Debug)]
 struct ClientTraceResult {
     exit_status: Option<std::process::ExitStatus>,
@@ -993,6 +1017,52 @@ async fn run_add_space_direct(
     address: SocketAddr,
 ) -> Result<(Option<std::process::ExitStatus>, String, String)> {
     run_add_space_direct_with_schema(address, MINIMAL_PROFILES_SPACE_DESC).await
+}
+
+async fn run_wait_until_stable_direct(
+    address: SocketAddr,
+) -> Result<(Option<std::process::ExitStatus>, String, String)> {
+    let stdout_path = std::env::temp_dir().join(format!(
+        "legacy-admin-wait-until-stable-stdout-{}.log",
+        std::process::id()
+    ));
+    let stderr_path = std::env::temp_dir().join(format!(
+        "legacy-admin-wait-until-stable-stderr-{}.log",
+        std::process::id()
+    ));
+    let stdout_file = File::create(&stdout_path)?;
+    let stderr_file = File::create(&stderr_path)?;
+
+    let mut child = Command::new(legacy_tool_path("hyperdex-wait-until-stable"))
+        .arg("-h")
+        .arg("127.0.0.1")
+        .arg("-p")
+        .arg(address.port().to_string())
+        .env("LD_LIBRARY_PATH", legacy_tool_library_path())
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file))
+        .spawn()
+        .context("failed to spawn hyperdex-wait-until-stable")?;
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let exit_status = loop {
+        if let Some(status) = child.try_wait()? {
+            break Some(status);
+        }
+
+        if Instant::now() >= deadline {
+            child.kill().ok();
+            break child.wait().ok();
+        }
+
+        sleep(Duration::from_millis(20)).await;
+    };
+
+    Ok((
+        exit_status,
+        fs::read_to_string(stdout_path).unwrap_or_default(),
+        fs::read_to_string(stderr_path).unwrap_or_default(),
+    ))
 }
 
 async fn run_hyhac_selected_tests_direct(
@@ -2610,6 +2680,87 @@ async fn legacy_hyhac_large_object_probe_reports_immediate_unknownspace_before_d
     assert!(
         capture.trim().is_empty(),
         "expected no daemon legacy frontend traffic because the request fails before send; capture=`{}`",
+        capture
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup() -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+    let capture_file = tempfile::NamedTempFile::new()?;
+    let capture_path = capture_file.path().to_path_buf();
+    drop(capture_file);
+
+    std::env::set_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE", &capture_path);
+    let mut cluster = spawn_single_daemon_cluster().await?;
+    std::env::remove_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE");
+
+    let (add_exit_status, add_stdout, add_stderr) =
+        run_add_space_direct_with_schema(cluster.coordinator_address, FULL_PROFILES_SPACE_DESC)
+            .await?;
+    let (stable_exit_status, stable_stdout, stable_stderr) =
+        run_wait_until_stable_direct(cluster.coordinator_address).await?;
+
+    fs::write(&capture_path, "")?;
+
+    let native = run_native_large_object_probe(cluster.coordinator_address).await?;
+    let capture_after_native = fs::read_to_string(&capture_path).unwrap_or_default();
+
+    eprintln!(
+        "hyhac full-profiles native-first probe: add_exit={add_exit_status:?} add_stdout=`{add_stdout}` add_stderr=`{add_stderr}` stable_exit={stable_exit_status:?} stable_stdout=`{stable_stdout}` stable_stderr=`{stable_stderr}` native_exit={:?} native_stdout=`{}` native_stderr=`{}` capture_after_native=`{}`",
+        native.0,
+        native.1,
+        native.2,
+        capture_after_native
+    );
+
+    cluster._coordinator.ensure_running()?;
+    cluster._daemon.ensure_running()?;
+
+    fs::write(&capture_path, "")?;
+
+    let hyhac = run_hyhac_selected_tests_with_client_trace(
+        cluster.coordinator_address,
+        "*Can store a large object*",
+        Duration::from_secs(20),
+    )
+    .await?;
+
+    cluster._coordinator.ensure_running()?;
+    cluster._daemon.ensure_running()?;
+
+    let capture = fs::read_to_string(&capture_path).unwrap_or_default();
+    eprintln!(
+        "hyhac full-profiles large-object probe: add_exit={add_exit_status:?} add_stdout=`{add_stdout}` add_stderr=`{add_stderr}` stable_exit={stable_exit_status:?} stable_stdout=`{stable_stdout}` stable_stderr=`{stable_stderr}` hyhac_exit={:?} hyhac_stdout=`{}` hyhac_stderr=`{}` hyhac_trace=`{}` native_exit={:?} native_stdout=`{}` native_stderr=`{}` capture=`{}`",
+        hyhac.exit_status,
+        hyhac.stdout,
+        hyhac.stderr,
+        hyhac.trace,
+        native.0,
+        native.1,
+        native.2,
+        capture
+    );
+
+    assert_eq!(add_exit_status.map(|status| status.code()), Some(Some(0)));
+    assert_eq!(stable_exit_status.map(|status| status.code()), Some(Some(0)));
+    assert!(
+        !hyhac.trace.contains("put handle=-1 status=8512"),
+        "expected the corrected probe to move beyond immediate UnknownSpace; trace=`{}`",
+        hyhac.trace
+    );
+    assert!(
+        !native.1.contains("put handle=-1 status=8512"),
+        "expected the native probe to move beyond immediate UnknownSpace once the full schema exists; stdout=`{}` stderr=`{}`",
+        native.1,
+        native.2
+    );
+    assert!(
+        !capture.trim().is_empty(),
+        "expected daemon legacy frontend traffic after the full profiles schema is created; capture=`{}`",
         capture
     );
 
