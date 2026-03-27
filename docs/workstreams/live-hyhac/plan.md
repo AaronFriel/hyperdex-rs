@@ -132,20 +132,24 @@ surface.
 - [x] (2026-03-27 06:08Z) Reconciled `0d8d566` (`Pack legacy coordinator
   config follow payload`), which puts the original binary config payload
   format on `main`.
+- [x] (2026-03-27 06:19Z) Ran the next live probe far enough to isolate the
+  next concrete runtime failure: daemon startup against the public coordinator
+  port exits with `Error: early eof` before any admin tool runs.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
 The request core, session core, packed-space decoder hardening, same-port
-startup, and binary config encoding are now on `main`. The next step is no
-longer implementation-by-default; it is a live probe against the full current
-stack to capture the next concrete failing surface, if any.
+startup, and binary config encoding are now on `main`. The next concrete gap
+is runtime-facing again: the daemon must be able to register through the same
+public coordinator port that now also serves legacy admin and JSON control
+traffic.
 
 ## Next Bounded Step
 
-Run the bounded `hyperdex-add-space` and
-`hyperdex-wait-until-stable` probes, followed by the direct `hyhac` Cabal
-test if those probes advance.
+Fix daemon registration against the public coordinator port, then rerun the
+bounded `hyperdex-add-space` and `hyperdex-wait-until-stable` probes, followed
+by the direct `hyhac` Cabal test if those probes advance.
 
 ## Surprises & Discoveries
 
@@ -265,6 +269,10 @@ test if those probes advance.
   Evidence: `0d8d566` packs `hyperdex::configuration` bytes in
   `default_legacy_config_encoder`, and the worker reported green `server` and
   workspace tests after that change.
+- Observation: the next live failure is not in `hyperdex-add-space` yet.
+  Evidence: the fresh free-port probe reached a listening coordinator on
+  `19830`, but the daemon exited during registration with `Error: early eof`,
+  so the admin tools were never able to run in that cluster instance.
 
 ## Decision Log
 

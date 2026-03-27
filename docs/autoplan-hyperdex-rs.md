@@ -122,7 +122,7 @@ split, sequencing, or validator set needs to change.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
 | `multiprocess-harness` | ready | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness` | Hold until a new real-cluster failure requires deeper harness work. | `advance` |
-| `live-hyhac` | active | The request core, service core, decoder hardening, same-port startup, and binary config payload encoding are now on `main`, but the original admin tools have not yet been rerun successfully against that full stack. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus one active live-probe worker | Rerun the original admin tools against the full current stack, then run the direct `hyhac` probe if they advance. | `advance` |
+| `live-hyhac` | active | The request core, service core, decoder hardening, same-port startup, and binary config payload encoding are now on `main`, but the daemon cannot currently register through the public coordinator port and exits with `Error: early eof` before the admin tools can run. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | root checkout plus one active daemon-registration worker | Fix daemon registration against the public coordinator port, then rerun the original admin tools and `hyhac`. | `advance` |
 
 ## Progress
 
@@ -216,19 +216,23 @@ split, sequencing, or validator set needs to change.
   config follow payload`), which replaces the JSON config-follow payload with
   the packed `hyperdex::configuration` binary layout and keeps the test suite
   green.
+- [x] (2026-03-27 06:19Z) Ran the next live-cluster probe far enough to
+  isolate the next concrete failure: daemon startup against the public
+  coordinator port exits with `Error: early eof` before any admin tool runs.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
 Drive the remaining live coordinator compatibility gap now that the request
 core, service core, decoder hardening, same-port startup, and binary config
-payload encoding are on `main`. The one active job is now empirical: rerun the
-original admin tools and then rerun the direct `hyhac` probe if they advance.
+payload encoding are on `main`. The next blocker is no longer admin create-space
+itself; it is daemon registration against the public coordinator port.
 
 ## Next Root Move
 
-Reconcile the active live-probe worker, then use its result to choose either
-the next compatibility fix or the direct `hyhac` probe.
+Fix daemon registration against the public coordinator port, then rerun
+`hyperdex-add-space`, `hyperdex-wait-until-stable`, and the direct `hyhac`
+probe.
 
 ## Surprises & Discoveries
 
@@ -358,6 +362,11 @@ the next compatibility fix or the direct `hyhac` probe.
   Evidence: `0d8d566` replaces `default_legacy_config_encoder` with packed
   `hyperdex::configuration` encoding, and the worker reported both
   `cargo test -p server` and `cargo test --workspace` passing.
+- Observation: the current live blocker appears earlier than the admin tools.
+  Evidence: the fresh live probe showed the coordinator listening on a free
+  public port, but the daemon exited immediately with `Error: early eof` while
+  trying to register through that public coordinator port, so the admin tools
+  were never reached in that run.
 
 ## Decision Log
 

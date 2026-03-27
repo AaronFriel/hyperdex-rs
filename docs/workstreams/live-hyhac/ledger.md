@@ -1100,6 +1100,51 @@
   - exact probe commands and outcomes
   - the next concrete failing surface, if any
 
+### Entry `hyh-027` - Outcome
+
+- Timestamp: `2026-03-27 06:19Z`
+- Kind: `outcome`
+- End commit: `b4a0648`
+- Artifact location:
+  - live probe output from worker `019d2df0-9cbb-7720-81f9-d3a957bb178b`
+- Evidence summary:
+  - the probe selected free ports `coord=19830 daemon=20120 control=30120`
+  - `cargo build -p server --bin server` succeeded
+  - the coordinator started and stayed alive on `127.0.0.1:19830`
+  - the daemon exited immediately on startup with `Error: early eof`
+  - because the daemon failed early, `hyperdex-add-space`,
+    `hyperdex-wait-until-stable`, and the direct `hyhac` run were not reached
+- Conclusion: the next concrete live blocker is daemon registration through the
+  public coordinator port. The next step should fix that runtime path before
+  spending more time on admin-tool probes.
+- Disposition: `advance`
+- Next move: preregister a bounded daemon-registration/public-port fix.
+
+### Entry `hyh-028` - Preregistration
+
+- Timestamp: `2026-03-27 06:19Z`
+- Kind: `preregister`
+- Hypothesis: same-port public coordinator dispatch now serves legacy admin
+  and JSON control traffic, but daemon registration still trips the wrong
+  branch or response shape; fixing that path will let the daemon join and
+  unblock the original admin-tool probes.
+- Owner: delegated implementation worker to be launched from `main`
+- Start commit: `b4a0648`
+- Worktree / branch:
+  - delegated worker branch from `main`
+- Mutable surface:
+  - `crates/server/src/main.rs`
+  - `crates/server/src/lib.rs`
+- Validator:
+  - `cargo test -p server`
+  - `cargo test --workspace`
+  - free-port coordinator+daemon startup
+  - bounded `hyperdex-add-space` and `hyperdex-wait-until-stable` probes if
+    daemon startup succeeds
+- Expected artifacts:
+  - daemon registration that works through the public coordinator port
+  - the next concrete live admin result
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`
