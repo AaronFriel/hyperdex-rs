@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
@@ -11,6 +11,7 @@ use cluster_config::{
 use control_plane::{Catalog, InMemoryCatalog};
 use data_model::{
     parse_hyperdex_space, Attribute, Check, Mutation, NumericOp, Predicate, Record, Space, Value,
+    ValueKind,
 };
 use data_plane::DataPlane;
 use engine_memory::MemoryEngine;
@@ -941,7 +942,273 @@ fn default_legacy_space_add_decoder(bytes: &[u8]) -> Result<Space> {
 }
 
 fn default_legacy_config_encoder(view: &ConfigView) -> Result<Vec<u8>> {
-    Ok(serde_json::to_vec(view)?)
+    let mut out = Vec::new();
+    let mut ids = LegacyConfigIds::default();
+    let mut nodes = view.cluster.nodes.clone();
+    let mut spaces = view.spaces.clone();
+
+    nodes.sort_by_key(|node| node.id);
+    spaces.sort_by(|lhs, rhs| lhs.name.cmp(&rhs.name));
+
+    encode_u64_be(&mut out, 0);
+    encode_u64_be(&mut out, view.version);
+    encode_u64_be(&mut out, 0);
+    encode_u64_be(&mut out, nodes.len() as u64);
+    encode_u64_be(&mut out, spaces.len() as u64);
+    encode_u64_be(&mut out, 0);
+
+    for node in &nodes {
+        encode_legacy_server(&mut out, node)?;
+    }
+
+    let server_ids = nodes.iter().map(|node| node.id).collect::<Vec<_>>();
+
+    for space in &spaces {
+        encode_legacy_space(&mut out, space, &server_ids, &mut ids)?;
+    }
+
+    Ok(out)
+}
+
+const LEGACY_SERVER_STATE_AVAILABLE: u8 = 3;
+const LEGACY_LOCATION_IPV4: u8 = 4;
+const LEGACY_LOCATION_IPV6: u8 = 6;
+const LEGACY_HYPERDATATYPE_BYTES: u16 = 9216;
+const LEGACY_HYPERDATATYPE_STRING: u16 = 9217;
+const LEGACY_HYPERDATATYPE_INT64: u16 = 9218;
+const LEGACY_HYPERDATATYPE_FLOAT: u16 = 9219;
+const LEGACY_HYPERDATATYPE_DOCUMENT: u16 = 9223;
+const LEGACY_HYPERDATATYPE_LIST_GENERIC: u16 = 9280;
+const LEGACY_HYPERDATATYPE_SET_GENERIC: u16 = 9344;
+const LEGACY_HYPERDATATYPE_MAP_GENERIC: u16 = 9408;
+const LEGACY_HYPERDATATYPE_TIMESTAMP_GENERIC: u16 = 9472;
+
+#[derive(Default)]
+struct LegacyConfigIds {
+    next_space_id: u64,
+    next_subspace_id: u64,
+    next_region_id: u64,
+    next_virtual_server_id: u64,
+}
+
+fn encode_legacy_server(out: &mut Vec<u8>, node: &ClusterNode) -> Result<()> {
+    out.push(LEGACY_SERVER_STATE_AVAILABLE);
+    encode_u64_be(out, node.id);
+    encode_legacy_location(out, &node.host, node.data_port)?;
+    Ok(())
+}
+
+fn encode_legacy_location(out: &mut Vec<u8>, host: &str, port: u16) -> Result<()> {
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(address)) => {
+            out.push(LEGACY_LOCATION_IPV4);
+            out.extend_from_slice(&address.octets());
+        }
+        Ok(IpAddr::V6(address)) => {
+            out.push(LEGACY_LOCATION_IPV6);
+            out.extend_from_slice(&address.octets());
+        }
+        Err(_) => {
+            return Err(anyhow!(
+                "legacy coordinator config requires an IP address for node host `{host}`"
+            ));
+        }
+    }
+
+    out.extend_from_slice(&port.to_be_bytes());
+    Ok(())
+}
+
+fn encode_legacy_space(
+    out: &mut Vec<u8>,
+    space: &Space,
+    server_ids: &[u64],
+    ids: &mut LegacyConfigIds,
+) -> Result<()> {
+    let mut attr_positions = BTreeMap::new();
+    let mut attrs = Vec::with_capacity(space.attributes.len() + 1);
+
+    attrs.push((space.key_attribute.clone(), LEGACY_HYPERDATATYPE_STRING));
+    attr_positions.insert(space.key_attribute.clone(), 0_u16);
+
+    for attribute in &space.attributes {
+        let datatype = legacy_hyperdatatype(&attribute.kind)?;
+        let attr_index = u16::try_from(attrs.len()).map_err(|_| {
+            anyhow!(
+                "space `{}` exceeds legacy attribute index width",
+                space.name
+            )
+        })?;
+        attr_positions.insert(attribute.name.clone(), attr_index);
+        attrs.push((attribute.name.clone(), datatype));
+    }
+
+    encode_u64_be(out, ids.next_space_id);
+    ids.next_space_id += 1;
+    encode_len32_bytes(out, space.name.as_bytes())?;
+    encode_u64_be(out, u64::from(space.options.fault_tolerance));
+    encode_u16_be(
+        out,
+        u16::try_from(attrs.len())
+            .map_err(|_| anyhow!("space `{}` exceeds legacy attribute count", space.name))?,
+    );
+    encode_u16_be(
+        out,
+        u16::try_from(space.subspaces.len() + 1)
+            .map_err(|_| anyhow!("space `{}` exceeds legacy subspace count", space.name))?,
+    );
+    encode_u16_be(out, 0);
+
+    for (name, datatype) in &attrs {
+        encode_len32_bytes(out, name.as_bytes())?;
+        encode_u16_be(out, *datatype);
+    }
+
+    let partitions = space.options.partitions;
+    let replica_count = if server_ids.is_empty() {
+        0
+    } else {
+        server_ids
+            .len()
+            .min(space.options.fault_tolerance.saturating_add(1) as usize)
+            .max(1)
+    };
+
+    encode_legacy_subspace(out, &[0], partitions, &server_ids[..replica_count], ids)?;
+
+    for subspace in &space.subspaces {
+        let mut attr_indexes = Vec::with_capacity(subspace.dimensions.len());
+        for dimension in &subspace.dimensions {
+            let Some(attr_index) = attr_positions.get(dimension).copied() else {
+                return Err(anyhow!(
+                    "space `{}` subspace references unknown attribute `{dimension}`",
+                    space.name
+                ));
+            };
+            attr_indexes.push(attr_index);
+        }
+        encode_legacy_subspace(
+            out,
+            &attr_indexes,
+            partitions,
+            &server_ids[..replica_count],
+            ids,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn encode_legacy_subspace(
+    out: &mut Vec<u8>,
+    attr_indexes: &[u16],
+    partitions: u32,
+    server_ids: &[u64],
+    ids: &mut LegacyConfigIds,
+) -> Result<()> {
+    encode_u64_be(out, ids.next_subspace_id);
+    ids.next_subspace_id += 1;
+    encode_u16_be(
+        out,
+        u16::try_from(attr_indexes.len()).map_err(|_| anyhow!("legacy subspace is too wide"))?,
+    );
+    encode_u32_be(out, partitions);
+
+    for attr_index in attr_indexes {
+        encode_u16_be(out, *attr_index);
+    }
+
+    for partition in 0..partitions {
+        encode_u64_be(out, ids.next_region_id);
+        ids.next_region_id += 1;
+        encode_u16_be(
+            out,
+            u16::try_from(attr_indexes.len()).map_err(|_| anyhow!("legacy region is too wide"))?,
+        );
+        encode_u8(
+            out,
+            u8::try_from(server_ids.len())
+                .map_err(|_| anyhow!("legacy replica count exceeds u8"))?,
+        );
+
+        for _ in attr_indexes {
+            let hash = u64::from(partition);
+            encode_u64_be(out, hash);
+            encode_u64_be(out, hash);
+        }
+
+        for server_id in server_ids {
+            encode_u64_be(out, *server_id);
+            encode_u64_be(out, ids.next_virtual_server_id);
+            ids.next_virtual_server_id += 1;
+        }
+    }
+
+    Ok(())
+}
+
+fn legacy_hyperdatatype(kind: &ValueKind) -> Result<u16> {
+    match kind {
+        ValueKind::Bool => Err(anyhow!(
+            "legacy HyperDex coordinator config does not support bool attributes"
+        )),
+        ValueKind::Int => Ok(LEGACY_HYPERDATATYPE_INT64),
+        ValueKind::Float => Ok(LEGACY_HYPERDATATYPE_FLOAT),
+        ValueKind::Bytes => Ok(LEGACY_HYPERDATATYPE_BYTES),
+        ValueKind::String => Ok(LEGACY_HYPERDATATYPE_STRING),
+        ValueKind::Document => Ok(LEGACY_HYPERDATATYPE_DOCUMENT),
+        ValueKind::Timestamp(unit) => Ok(match unit {
+            data_model::TimeUnit::Second => LEGACY_HYPERDATATYPE_TIMESTAMP_GENERIC,
+            data_model::TimeUnit::Minute => LEGACY_HYPERDATATYPE_TIMESTAMP_GENERIC + 2,
+            data_model::TimeUnit::Hour => LEGACY_HYPERDATATYPE_TIMESTAMP_GENERIC + 3,
+            data_model::TimeUnit::Day => LEGACY_HYPERDATATYPE_TIMESTAMP_GENERIC + 4,
+            data_model::TimeUnit::Week => LEGACY_HYPERDATATYPE_TIMESTAMP_GENERIC + 5,
+            data_model::TimeUnit::Month => LEGACY_HYPERDATATYPE_TIMESTAMP_GENERIC + 6,
+        }),
+        ValueKind::List(elem) => {
+            Ok(LEGACY_HYPERDATATYPE_LIST_GENERIC | legacy_primitive_code(elem)?)
+        }
+        ValueKind::Set(elem) => Ok(LEGACY_HYPERDATATYPE_SET_GENERIC | legacy_primitive_code(elem)?),
+        ValueKind::Map { key, value } => Ok(LEGACY_HYPERDATATYPE_MAP_GENERIC
+            | ((legacy_primitive_code(key)? & 0x003f) << 3)
+            | legacy_primitive_code(value)?),
+    }
+}
+
+fn legacy_primitive_code(kind: &ValueKind) -> Result<u16> {
+    match kind {
+        ValueKind::Bytes => Ok(LEGACY_HYPERDATATYPE_BYTES & 0x2407),
+        ValueKind::String => Ok(LEGACY_HYPERDATATYPE_STRING & 0x2407),
+        ValueKind::Int => Ok(LEGACY_HYPERDATATYPE_INT64 & 0x2407),
+        ValueKind::Float => Ok(LEGACY_HYPERDATATYPE_FLOAT & 0x2407),
+        ValueKind::Document => Ok(LEGACY_HYPERDATATYPE_DOCUMENT & 0x2407),
+        other => Err(anyhow!(
+            "legacy HyperDex container types require primitive elements, got {other:?}"
+        )),
+    }
+}
+
+fn encode_len32_bytes(out: &mut Vec<u8>, bytes: &[u8]) -> Result<()> {
+    let len = u32::try_from(bytes.len()).map_err(|_| anyhow!("legacy byte slice exceeds u32"))?;
+    encode_u32_be(out, len);
+    out.extend_from_slice(bytes);
+    Ok(())
+}
+
+fn encode_u64_be(out: &mut Vec<u8>, value: u64) {
+    out.extend_from_slice(&value.to_be_bytes());
+}
+
+fn encode_u32_be(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_be_bytes());
+}
+
+fn encode_u16_be(out: &mut Vec<u8>, value: u16) {
+    out.extend_from_slice(&value.to_be_bytes());
+}
+
+fn encode_u8(out: &mut Vec<u8>, value: u8) {
+    out.push(value);
 }
 
 async fn read_busybee_frame_from_stream(
@@ -2010,7 +2277,14 @@ pub async fn handle_replicant_admin_request(
         }
         .encode()),
         CoordinatorAdminRequest::ConfigGet => {
-            anyhow::bail!("legacy admin config follow still needs HyperDex configuration encoding")
+            let view = runtime.config_view()?;
+            Ok(ReplicantConditionCompletion {
+                nonce,
+                status: ReplicantReturnCode::Success,
+                state: view.version,
+                data: default_legacy_config_encoder(&view)?,
+            }
+            .encode())
         }
         CoordinatorAdminRequest::DaemonRegister(_) => {
             anyhow::bail!("daemon registration is not part of the legacy admin client surface")
@@ -2402,6 +2676,153 @@ mod tests {
             .await
             .unwrap()
             .expect("expected admin response frame")
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct DecodedLegacyConfig {
+        version: u64,
+        server_ids: Vec<u64>,
+        space_names: Vec<String>,
+    }
+
+    fn decode_legacy_config(bytes: &[u8]) -> DecodedLegacyConfig {
+        let mut cursor = 0;
+        let _cluster = decode_u64(bytes, &mut cursor);
+        let version = decode_u64(bytes, &mut cursor);
+        let _flags = decode_u64(bytes, &mut cursor);
+        let servers_len = decode_u64(bytes, &mut cursor) as usize;
+        let spaces_len = decode_u64(bytes, &mut cursor) as usize;
+        let transfers_len = decode_u64(bytes, &mut cursor) as usize;
+        let mut server_ids = Vec::with_capacity(servers_len);
+        let mut space_names = Vec::with_capacity(spaces_len);
+
+        for _ in 0..servers_len {
+            let _state = decode_u8(bytes, &mut cursor);
+            server_ids.push(decode_u64(bytes, &mut cursor));
+            skip_legacy_location(bytes, &mut cursor);
+        }
+
+        for _ in 0..spaces_len {
+            space_names.push(decode_legacy_space_name(bytes, &mut cursor));
+        }
+
+        for _ in 0..transfers_len {
+            cursor += 6 * std::mem::size_of::<u64>();
+        }
+
+        assert_eq!(
+            cursor,
+            bytes.len(),
+            "expected legacy config payload to be fully consumed"
+        );
+
+        DecodedLegacyConfig {
+            version,
+            server_ids,
+            space_names,
+        }
+    }
+
+    fn decode_legacy_space_name(bytes: &[u8], cursor: &mut usize) -> String {
+        let _space_id = decode_u64(bytes, cursor);
+        let name = decode_len32_string(bytes, cursor);
+        let _fault_tolerance = decode_u64(bytes, cursor);
+        let attrs_len = decode_u16(bytes, cursor) as usize;
+        let subspaces_len = decode_u16(bytes, cursor) as usize;
+        let indices_len = decode_u16(bytes, cursor) as usize;
+
+        for _ in 0..attrs_len {
+            let _attr_name = decode_len32_string(bytes, cursor);
+            let _datatype = decode_u16(bytes, cursor);
+        }
+
+        for _ in 0..subspaces_len {
+            let _subspace_id = decode_u64(bytes, cursor);
+            let attrs_len = decode_u16(bytes, cursor) as usize;
+            let regions_len = decode_u32(bytes, cursor) as usize;
+
+            for _ in 0..attrs_len {
+                let _attr = decode_u16(bytes, cursor);
+            }
+
+            for _ in 0..regions_len {
+                let _region_id = decode_u64(bytes, cursor);
+                let bounds_len = decode_u16(bytes, cursor) as usize;
+                let replicas_len = decode_u8(bytes, cursor) as usize;
+
+                for _ in 0..bounds_len {
+                    let _lower = decode_u64(bytes, cursor);
+                    let _upper = decode_u64(bytes, cursor);
+                }
+
+                for _ in 0..replicas_len {
+                    let _server_id = decode_u64(bytes, cursor);
+                    let _virtual_server_id = decode_u64(bytes, cursor);
+                }
+            }
+        }
+
+        for _ in 0..indices_len {
+            let _index_type = decode_u8(bytes, cursor);
+            let _index_id = decode_u64(bytes, cursor);
+            let _attr = decode_u16(bytes, cursor);
+            let _extra = decode_len32_bytes(bytes, cursor);
+        }
+
+        name
+    }
+
+    fn skip_legacy_location(bytes: &[u8], cursor: &mut usize) {
+        let family = decode_u8(bytes, cursor);
+        let addr_len = match family {
+            4 => 4,
+            6 => 16,
+            other => panic!("unexpected legacy location family {other}"),
+        };
+        *cursor += addr_len + std::mem::size_of::<u16>();
+    }
+
+    fn decode_len32_string(bytes: &[u8], cursor: &mut usize) -> String {
+        String::from_utf8(decode_len32_bytes(bytes, cursor)).unwrap()
+    }
+
+    fn decode_len32_bytes(bytes: &[u8], cursor: &mut usize) -> Vec<u8> {
+        let len = decode_u32(bytes, cursor) as usize;
+        let start = *cursor;
+        let end = start + len;
+        let value = bytes[start..end].to_vec();
+        *cursor = end;
+        value
+    }
+
+    fn decode_u64(bytes: &[u8], cursor: &mut usize) -> u64 {
+        let start = *cursor;
+        let end = start + std::mem::size_of::<u64>();
+        let value = u64::from_be_bytes(bytes[start..end].try_into().unwrap());
+        *cursor = end;
+        value
+    }
+
+    fn decode_u32(bytes: &[u8], cursor: &mut usize) -> u32 {
+        let start = *cursor;
+        let end = start + std::mem::size_of::<u32>();
+        let value = u32::from_be_bytes(bytes[start..end].try_into().unwrap());
+        *cursor = end;
+        value
+    }
+
+    fn decode_u16(bytes: &[u8], cursor: &mut usize) -> u16 {
+        let start = *cursor;
+        let end = start + std::mem::size_of::<u16>();
+        let value = u16::from_be_bytes(bytes[start..end].try_into().unwrap());
+        *cursor = end;
+        value
+    }
+
+    fn decode_u8(bytes: &[u8], cursor: &mut usize) -> u8 {
+        let value = bytes[*cursor];
+        *cursor += 1;
+        value
     }
 
     #[test]
@@ -2848,6 +3269,31 @@ mod tests {
         assert_eq!(completion.status, ReplicantReturnCode::Success);
         assert_eq!(completion.state, runtime.stable_version());
         assert!(completion.data.is_empty());
+    }
+
+    #[tokio::test]
+    async fn replicant_config_get_maps_to_packed_condition_completion() {
+        let runtime = bootstrap_runtime();
+        let response = handle_replicant_admin_request(
+            &runtime,
+            ReplicantAdminRequestMessage::CondWait {
+                nonce: 9,
+                object: b"hyperdex".to_vec(),
+                condition: b"config".to_vec(),
+                state: 0,
+            },
+        )
+        .await
+        .unwrap();
+        let completion = ReplicantConditionCompletion::decode(&response).unwrap();
+        let config = decode_legacy_config(&completion.data);
+
+        assert_eq!(completion.nonce, 9);
+        assert_eq!(completion.status, ReplicantReturnCode::Success);
+        assert_eq!(completion.state, 0);
+        assert_eq!(config.version, 0);
+        assert_eq!(config.server_ids, vec![1]);
+        assert!(config.space_names.is_empty());
     }
 
     #[tokio::test]
@@ -3371,14 +3817,14 @@ mod tests {
 
         let frame = read_admin_response_frame(&mut stream).await;
         let completion = ReplicantConditionCompletion::decode(&frame.payload).unwrap();
-        let config_view: ConfigView = serde_json::from_slice(&completion.data).unwrap();
+        let config = decode_legacy_config(&completion.data);
 
         assert_eq!(completion.nonce, 1);
         assert_eq!(completion.status, ReplicantReturnCode::Success);
         assert_eq!(completion.state, 0);
-        assert_eq!(config_view.version, 0);
-        assert_eq!(config_view.stable_through, 0);
-        assert!(config_view.spaces.is_empty());
+        assert_eq!(config.version, 0);
+        assert_eq!(config.server_ids, vec![1]);
+        assert!(config.space_names.is_empty());
 
         drop(stream);
         server.await.unwrap();
@@ -3441,12 +3887,12 @@ mod tests {
         let follow_frame = read_admin_response_frame(&mut stream).await;
         let follow_completion =
             ReplicantConditionCompletion::decode(&follow_frame.payload).unwrap();
-        let config_view: ConfigView = serde_json::from_slice(&follow_completion.data).unwrap();
+        let config = decode_legacy_config(&follow_completion.data);
         assert_eq!(follow_completion.nonce, 1);
         assert_eq!(follow_completion.state, 1);
-        assert_eq!(config_view.version, 1);
-        assert_eq!(config_view.spaces.len(), 1);
-        assert_eq!(config_view.spaces[0].name, "profiles");
+        assert_eq!(config.version, 1);
+        assert_eq!(config.server_ids, vec![1]);
+        assert_eq!(config.space_names, vec!["profiles".to_owned()]);
 
         drop(stream);
         server.await.unwrap();
