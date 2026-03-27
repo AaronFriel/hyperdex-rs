@@ -2156,7 +2156,7 @@
   later-failure probes will isolate which selected large-object operation
   stalls after the first successful Hyhac round-trip and expose the exact
   daemon/client contract that still differs from HyperDex.
-- Owner: root
+- Owner: next delegated product worker
 - Start commit: `589ce4f`
 - Worktree / branch:
   - root checkout on `main`
@@ -2171,6 +2171,28 @@
   - a narrower post-success large-object probe
   - either a Rust-side fix for the later stall or one precise blocker tied to
     the corrected baseline
+
+### Entry `hyh-047` - Preregistration
+
+- Timestamp: `2026-03-28 00:19Z`
+- Kind: `preregister`
+- Hypothesis: a parallel read-only pass over the selected large-object tests
+  can identify the exact operation order after the first successful `put` plus
+  `loop`, so the product worker can split the corrected baseline without
+  guessing which post-success step is actually hanging.
+- Owner: next delegated read-only worker
+- Start commit: `589ce4f`
+- Worktree / branch:
+  - none required; read-only evidence gathering only
+- Mutable surface:
+  - none
+- Validator:
+  - exact source-backed ordering of the selected large-object operations in
+    `Shared.hs` and `Pool.hs`
+  - a concrete recommendation for the first narrower post-success probe to add
+- Expected artifacts:
+  - the exact next operation after the first successful large-object round-trip
+  - concrete guidance for `hyh-046`
 
 ### Entry `hyh-025` - Preregistration
 
