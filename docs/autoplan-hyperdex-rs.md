@@ -88,12 +88,11 @@ One bounded design-or-implementation step with validation and a recorded verdict
 
 ## Current Hypothesis
 
-The runtime now preserves logical single-key and multi-record read correctness
-through one-daemon loss in both the multi-runtime gRPC harness and the real
-coordinator-plus-daemons harness. The next limiting gap is deterministic
-failure exploration, because degraded-read behavior is still covered by fixed
-integration tests rather than a simulation that can vary event order and node
-loss more systematically.
+The runtime now preserves logical degraded reads in fixed integration tests and
+in one deterministic `turmoil` simulation. The next limiting gap is alternate
+deterministic-scheduler coverage, because the user asked for both `turmoil` and
+`madsim`, and degraded-read behavior is still missing that second simulation
+surface.
 
 ## Milestones
 
@@ -193,18 +192,19 @@ loss more systematically.
 - Done: distributed delete-group now converges across replicas too, with a
   focused proof that matching records disappear from every replica while
   non-matching records survive.
-- Known gap: degraded-read behavior is not yet exercised in deterministic
-  simulation where node loss timing and request order can be varied cheaply.
+- Known gap: degraded-read behavior is not yet exercised under `madsim`, and
+  the current property coverage still relies on `proptest` rather than the
+  requested Hegel-based path.
 - Active: dedicated worktrees are now producing distributed control-plane,
   distributed data-plane, and multiprocess validation changes in parallel.
-- Next: add deterministic simulation coverage for degraded `Get`, `Search`, and
-  `Count`, then continue broadening failure-oriented proof work.
+- Next: add `madsim` degraded-read coverage, then address the requested Hegel
+  property-testing path.
 
 ## Next Bounded Iteration
 
-Add a deterministic simulation that exercises replica-backed degraded reads
-after one node becomes unavailable, then prove `Get`, `Search`, and `Count`
-still return the correct logical results under that simulated failure.
+Add a `madsim`-backed degraded-read proof for replica-backed `Get`, `Search`,
+and `Count`, then verify it agrees with the existing `turmoil` and real-process
+proofs.
 
 ## Loop Ledger
 
@@ -249,3 +249,4 @@ still return the correct logical results under that simulated failure.
 | 37 | After logical distributed `Count`, the next missing single-key availability property is primary-failure `Get` behavior, because a replicated record should remain readable from another daemon when the primary transport is down. | Add ordered replica fallback for `ClientRequest::Get` using the existing internode `Get` path, keep the primary-first behavior when healthy, add a focused public gRPC proof that shuts down the primary runtime and reads the replicated record through the surviving daemon, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `distributed_get_falls_back_to_local_replica_when_primary_grpc_is_down`; `cargo test -p server` passes; `cargo test --workspace` passes, proving a public `Get` can still return the replicated record after the primary daemon's gRPC service is shut down. | Confirmed. | advance | Make distributed `Search` and `Count` tolerate one unavailable daemon while preserving logical results across surviving replicas. |
 | 38 | After degraded `Get` fallback, the next missing read-availability property is degraded multi-record reads, because `Search` and `Count` still aborted on one unreachable daemon even when replica coverage meant the logical answer was available from survivors. | Teach distributed `Search` to skip remote unavailability while still failing on real protocol errors or total replica loss, let `Count` inherit that behavior through the existing distributed search path, add a focused degraded-read proof in `transport-grpc` that shuts down one daemon and verifies the surviving runtime still returns the correct logical search results and count, and revalidate the transport tests, `server`, and the full workspace. | `cargo test -p transport-grpc --test public_frontend` passes with `distributed_search_and_count_survive_one_daemon_shutdown`; `cargo test -p server` passes; `cargo test --workspace` passes, proving logical search results and logical counts now survive one daemon shutdown when replica coverage remains. | Confirmed. | advance | Carry degraded `Search` and `Count` proof into the real coordinator-plus-daemons harness. |
 | 39 | After degraded multi-record reads work in the gRPC runtime harness, the next missing proof is the real coordinator-plus-daemons process surface, because the user asked for a real distributed system rather than only in-process correctness. | Add a coordinator-plus-daemons harness test that writes replicated data, shuts down one daemon process, and verifies the surviving daemon still returns the expected logical legacy search results and total count, then revalidate `server` and the full workspace. | `cargo test -p server --test dist_multiprocess_harness degraded_search_and_count_survive_one_daemon_process_shutdown -- --nocapture` passes; `cargo test -p server` passes; `cargo test --workspace` passes, proving degraded search and count through the real daemon-process harness. | Confirmed. | advance | Add deterministic simulation coverage for degraded `Get`, `Search`, and `Count`. |
+| 40 | After real-process degraded-read proof, the next missing coverage is deterministic failure simulation, because integration tests alone do not vary node-loss timing cheaply enough to harden the behavior. | Add a `turmoil` simulation with a shared fake transport and two real `ClusterRuntime` instances, inject one node failure after replicated writes, prove degraded `Get`, `Search`, and `Count` still return the expected logical results, add the minimal simulation-harness dependencies needed for that runtime-level proof, harden the process harness readiness check to wait on the daemon control port instead of a log line, and revalidate `simulation-harness`, `server`, and the full workspace. | `cargo test -p simulation-harness` passes with `turmoil_preserves_degraded_read_correctness_after_one_node_loss`; `cargo test -p server` passes after replacing the flaky daemon gRPC log wait with a control-port readiness probe; `cargo test --workspace` passes. | Confirmed. | advance | Add `madsim` degraded-read coverage and compare it against the existing `turmoil` and real-process proofs. |
