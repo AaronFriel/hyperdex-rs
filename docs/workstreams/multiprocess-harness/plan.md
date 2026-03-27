@@ -70,17 +70,20 @@ waiting on the whole Haskell path every time.
 - [x] (2026-03-27 07:35Z) Reopened this workstream immediately again because
   the blocker moved from coordinator bootstrap to the legacy daemon data path,
   and the selected `hyhac` command is now the slowest useful failing check.
+- [x] (2026-03-27 07:45Z) Reconciled `0b2379d` (`Add fast hyhac ClientGarbage
+  repro probes`), which reduces the first daemon-path failure to the focused
+  `*Can store a large object*` `hyhac` subset.
 
 ## Current Hypothesis
 
-The fast admin bootstrap probe is on `main`, but the next product blocker is a
-slower daemon-path `ClientGarbage` failure. This workstream should now shorten
-that loop the same way it shortened the bootstrap loop.
+The short `ClientGarbage` repro is now on `main`, so this workstream is back in
+a good holding state. The next change here should come from a newly observed
+cluster-validation problem or a need for an even tighter repro.
 
 ## Next Bounded Step
 
-Build a faster reproducer for the legacy daemon `ClientGarbage` path than the
-current selected `hyhac` command.
+Hold until the product worker or another real-cluster failure needs more
+harness work.
 
 ## Surprises & Discoveries
 
@@ -101,6 +104,10 @@ current selected `hyhac` command.
   measurement immediately became the daemon client path through `hyhac`.
   Evidence: the selected `hyhac` command now reaches real client operations and
   fails with `Left ClientGarbage`.
+- Observation: that daemon-path failure is already reproducible with a much
+  smaller public subset.
+  Evidence: `legacy_hyhac_large_object_probe_hits_clientgarbage_fast` reaches
+  `Left ClientGarbage` in about `107ms`.
 
 ## Decision Log
 
@@ -118,4 +125,6 @@ current selected `hyhac` command.
 - `faa6cb6` replaced ephemeral port reuse and log-text waits with held port
   reservations plus protocol-based readiness checks.
 - `6f061b3` adds that fast live admin probe loop, and the strongest next use of
-  this workstream is now to shorten the new `ClientGarbage` reproduction path.
+  this workstream was to shorten the new `ClientGarbage` reproduction path.
+- `0b2379d` delivers that shorter repro, so this workstream can wait again
+  until the next measurement bottleneck appears.

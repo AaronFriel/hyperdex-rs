@@ -167,3 +167,25 @@
   - a faster reproducer for the first daemon-path `ClientGarbage` failure
   - clear evidence about the first bad request/response pair on that path
   - one bounded commit ready for reconciliation
+
+### Entry `mph-004` - Outcome
+
+- Timestamp: `2026-03-27 07:45Z`
+- Kind: `outcome`
+- End commit: `0b2379d`
+- Artifact location:
+  - `crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence summary:
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` passed
+  - that focused repro reaches `Left ClientGarbage` in about `107ms`
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_pooled_probe_reports_large_object_failure_first -- --nocapture` passed
+  - the broader pooled probe shows the large-object case fails before later
+    pooled failures
+  - `cargo test -p server --test dist_multiprocess_harness -- --nocapture`
+    passed
+  - `cargo test --workspace` passed
+- Conclusion: the first daemon-path public failure is now reproducible with a
+  much shorter check than the earlier selected `hyhac` command.
+- Disposition: `advance`
+- Next move: hold until the product worker or another real-cluster failure
+  needs a tighter repro.

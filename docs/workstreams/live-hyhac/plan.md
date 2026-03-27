@@ -158,6 +158,9 @@ stronger live probe before returning control.
 - [x] (2026-03-27 07:35Z) The next live blocker is now in the legacy daemon
   data path: the first pooled roundtrip and richer client operations fail with
   `Left ClientGarbage` instead of an admin/bootstrap failure.
+- [x] (2026-03-27 07:45Z) The faster daemon-path repro is now on `main`:
+  `0b2379d` shows `*Can store a large object*` is enough to hit
+  `Left ClientGarbage`.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
@@ -166,14 +169,15 @@ The request core, session core, packed-space decoder hardening, same-port
 startup, binary config encoding, daemon join, and coordinator bootstrap/admin
 compatibility are now on `main`. The next concrete gap is the legacy daemon
 request/response path used by the original C client once `hyhac` starts pooled
-roundtrips and richer operations.
+roundtrips and richer operations. The fastest public repro is now the focused
+large-object subset, not the broader selected `hyhac` command.
 
 ## Next Bounded Step
 
 Own the legacy daemon data-path compatibility step through focused server tests
-and the fastest available client repro until the first pooled roundtrip stops
-returning `ClientGarbage`, then widen to the richer `hyhac` operations and the
-full selected `hyhac` command.
+and the focused large-object `ClientGarbage` repro until that failure clears,
+then widen to the earlier pooled/client operations and the broader selected
+`hyhac` command.
 
 ## Surprises & Discoveries
 
@@ -280,6 +284,10 @@ full selected `hyhac` command.
   Evidence: after `c087f81`, the admin tools succeed, but the selected `hyhac`
   run now fails in pooled roundtrip and richer client operations with
   `Left ClientGarbage`.
+- Observation: the first daemon-path public failure is already narrowed to a
+  much smaller subset than the selected `hyhac` command.
+  Evidence: `0b2379d` shows `*Can store a large object*` reproduces
+  `Left ClientGarbage` in the multiprocess harness.
 - Observation: the service-core portion of that session layer is no longer
   hypothetical; it is on `main` and validated locally.
   Evidence: `78162d5` adds `CoordinatorAdminLegacyService`, focused server

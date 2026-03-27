@@ -121,8 +121,8 @@ split, sequencing, or validator set needs to change.
 | Workstream | Status | Owner | Dependencies / Blockers | Plan | Ledger | Worktree / Branch | Fastest Useful Check | Next Step | Latest Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
-| `multiprocess-harness` | active | forked worker in `admin-probe-harness` worktree | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-probe-harness` on `admin-probe-harness` | current fast check is `cargo test -p server --test dist_multiprocess_harness legacy_admin_add_space_probe_completes_after_bootstrap_and_robust_call -- --nocapture`; next target is a faster `ClientGarbage` reproducer than the selected `hyhac` run | Build a short repeatable probe for the legacy daemon `ClientGarbage` path so the product worker does not have to iterate on the full selected `hyhac` command. | `advance` |
-| `live-hyhac` | active | forked worker in `live-hyhac-data-plane` worktree | Coordinator bootstrap and admin compatibility are now working on `main`, but the legacy daemon request/response path still returns `ClientGarbage` once `hyhac` reaches pooled roundtrips and richer client operations. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on `live-hyhac-data-plane` | current failing check is the selected `hyhac` command; use focused server tests plus the fastest available client repro before rerunning full `hyhac` | Own the legacy daemon data-path compatibility step until `get`, `count`, and the richer client operations stop returning `ClientGarbage`, or the next exact wire mismatch is captured. | `advance` |
+| `multiprocess-harness` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-probe` on `clientgarbage-probe` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` | Hold until the product worker or another live-cluster failure needs another shorter repro. | `advance` |
+| `live-hyhac` | active | forked worker in `live-hyhac-data-plane` worktree | Coordinator bootstrap and admin compatibility are now working on `main`, but the legacy daemon request/response path still returns `ClientGarbage` once `hyhac` reaches pooled roundtrips and richer client operations. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on `live-hyhac-data-plane` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused server tests | Own the legacy daemon data-path compatibility step until the large-object `ClientGarbage` failure and the earlier pooled/client operations stop failing, or the next exact mismatch is captured. | `advance` |
 
 ## Progress
 
@@ -245,19 +245,23 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 07:35Z) Verified the integrated server package is green with
   `cargo test -p server`, and moved the remaining blocker from coordinator
   bootstrap to the legacy daemon request/response path reached by `hyhac`.
+- [x] (2026-03-27 07:45Z) Reconciled `0b2379d` (`Add fast hyhac ClientGarbage
+  repro probes`), which reduces the first public daemon-path failure to the
+  focused `*Can store a large object*` `hyhac` subset on `main`.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
-Drive the next real compatibility step on the legacy daemon data path while a
-parallel harness worker shortens the `ClientGarbage` reproduction loop. The
-admin/bootstrap layer is no longer the blocker.
+Drive the legacy daemon data-path fix with the newly shortened
+`*Can store a large object*` repro as the primary public check. The
+admin/bootstrap layer is no longer the blocker, and the reproducer workstream
+is back to holding state.
 
 ## Next Root Move
 
-Launch the larger daemon-data-path worker and a parallel `ClientGarbage`
-reproducer worker, then reconcile whichever one lands a faster trustworthy
-signal first.
+Keep the daemon-data-path worker active and make sure it uses the new fast
+large-object `ClientGarbage` repro before falling back to broader `hyhac`
+coverage.
 
 ## Surprises & Discoveries
 
@@ -332,6 +336,10 @@ signal first.
   report `advanced=true`, direct `hyperdex-show-config`, `hyperdex-wait-until-stable`,
   and `hyperdex-add-space` succeed, and the next failing check is now `hyhac`
   client traffic returning `ClientGarbage`.
+- Observation: the first daemon-path public failure is already narrower than
+  the earlier selected `hyhac` command suggested.
+  Evidence: `0b2379d` shows `*Can store a large object*` is enough to reproduce
+  `Left ClientGarbage`, and that failure appears before later pooled failures.
 - Observation: the packed-space and request-core gap is now closed.
   Evidence: `df633ac` adds `decode_packed_hyperdex_space`,
   `ReplicantAdminRequestMessage::into_coordinator_request`, focused protocol
