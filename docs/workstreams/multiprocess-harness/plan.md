@@ -82,20 +82,22 @@ waiting on the whole Haskell path every time.
 - [x] (2026-03-27 19:54Z) Retired the clean replacement retry after it only
   reverified the baseline failure without producing new wire evidence, then
   reopened the same workstream with a stricter harness-only success condition.
+- [x] (2026-03-27 20:02Z) Reconciled `853e290` (`Capture large-object
+  clientgarbage coordinator frames`), which proves the first failing exchange
+  is on the coordinator connection and not yet a decodable legacy daemon frame.
 
 ## Current Hypothesis
 
-The short `ClientGarbage` repro is now on `main`, but the product worker still
-only has a smaller failing subset, not the first bad request/response pair. The
-first retry drifted across unrelated product files, and the second retry stayed
-clean but stopped at baseline verification. This workstream now needs a stricter
-success condition: expose or decode the first bad daemon frame directly from the
-fast repro without taking over the product fix itself.
+This workstream has done its current job. The short `ClientGarbage` repro is on
+`main`, and the latest harness result proves the first failing exchange is on
+the coordinator connection, not a decodable legacy daemon frame. The next
+diagnosis now belongs to coordinator-side protocol evidence and product code,
+not more harness edits for the same path.
 
 ## Next Bounded Step
 
-Expose or decode the first bad daemon-path request/response pair around the
-large-object `ClientGarbage` repro.
+Hold until the product worker or a later live-cluster failure needs another
+harness change.
 
 ## Surprises & Discoveries
 
@@ -135,6 +137,12 @@ large-object `ClientGarbage` repro.
   Evidence: the completed worker returned only that `main` at `ad458f1` still
   reproduces `Left ClientGarbage` and that `cargo test -p server` is green,
   with no code changes in `clientgarbage-wire`.
+- Observation: the first bad edge on the focused large-object path is earlier
+  than the legacy daemon frames the harness already knows how to decode.
+  Evidence: `853e290` adds
+  `legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair`, and
+  that test captures only partial BusyBee-style frames on the coordinator
+  connection with `trailing_bytes=45` and `trailing_bytes=100`.
 
 ## Decision Log
 
@@ -162,3 +170,5 @@ large-object `ClientGarbage` repro.
 - The clean replacement retry also produced no bounded harness result. The next
   attempt must return either a harness commit that exposes the first bad frame
   directly or a clean proof tied to test output that identifies the bad edge.
+- `853e290` delivered that stricter result. This workstream is ready to pause
+  again until another real harness change is justified.

@@ -121,8 +121,9 @@ split, sequencing, or validator set needs to change.
 | Workstream | Status | Owner | Dependencies / Blockers | Plan | Ledger | Worktree / Branch | Fastest Useful Check | Next Step | Latest Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `simulation-proof` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Hold until the next live compatibility gap needs fresh deterministic coverage. | `advance` |
-| `multiprocess-harness` | active | forked worker in `clientgarbage-wire` worktree | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` | Capture the first bad daemon-path request/response pair around the large-object repro so the product worker gets wire-level evidence, not only a smaller failing subset. | `retry` |
-| `live-hyhac` | active | forked worker in `live-hyhac-data-plane` worktree | Coordinator bootstrap and admin compatibility are now working on `main`, but the legacy daemon request/response path still returns `ClientGarbage` once `hyhac` reaches pooled roundtrips and richer client operations. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on `live-hyhac-data-plane` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused server tests | Own the legacy daemon data-path compatibility step until the large-object `ClientGarbage` failure and the earlier pooled/client operations stop failing, or the next exact mismatch is captured. | `advance` |
+| `multiprocess-harness` | ready | root | None | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` | Hold until the product worker needs another harness change. | `advance` |
+| `live-hyhac` | active | forked worker in `live-hyhac-data-plane` worktree | The focused large-object `ClientGarbage` failure still occurs before the daemon sees `REQ_ATOMIC`, so the next product target is the packed coordinator config and client-side request-preparation contract for the full `profiles` schema. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on `live-hyhac-data-plane` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` plus focused manual cluster probes | Own the packed coordinator config and client-side request-preparation contract for the full `profiles` schema until the focused large-object path clears or yields the next exact mismatch. | `reframe` |
+| `coordinator-config-evidence` | active | delegated read-only worker | Depends on the harness capture in `853e290`; should not overlap with the product worker’s write surface. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none for the first bounded step | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` plus source inspection | Decode the coordinator-side BusyBee/Replicant exchange and map it to the packed config or schema contract the original client still expects before it prepares the first atomic write. | `advance` |
 
 ## Progress
 
@@ -262,20 +263,32 @@ split, sequencing, or validator set needs to change.
 - [x] (2026-03-27 19:54Z) Retired the clean harness retry after it returned
   only the existing baseline, then reopened the same workstream with a stricter
   harness-only requirement to expose or decode the first bad daemon frame.
+- [x] (2026-03-27 20:02Z) Reconciled `853e290` (`Capture large-object
+  clientgarbage coordinator frames`), which proves the focused large-object
+  path still fails on the coordinator connection before the harness sees a
+  decodable legacy daemon frame.
+- [x] (2026-03-27 20:04Z) Reframed the product target from the daemon atomic
+  handler to the packed coordinator config and client-side request-preparation
+  contract for the full `profiles` schema, based on the product worker’s
+  direct live-cluster probe and the new harness capture.
 - [ ] Rerun the bounded live `hyhac` probe after that admin frontend lands.
 
 ## Current Root Focus
 
-Drive the legacy daemon data-path fix with the newly shortened
-`*Can store a large object*` repro as the shared short loop for both active
-owners. The product worker is responsible for clearing `ClientGarbage`, while
-the replacement harness worker must now expose or decode the first bad daemon
-frame on that same path. The admin/bootstrap layer is no longer the blocker.
+Drive the next live compatibility step around the coordinator-side contract
+that still blocks the large-object path before `REQ_ATOMIC`. The product worker
+now owns the packed coordinator config and client-side request-preparation
+contract for the full `profiles` schema, while a separate read-only evidence
+worker decodes the coordinator-side BusyBee/Replicant exchange that the harness
+captured. The admin/bootstrap layer and the daemon atomic decoder are no longer
+the leading targets for this path.
 
 ## Next Root Move
 
-Close the clean no-op harness completion, relaunch the harness owner with the
-stricter wire-evidence target, and keep the product worker running unchanged.
+Launch the read-only coordinator-config evidence worker, hand the new
+coordinator-frame capture and pre-daemon blocker to the relaunched product
+worker, and hold the multiprocess harness until another harness change is
+justified.
 
 ## Surprises & Discoveries
 
@@ -372,6 +385,17 @@ stricter wire-evidence target, and keep the product worker running unchanged.
   Evidence: the completed `clientgarbage-wire` worker returned only baseline
   verification against `ad458f1`, with no code changes and no new wire
   evidence about the bad daemon frame.
+- Observation: the focused large-object path still fails before the daemon sees
+  `REQ_ATOMIC`.
+  Evidence: the live product worker ran a manual cluster with the full
+  `profiles` schema, reproduced the focused `hyhac` failure, and temporary
+  `ReqAtomic` tracing inside `handle_legacy_request` never fired.
+- Observation: the first captured exchange on that path is still on the
+  coordinator connection and not yet a decodable legacy daemon frame.
+  Evidence: `853e290` adds
+  `legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair`, which
+  captures only partial BusyBee-style frames with `trailing_bytes=45` and
+  `trailing_bytes=100` on the coordinator connection.
 - Observation: the packed-space and request-core gap is now closed.
   Evidence: `df633ac` adds `decode_packed_hyperdex_space`,
   `ReplicantAdminRequestMessage::into_coordinator_request`, focused protocol

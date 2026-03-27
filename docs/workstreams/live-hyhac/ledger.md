@@ -1408,6 +1408,74 @@
   - a shorter branch-local loop than the full selected `hyhac` command
   - either broader passing client behavior or the next exact mismatch
 
+### Entry `hyh-033` - Outcome
+
+- Timestamp: `2026-03-27 20:04Z`
+- Kind: `outcome`
+- End commit: `8871797`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane`
+- Evidence summary:
+  - `cargo test -p legacy-frontend -- --nocapture` passed in the worktree
+  - `cargo test -p server legacy_ -- --nocapture` passed for the direct
+    legacy handler coverage in `crates/server/src/lib.rs`; the remaining
+    failure under that filter is the unrelated multiprocess test
+    `legacy_atomic_routes_numeric_update_to_remote_primary_process` with
+    `Error: early eof`
+  - a manual live cluster with the full `profiles` schema successfully added
+    the space through `hyperdex-add-space`
+  - the exact focused `hyhac` selection for `*Can store a large object*`
+    still reproduced `Left ClientGarbage`
+  - temporary instrumentation on `handle_legacy_request` for `ReqAtomic`
+    never fired during that failing run, so the daemon did not receive the
+    first atomic write on this path
+- Conclusion: the remaining mismatch is earlier than the daemon request
+  decoder and response path. The next exact target is the packed coordinator
+  config and client-side request-preparation contract for the full `profiles`
+  schema, especially container and map datatype encoding.
+- Disposition: `reframe`
+- Next move: preregister a new product-owned step on the same worktree for the
+  packed coordinator config and client-side request-preparation contract, and
+  give it the new harness evidence showing the first captured exchange is still
+  on the coordinator connection.
+
+### Entry `hyh-034` - Preregistration
+
+- Timestamp: `2026-03-27 20:04Z`
+- Kind: `preregister`
+- Hypothesis: a forked worker that owns the packed coordinator config and
+  client-side request-preparation contract for the full `profiles` schema can
+  move the focused large-object path past the pre-daemon `ClientGarbage`
+  failure, or return the next exact coordinator-side mismatch with code and
+  validators.
+- Owner: next forked worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane`
+- Start commit: `8871797`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on
+    `live-hyhac-data-plane`
+- Mutable surface:
+  - `crates/legacy-protocol/**`
+  - `crates/legacy-frontend/**`
+  - `crates/hyperdex-admin-protocol/**`
+  - `crates/hyperdex-client-protocol/**`
+  - `crates/server/**`
+  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if launcher wiring is
+    strictly necessary for the focused probe
+- Validator:
+  - fastest useful check:
+    - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
+  - strong checks:
+    - `cargo test -p server`
+    - `cargo test --workspace`
+    - focused manual cluster probe for `*Can store a large object*`
+- Expected artifacts:
+  - code and tests that move the large-object path past the pre-daemon
+    `ClientGarbage` failure
+  - or a tighter coordinator-side mismatch tied to concrete packet or source
+    evidence
+  - a shorter branch-local loop than the broader selected `hyhac` command
+
 ### Entry `hyh-025` - Preregistration
 
 - Timestamp: `2026-03-27 05:58Z`

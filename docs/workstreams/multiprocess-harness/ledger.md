@@ -321,3 +321,32 @@
     or a clean proof tied to test output that identifies the bad edge exactly
   - clearer daemon-path evidence for the product worker
   - one bounded harness-only commit ready for reconciliation
+
+### Entry `mph-007` - Outcome
+
+- Timestamp: `2026-03-27 19:54Z`
+- Kind: `outcome`
+- End commit: `853e290`
+- Artifact location:
+  - `crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence summary:
+  - `853e290` adds a coordinator proxy capture path and the focused test
+    `legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair`
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture` passed
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair -- --nocapture` passed
+  - `cargo test -p server --test dist_multiprocess_harness -- --nocapture` passed
+  - `cargo test --workspace` passed in the worktree
+  - the focused large-object repro never reaches a decodable legacy daemon
+    frame; the first captured exchange is on the coordinator connection, where
+    both directions are partial BusyBee-style frames
+  - client-to-coordinator frames end with `trailing_bytes=45` and raw prefix
+    `80 00 00 14 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 05`
+  - coordinator-to-client frames end with `trailing_bytes=100` and raw prefix
+    `80 00 00 14 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 3c`
+- Conclusion: the first bad edge on the large-object `ClientGarbage` path is
+  earlier than the legacy daemon request/response layer the harness can decode.
+  The next useful product diagnosis is coordinator-side BusyBee/Replicant
+  framing, not more daemon-frame capture.
+- Disposition: `advance`
+- Next move: hand the coordinator-frame evidence to the product worker and hold
+  this workstream until a new harness change is needed.

@@ -161,23 +161,30 @@ stronger live probe before returning control.
 - [x] (2026-03-27 07:45Z) The faster daemon-path repro is now on `main`:
   `0b2379d` shows `*Can store a large object*` is enough to hit
   `Left ClientGarbage`.
+- [x] (2026-03-27 20:04Z) Reframed the daemon-path blocker again: the focused
+  large-object failure still happens before the daemon sees `REQ_ATOMIC`, so
+  the next product target is the packed coordinator config and client-side
+  request-preparation contract for the full `profiles` schema.
 - [ ] Rerun the bounded live `hyhac` probe against that new admin frontend.
 
 ## Current Hypothesis
 
 The request core, session core, packed-space decoder hardening, same-port
 startup, binary config encoding, daemon join, and coordinator bootstrap/admin
-compatibility are now on `main`. The next concrete gap is the legacy daemon
-request/response path used by the original C client once `hyhac` starts pooled
-roundtrips and richer operations. The fastest public repro is now the focused
-large-object subset, not the broader selected `hyhac` command.
+compatibility are now on `main`. The focused large-object failure is still the
+right public loop, but it no longer points at the daemon request decoder: the
+daemon never sees `REQ_ATOMIC` for this path, and the harness now shows the
+first captured exchange is still on the coordinator connection. The next
+concrete gap is the packed coordinator config and client-side request-
+preparation contract for the full `profiles` schema.
 
 ## Next Bounded Step
 
-Own the legacy daemon data-path compatibility step through focused server tests
-and the focused large-object `ClientGarbage` repro until that failure clears,
-then widen to the earlier pooled/client operations and the broader selected
-`hyhac` command.
+Own the packed coordinator config and client-side request-preparation contract
+for the full `profiles` schema through the focused large-object `ClientGarbage`
+repro until that path clears or yields the next exact coordinator-side
+mismatch. Only widen back to broader pooled operations after this focused path
+moves forward.
 
 ## Surprises & Discoveries
 
@@ -217,6 +224,18 @@ then widen to the earlier pooled/client operations and the broader selected
   implementation worker to start editing.
   Evidence: the third implementation thread again reported no touched files and
   named broad implementation design as the blocker.
+- Observation: the focused large-object failure still does not reach the daemon
+  atomic handler.
+  Evidence: on a manual live cluster with the full `profiles` schema,
+  temporary `ReqAtomic` tracing inside `handle_legacy_request` never fired
+  while the focused `hyhac` large-object selection still reproduced
+  `Left ClientGarbage`.
+- Observation: the first captured exchange on that failing path is still on the
+  coordinator connection rather than a decodable legacy daemon frame.
+  Evidence: `853e290` adds
+  `legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair`, and
+  that test captures partial BusyBee-style frames with `trailing_bytes=45` and
+  `trailing_bytes=100` on the coordinator path.
 - Observation: even after splitting writes into "codec" and "server
   integration", the workers still did not start editing.
   Evidence: both dedicated worktrees stayed clean at `801d20f` until the
