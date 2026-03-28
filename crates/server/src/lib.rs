@@ -568,6 +568,32 @@ impl ClusterRuntime {
         Ok(())
     }
 
+    fn delete_group_snapshot_keys(records: &[Record]) -> BTreeSet<Bytes> {
+        records.iter().map(|record| record.key.clone()).collect()
+    }
+
+    fn ensure_delete_group_snapshots_agree(
+        &self,
+        space: &str,
+        snapshots: &[(u64, Vec<Record>)],
+    ) -> Result<()> {
+        let Some((expected_node_id, expected_records)) = snapshots.first() else {
+            return Ok(());
+        };
+
+        let expected_keys = Self::delete_group_snapshot_keys(expected_records);
+        for (node_id, records) in snapshots.iter().skip(1) {
+            let observed_keys = Self::delete_group_snapshot_keys(records);
+            if observed_keys != expected_keys {
+                anyhow::bail!(
+                    "distributed delete-group snapshot mismatch for space `{space}` between replicas {expected_node_id} and {node_id}"
+                );
+            }
+        }
+
+        Ok(())
+    }
+
     async fn replicate_delete_to_secondaries(&self, space: &str, key: &bytes::Bytes) -> Result<()> {
         let decision = self.locate_key(space, key)?;
         for replica in decision.replicas {
@@ -728,6 +754,8 @@ impl ClusterRuntime {
             anyhow::bail!("distributed delete-group had no reachable replicas for space `{space}`");
         }
 
+        self.ensure_delete_group_snapshots_agree(&space, &snapshots)?;
+
         let mut deleted_total = 0u64;
         let mut applied_snapshot_count = 0usize;
         for (node_id, _) in &snapshots {
@@ -779,9 +807,18 @@ impl ClusterRuntime {
 
         let replica_factor = self.replica_factor()?;
         if deleted_total % replica_factor != 0 {
-            anyhow::bail!(
+            let err = anyhow!(
                 "distributed delete-group removed {deleted_total} physical records across replica factor {replica_factor}"
             );
+            let rollback = self
+                .rollback_delete_group_snapshots(&space, &snapshots[..applied_snapshot_count])
+                .await;
+            return match rollback {
+                Ok(()) => Err(err),
+                Err(rollback_err) => Err(anyhow!(
+                    "distributed delete-group failed: {err}; rollback failed: {rollback_err}"
+                )),
+            };
         }
 
         Ok(deleted_total / replica_factor)
