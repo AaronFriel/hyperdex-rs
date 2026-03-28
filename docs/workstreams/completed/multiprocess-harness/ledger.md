@@ -146,7 +146,7 @@
   the new daemon-side `ClientGarbage` failure can shorten the feedback loop
   materially compared with the current selected `hyhac` command.
 - Owner: forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-probe-harness`
+  `worktrees/admin-probe-harness`
 - Start commit: `c087f81`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-probe-harness` on
