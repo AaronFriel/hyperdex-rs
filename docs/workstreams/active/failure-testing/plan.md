@@ -65,27 +65,37 @@ design.
 - [x] (2026-03-29 20:25Z) Landed stale-local-primary rejection plus the
   peer-outage variant on the merged tree.
 - [x] (2026-03-29 21:05Z) Landed stale-primary delete recovery hardening.
-- [ ] Choose the next ownership-convergence failure beyond `Put` and `Delete`.
+- [x] (2026-03-28 23:56Z) Landed divergent-replica `ConditionalPut`
+  fail-closed proof plus runtime guard so key mutations no longer trust a
+  single replica's precondition view.
+- [ ] Choose the next replica-disagreement or ownership-convergence mutation
+  family beyond `ConditionalPut`.
 
 ## Current Hypothesis
 
-The next highest-value step is still ownership convergence, but both `Put` and
-`Delete` are now better defended. The next proof should stress another nearby
-operation shape, most likely `ConditionalPut`, or a more complex sequence where
-ownership disagreement and recovery interact with multiple operations.
+The highest-value nearby step is still a key mutation family. `ConditionalPut`
+now fails closed if replicas disagree on the current record, so the next proof
+should target another mutation path that can still erase or overwrite
+pre-existing disagreement.
 
 ## Next Bounded Step
 
-Add the shortest honest deterministic proof for the next ownership-convergence
-operation shape after `Put` and `Delete`, and touch runtime code only if the
-proof shows the runtime can accept or expose incorrect state during ownership
-change.
+Add the shortest honest deterministic proof for the next single-key mutation
+path that does not yet fail closed on replica disagreement, most likely plain
+`Put` or `Delete`, and touch runtime code only if the proof shows the runtime
+can overwrite disagreement without surfacing it.
 
 ## Surprises & Discoveries
 
 - Observation: both Turmoil and Madsim are already present in the repository.
   Evidence: `Cargo.toml` already includes `turmoil`, and
   `crates/simulation-harness/Cargo.toml` already includes `madsim`.
+- Observation: read-side replica agreement checks were not enough on their own.
+  `ConditionalPut` could still succeed by evaluating its check on the primary
+  and then blindly replicating the winning value onto a divergent peer.
+  Evidence: `tests::failure_testing::turmoil_rejects_divergent_replica_conditional_put`
+  passed only after the runtime started reading the agreed pre-mutation record
+  before applying the conditional write.
 
 ## Decision Log
 
@@ -94,6 +104,12 @@ change.
   Rationale: the next features will be easier to land if the runtime is already
   being tested under broken assumptions.
   Date/Author: 2026-03-28 / root
+- Decision: harden `ConditionalPut` by reusing the distributed get agreement
+  check before evaluating the local conditional write.
+  Rationale: this preserves the existing deterministic disagreement detector,
+  keeps the implementation small, and prevents a conditional write from
+  silently healing or overwriting already divergent replica state.
+  Date/Author: 2026-03-28 / Codex
 
 ## Outcomes & Retrospective
 
@@ -116,3 +132,10 @@ change.
 - The newest pass found and fixed a third ownership-convergence bug:
   - an older cluster view could still veto the authoritative primary's delete
     during validation after outage and recovery
+- The latest pass found and fixed a replica-disagreement mutation bug:
+  - `ConditionalPut` could previously evaluate against the primary's local
+    record and overwrite a divergent replica instead of failing closed first
+
+Change note (2026-03-28 23:56Z): updated this workstream plan after landing
+the divergent-replica `ConditionalPut` proof and runtime guard so the next
+bounded step points at the remaining single-key mutation families.

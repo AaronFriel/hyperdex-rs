@@ -708,6 +708,22 @@ impl ClusterRuntime {
         Ok(())
     }
 
+    async fn agreed_record_before_primary_mutation(
+        &self,
+        space: &str,
+        key: &bytes::Bytes,
+        operation: &str,
+    ) -> Result<Option<Record>> {
+        self.execute_get_with_replica_fallback(space.to_owned(), key.clone())
+            .await
+            .map_err(|err| {
+                anyhow!(
+                    "{operation} aborted before mutating space `{space}` key {:?}: {err}",
+                    key
+                )
+            })
+    }
+
     async fn apply_primary_put(
         &self,
         space: String,
@@ -948,7 +964,9 @@ impl ClusterRuntime {
     ) -> Result<DataPlaneResponse> {
         self.confirm_local_primary_with_peers(&space, &key).await?;
         let mutations = self.materialize_key_mutation(&space, &key, mutations)?;
-        let previous = self.data_plane.get(&space, &key)?;
+        let previous = self
+            .agreed_record_before_primary_mutation(&space, &key, "conditional put")
+            .await?;
         match self
             .data_plane
             .conditional_put(&space, key.clone(), &checks, &mutations)?
