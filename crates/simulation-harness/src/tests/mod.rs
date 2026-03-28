@@ -2470,6 +2470,162 @@ fn hegel_distributed_runtime_preserves_logical_delete_group_search_and_count() {
     .run();
 }
 
+#[test]
+fn hegel_distributed_runtime_preserves_mixed_mutation_query_model() {
+    let _guard = HEGEL_ENV_LOCK.lock().unwrap();
+    let hegel_server_command = ensure_hegel_server_command();
+    unsafe {
+        std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
+    }
+
+    // This property exercises a broader distributed state machine than the
+    // delete-group proof: routed puts, compare-and-write updates, deletes, gets,
+    // and threshold queries must all agree with one logical model from either
+    // runtime, even though writes are routed and replicated under the hood.
+    hegel::Hegel::new(|tc: hegel::TestCase| {
+        let ops: Vec<(u8, u8, u8, u16, u16, u16)> = tc.draw(
+            hegel::generators::vecs(hegel::generators::tuples6(
+                hegel::generators::integers::<u8>().max_value(5),
+                hegel::generators::integers::<u8>().max_value(1),
+                hegel::generators::integers::<u8>().max_value(7),
+                hegel::generators::integers::<u16>().max_value(119),
+                hegel::generators::integers::<u16>().max_value(119),
+                hegel::generators::integers::<u16>().max_value(119),
+            ))
+            .min_size(1)
+            .max_size(24),
+        );
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async move {
+            let (_, runtime1, runtime2) =
+                distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
+            let runtimes = [runtime1, runtime2];
+            let mut model = BTreeMap::<String, i64>::new();
+
+            for (kind, runtime_id, key_id, value_id, compare_id, threshold_id) in ops {
+                let runtime = &runtimes[usize::from(runtime_id)];
+                let key = format!("hegel-mixed-k{key_id}");
+                let key_bytes = Bytes::from(key.clone().into_bytes());
+                let value = i64::from(value_id);
+                let compare = i64::from(compare_id);
+                let threshold = i64::from(threshold_id);
+
+                match kind {
+                    0 => {
+                        let response = HyperdexClientService::handle(
+                            runtime.as_ref(),
+                            ClientRequest::Put {
+                                space: "profiles".to_owned(),
+                                key: key_bytes,
+                                mutations: vec![Mutation::Set(Attribute {
+                                    name: "profile_views".to_owned(),
+                                    value: Value::Int(value),
+                                })],
+                            },
+                        )
+                        .await
+                        .unwrap();
+                        assert_eq!(response, ClientResponse::Unit);
+                        model.insert(key, value);
+                    }
+                    1 => {
+                        let expected = model.get(&key).copied();
+                        let response = HyperdexClientService::handle(
+                            runtime.as_ref(),
+                            ClientRequest::ConditionalPut {
+                                space: "profiles".to_owned(),
+                                key: key_bytes,
+                                checks: vec![Check {
+                                    attribute: "profile_views".to_owned(),
+                                    predicate: Predicate::Equal,
+                                    value: Value::Int(compare),
+                                }],
+                                mutations: vec![Mutation::Set(Attribute {
+                                    name: "profile_views".to_owned(),
+                                    value: Value::Int(value),
+                                })],
+                            },
+                        )
+                        .await
+                        .unwrap();
+                        if expected == Some(compare) {
+                            assert_eq!(response, ClientResponse::Unit);
+                            model.insert(key, value);
+                        } else {
+                            assert_eq!(response, ClientResponse::ConditionFailed);
+                        }
+                    }
+                    2 => {
+                        let response = HyperdexClientService::handle(
+                            runtime.as_ref(),
+                            ClientRequest::Delete {
+                                space: "profiles".to_owned(),
+                                key: key_bytes,
+                            },
+                        )
+                        .await
+                        .unwrap();
+                        assert_eq!(response, ClientResponse::Unit);
+                        model.remove(&key);
+                    }
+                    3 => {
+                        let response = HyperdexClientService::handle(
+                            runtime.as_ref(),
+                            ClientRequest::Get {
+                                space: "profiles".to_owned(),
+                                key: key_bytes,
+                            },
+                        )
+                        .await
+                        .unwrap();
+                        match response {
+                            ClientResponse::Record(Some(record)) => {
+                                let actual = match record.attributes.get("profile_views") {
+                                    Some(Value::Int(current)) => Some(*current),
+                                    _ => None,
+                                };
+                                assert_eq!(actual, model.get(&key).copied());
+                            }
+                            ClientResponse::Record(None) => {
+                                assert_eq!(model.get(&key), None);
+                            }
+                            other => panic!("unexpected get response: {other:?}"),
+                        }
+                    }
+                    4 => {
+                        let expected = expected_profile_views_at_or_above(&model, threshold);
+                        assert_search_and_count_match_model(runtime.as_ref(), threshold, &expected)
+                            .await;
+                    }
+                    5 => {
+                        let count = HyperdexClientService::handle(
+                            runtime.as_ref(),
+                            ClientRequest::Count {
+                                space: "profiles".to_owned(),
+                                checks: profile_views_ge_checks(threshold),
+                            },
+                        )
+                        .await
+                        .unwrap();
+                        let expected = expected_profile_views_at_or_above(&model, threshold);
+                        assert_eq!(count, ClientResponse::Count(expected.len() as u64));
+                    }
+                    _ => unreachable!("operation kind is bounded to 0..=5"),
+                }
+
+                let expected = expected_profile_views_at_or_above(&model, threshold);
+                assert_search_and_count_match_model(runtimes[0].as_ref(), threshold, &expected)
+                    .await;
+                assert_search_and_count_match_model(runtimes[1].as_ref(), threshold, &expected)
+                    .await;
+            }
+        });
+    })
+    .settings(hegel::Settings::new().test_cases(15))
+    .run();
+}
+
 proptest! {
     #![proptest_config(ProptestConfig {
         cases: 64,
