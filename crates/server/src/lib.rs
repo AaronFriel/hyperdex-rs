@@ -623,7 +623,7 @@ impl ClusterRuntime {
             let records = if *node_id == self.local_node_id {
                 match self.data_plane.search(&space, &checks) {
                     Ok(records) => records,
-                    Err(err) if should_skip_distributed_read_replica(&err) => continue,
+                    Err(err) if should_skip_delete_group_snapshot_replica(&err) => continue,
                     Err(err) => return Err(err),
                 }
             } else {
@@ -648,7 +648,7 @@ impl ClusterRuntime {
                             "unexpected response to delete-group snapshot search on replica {node_id}"
                         )
                     }
-                    Err(err) if should_skip_distributed_read_replica(&err) => continue,
+                    Err(err) if should_skip_delete_group_snapshot_replica(&err) => continue,
                     Err(err) => return Err(err),
                 }
             };
@@ -4603,6 +4603,14 @@ fn should_skip_distributed_read_replica(err: &anyhow::Error) -> bool {
         return true;
     }
 
+    should_skip_schema_gap_replica(err)
+}
+
+fn should_skip_delete_group_snapshot_replica(err: &anyhow::Error) -> bool {
+    should_skip_schema_gap_replica(err)
+}
+
+fn should_skip_schema_gap_replica(err: &anyhow::Error) -> bool {
     let msg = err.to_string().to_ascii_lowercase();
     msg.contains("unknown space") || msg.contains("space ") && msg.contains("does not exist")
 }
