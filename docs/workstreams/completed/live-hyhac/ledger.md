@@ -530,7 +530,7 @@
 - Hypothesis: a worker told to patch the exact coordinator listener and session
   functions already identified can land the legacy admin server implementation
   without another exploratory stall.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Owner: dedicated worker in `worktrees/admin-server`
 - Start commit: `928130e`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
