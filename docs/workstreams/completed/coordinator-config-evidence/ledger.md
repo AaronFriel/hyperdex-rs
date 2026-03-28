@@ -110,7 +110,7 @@
     `0x0400000000000000`, and the last ends at `UINT64_MAX`
   - Rust’s `default_legacy_config_encoder` currently emits
     `lower=partition`, `upper=partition` for every region in
-    `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+    `crates/server/src/lib.rs`
   - the original HyperDex client consumes those region bounds in
     `configuration::point_leader`, so singleton bounds leave ordinary key
     hashes outside every region before the client can route and prepare the
