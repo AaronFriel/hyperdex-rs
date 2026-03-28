@@ -389,7 +389,7 @@
 - Hypothesis: a worker with an explicit codec contract can land the pure
   BusyBee and Replicant admin frame types, varint slice helpers, and unit tests
   inside `hyperdex-admin-protocol` without depending on server behavior.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-codec`
+- Owner: dedicated worker in `worktrees/admin-codec`
 - Start commit: `f2da7e5`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-codec`
