@@ -1037,3 +1037,177 @@ fn madsim_recovery_preserves_operation_order_after_stale_local_primary_rejoin() 
         assert_eq!(authoritative_view, recovered_view);
     });
 }
+
+#[cfg(madsim)]
+#[test]
+fn madsim_recovery_preserves_delete_then_rewrite_visibility_after_stale_local_primary_rejoin() {
+    let runtime = madsim::runtime::Runtime::with_seed_and_config(31, madsim::Config::default());
+
+    runtime.block_on(async move {
+        let (transport, current_runtime, stale_runtime) =
+            distributed_runtime_fixture_with_diverged_cluster_views(profiles_schema()).await;
+
+        let (current_primary, stale_primary, recovery_key) = stale_placement_mutation_target(
+            &current_runtime,
+            &stale_runtime,
+            "madsim-stale-recovery-delete-rewrite",
+        );
+        assert_eq!(current_primary, 2);
+        assert_ne!(stale_primary, current_primary);
+
+        let rejected_put = HyperdexClientService::handle(
+            current_runtime.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(recovery_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(5),
+                })],
+            },
+        )
+        .await;
+        assert!(
+            rejected_put.is_err(),
+            "expected the stale local-primary write to fail before recovery"
+        );
+
+        let mut recovered_runtime =
+            ClusterRuntime::for_node(converged_two_node_config(), current_primary).unwrap();
+        recovered_runtime.install_cluster_transport(transport.clone(), TransportRuntime::Grpc);
+        let recovered_runtime = Arc::new(recovered_runtime);
+        HyperdexAdminService::handle(
+            recovered_runtime.as_ref(),
+            AdminRequest::CreateSpaceDsl(profiles_schema()),
+        )
+        .await
+        .unwrap();
+        transport
+            .register(current_primary, recovered_runtime.clone())
+            .await;
+        madsim::time::sleep(Duration::from_millis(5)).await;
+
+        let first_write = HyperdexClientService::handle(
+            current_runtime.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(recovery_key.as_bytes().to_vec()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(11),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(first_write, ClientResponse::Unit);
+
+        let first_visibility = HyperdexClientService::handle(
+            recovered_runtime.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(recovery_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        match first_visibility {
+            ClientResponse::Record(Some(record)) => {
+                assert_eq!(
+                    record.attributes.get("profile_views"),
+                    Some(&Value::Int(11))
+                );
+            }
+            other => panic!("unexpected recovered-node view after first write: {other:?}"),
+        }
+
+        let delete = HyperdexClientService::handle(
+            current_runtime.as_ref(),
+            ClientRequest::Delete {
+                space: "profiles".to_owned(),
+                key: Bytes::from(recovery_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(delete, ClientResponse::Unit);
+
+        let deleted_view = HyperdexClientService::handle(
+            recovered_runtime.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(recovery_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(deleted_view, ClientResponse::Record(None));
+
+        let deleted_count = HyperdexClientService::handle(
+            recovered_runtime.as_ref(),
+            ClientRequest::Count {
+                space: "profiles".to_owned(),
+                checks: Vec::new(),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(deleted_count, ClientResponse::Count(0));
+
+        let rewrite = HyperdexClientService::handle(
+            current_runtime.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(recovery_key.as_bytes().to_vec()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(29),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(rewrite, ClientResponse::Unit);
+
+        let recovered_view = HyperdexClientService::handle(
+            recovered_runtime.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(recovery_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        match &recovered_view {
+            ClientResponse::Record(Some(record)) => {
+                assert_eq!(
+                    record.attributes.get("profile_views"),
+                    Some(&Value::Int(29))
+                );
+            }
+            other => panic!("unexpected recovered-node view after rewrite: {other:?}"),
+        }
+
+        let recovered_count = HyperdexClientService::handle(
+            recovered_runtime.as_ref(),
+            ClientRequest::Count {
+                space: "profiles".to_owned(),
+                checks: Vec::new(),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(recovered_count, ClientResponse::Count(1));
+
+        let authoritative_view = HyperdexClientService::handle(
+            current_runtime.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(recovery_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(authoritative_view, recovered_view);
+    });
+}

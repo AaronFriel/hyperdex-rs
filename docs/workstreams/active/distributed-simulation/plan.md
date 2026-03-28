@@ -58,15 +58,19 @@ accepted in the right order when ownership changes around a node failure.
   proof after replica outage.
 - [x] (2026-03-28 23:45Z) Landed a Madsim stale-rejoin ordering proof so the
   scheduler now covers both outage-retry and stale-placement recovery.
+- [x] (2026-03-28 23:54Z) Landed a Madsim stale-rejoin delete/rewrite
+  visibility proof so the scheduler now covers both ordered-write and
+  delete-boundary recovery after stale local-primary rejoin.
 - [ ] Land the next distributed recovery proof beyond the current two-node
-  stale-rejoin and replica-outage families.
+  stale-rejoin and replica-outage families, ideally a three-node failover or
+  handoff case.
 
 ## Current Hypothesis
 
-The workstream now covers six concrete recovery proofs on the merged tree:
-two stale-rejoin ordering or visibility cases under Turmoil, one stale-rejoin
-ordering case under Madsim, and three replica-outage retry or recovery cases.
-The next high-value step is either a three-node failover or handoff proof, or
+The workstream now covers seven concrete recovery proofs on the merged tree:
+two stale-rejoin ordering or visibility cases under Turmoil, two stale-rejoin
+cases under Madsim, and three replica-outage retry or recovery cases. The next
+high-value step is still either a three-node failover or handoff proof, or
 another recovery family that is not just a two-node stale rejoin or a
 replica-outage retry.
 
@@ -78,7 +82,12 @@ stale-rejoin and replica-outage retry shapes.
 
 ## Surprises & Discoveries
 
-- None yet.
+- Observation: the Madsim proofs are compiled behind the custom `cfg(madsim)`
+  gate, so a default `cargo test -p simulation-harness <name>` run only proves
+  the test compiles; it does not execute the Madsim case.
+  Evidence: rerunning the targeted validator with
+  `RUSTFLAGS='--cfg madsim' cargo test -p simulation-harness <name> -- --nocapture`
+  executed the new proof as one passing test.
 
 ## Decision Log
 
@@ -103,3 +112,7 @@ stale-rejoin and replica-outage retry shapes.
   under Madsim: a rejected pre-recovery write does not leak through, and two
   later authoritative writes are observed in order after the recovered node
   rejoins with the converged two-node view.
+- The latest pass now proves the stale local-primary delete boundary under
+  Madsim as well: after recovery, the recovered node sees `Put -> Delete -> Put`
+  in order, reports zero visible records across the delete, and then converges
+  with the authoritative node on the rewritten value.

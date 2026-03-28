@@ -1,5 +1,57 @@
 # Workstream Ledger: distributed-simulation
 
+### Entry `dsm-004` - Preregistration
+
+- Timestamp: `2026-03-28 23:54Z`
+- Kind: `preregister`
+- Hypothesis: the next useful deterministic recovery proof can stay in the
+  current stale-rejoin family if it adds a scheduler-backed guarantee that is
+  not already covered under Madsim, namely the delete boundary between an
+  accepted write and a later rewrite.
+- Owner: forked worker on `active-distributed-simulation`
+- Start commit: `0e7f809`
+- Worktree / branch:
+  - `worktrees/active-distributed-simulation`
+  - `active-distributed-simulation`
+- Mutable surface:
+  - `crates/simulation-harness/**`
+- Validator:
+  - fastest useful check:
+    `RUSTFLAGS='--cfg madsim' cargo test -p simulation-harness madsim_recovery_preserves_delete_then_rewrite_visibility_after_stale_local_primary_rejoin -- --nocapture`
+  - strong checks:
+    - `cargo test -p simulation-harness`
+- Expected artifacts:
+  - one new deterministic Madsim recovery proof
+  - one bounded commit ready for reconciliation
+
+### Entry `dsm-004` - Outcome
+
+- Timestamp: `2026-03-28 23:54Z`
+- Kind: `outcome`
+- End commit:
+  - pending local commit
+- Artifact location:
+  - `crates/simulation-harness/src/tests/distributed_simulation.rs`
+  - `docs/workstreams/active/distributed-simulation/plan.md`
+- Evidence summary:
+  - Added
+    `madsim_recovery_preserves_delete_then_rewrite_visibility_after_stale_local_primary_rejoin`.
+  - The new proof extends the stale local-primary rejoin family under Madsim:
+    - a stale local-primary write is rejected before recovery
+    - the authoritative node recreates the converged two-node view
+    - the recovered node observes an accepted write
+    - the recovered node then observes a delete with zero visible records
+    - a later rewrite becomes visible and matches the authoritative view
+  - Validation passed with:
+    - `RUSTFLAGS='--cfg madsim' cargo test -p simulation-harness madsim_recovery_preserves_delete_then_rewrite_visibility_after_stale_local_primary_rejoin -- --nocapture`
+    - `cargo test -p simulation-harness`
+- Conclusion: Madsim now proves both ordered writes and delete-boundary
+  visibility after stale local-primary rejoin, not only outage-retry recovery.
+- Disposition: `advance`
+- Next move: choose a three-node failover or handoff recovery proof so the
+  suite moves beyond the current two-node stale-rejoin and replica-outage
+  families.
+
 ### Entry `rco-001` - Preregistration
 
 - Timestamp: `2026-03-29 19:20Z`
