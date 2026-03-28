@@ -310,6 +310,31 @@ pub enum LegacyProtocolError {
     InvalidUtf8,
 }
 
+fn read_u16_be(bytes: &[u8], offset: usize) -> Result<u16, LegacyProtocolError> {
+    Ok(u16::from_be_bytes(read_array(bytes, offset)?))
+}
+
+fn read_u32_be(bytes: &[u8], offset: usize) -> Result<u32, LegacyProtocolError> {
+    Ok(u32::from_be_bytes(read_array(bytes, offset)?))
+}
+
+fn read_u64_be(bytes: &[u8], offset: usize) -> Result<u64, LegacyProtocolError> {
+    Ok(u64::from_be_bytes(read_array(bytes, offset)?))
+}
+
+fn read_array<const N: usize>(
+    bytes: &[u8],
+    offset: usize,
+) -> Result<[u8; N], LegacyProtocolError> {
+    let end = offset
+        .checked_add(N)
+        .ok_or(LegacyProtocolError::ShortBuffer)?;
+    let slice = bytes.get(offset..end).ok_or(LegacyProtocolError::ShortBuffer)?;
+    let mut out = [0u8; N];
+    out.copy_from_slice(slice);
+    Ok(out)
+}
+
 impl RequestHeader {
     pub fn encode(self) -> [u8; LEGACY_REQUEST_HEADER_SIZE] {
         let mut bytes = [0u8; LEGACY_REQUEST_HEADER_SIZE];
@@ -332,21 +357,9 @@ impl RequestHeader {
         Ok(Self {
             message_type: decode_message_type(bytes[BUSYBEE_HEADER_SIZE])?,
             flags: bytes[BUSYBEE_HEADER_SIZE + 1],
-            version: u64::from_be_bytes(
-                bytes[BUSYBEE_HEADER_SIZE + 2..BUSYBEE_HEADER_SIZE + 10]
-                    .try_into()
-                    .expect("fixed-width slice"),
-            ),
-            target_virtual_server: u64::from_be_bytes(
-                bytes[BUSYBEE_HEADER_SIZE + 10..BUSYBEE_HEADER_SIZE + 18]
-                    .try_into()
-                    .expect("fixed-width slice"),
-            ),
-            nonce: u64::from_be_bytes(
-                bytes[BUSYBEE_HEADER_SIZE + 18..BUSYBEE_HEADER_SIZE + 26]
-                    .try_into()
-                    .expect("fixed-width slice"),
-            ),
+            version: read_u64_be(bytes, BUSYBEE_HEADER_SIZE + 2)?,
+            target_virtual_server: read_u64_be(bytes, BUSYBEE_HEADER_SIZE + 10)?,
+            nonce: read_u64_be(bytes, BUSYBEE_HEADER_SIZE + 18)?,
         })
     }
 }
@@ -369,16 +382,8 @@ impl ResponseHeader {
 
         Ok(Self {
             message_type: decode_message_type(bytes[BUSYBEE_HEADER_SIZE])?,
-            target_virtual_server: u64::from_be_bytes(
-                bytes[BUSYBEE_HEADER_SIZE + 1..BUSYBEE_HEADER_SIZE + 9]
-                    .try_into()
-                    .expect("fixed-width slice"),
-            ),
-            nonce: u64::from_be_bytes(
-                bytes[BUSYBEE_HEADER_SIZE + 9..BUSYBEE_HEADER_SIZE + 17]
-                    .try_into()
-                    .expect("fixed-width slice"),
-            ),
+            target_virtual_server: read_u64_be(bytes, BUSYBEE_HEADER_SIZE + 1)?,
+            nonce: read_u64_be(bytes, BUSYBEE_HEADER_SIZE + 9)?,
         })
     }
 }
@@ -397,7 +402,7 @@ impl CountRequest {
             return Err(LegacyProtocolError::ShortBuffer);
         }
 
-        let len = u16::from_be_bytes(bytes[..2].try_into().expect("fixed-width slice")) as usize;
+        let len = usize::from(read_u16_be(bytes, 0)?);
         if bytes.len() < COUNT_REQUEST_PREFIX_SIZE + len {
             return Err(LegacyProtocolError::ShortBuffer);
         }
@@ -420,7 +425,7 @@ impl CountResponse {
         }
 
         Ok(Self {
-            count: u64::from_be_bytes(bytes[..8].try_into().expect("fixed-width slice")),
+            count: read_u64_be(bytes, 0)?,
         })
     }
 }
@@ -438,7 +443,7 @@ impl GetRequest {
             return Err(LegacyProtocolError::ShortBuffer);
         }
 
-        let len = u16::from_be_bytes(bytes[..2].try_into().expect("fixed-width slice")) as usize;
+        let len = usize::from(read_u16_be(bytes, 0)?);
         if bytes.len() < GET_REQUEST_PREFIX_SIZE + len {
             return Err(LegacyProtocolError::ShortBuffer);
         }
@@ -463,11 +468,8 @@ impl GetResponse {
             return Err(LegacyProtocolError::ShortBuffer);
         }
 
-        let status = decode_return_code(u16::from_be_bytes(
-            bytes[..2].try_into().expect("fixed-width slice"),
-        ))?;
-        let attr_count =
-            u16::from_be_bytes(bytes[2..4].try_into().expect("fixed-width slice")) as usize;
+        let status = decode_return_code(read_u16_be(bytes, 0)?)?;
+        let attr_count = usize::from(read_u16_be(bytes, 2)?);
         let (attributes, offset) = decode_attributes(bytes, 4, attr_count)?;
 
         if offset != bytes.len() {
@@ -495,8 +497,7 @@ impl SearchStartRequest {
             return Err(LegacyProtocolError::ShortBuffer);
         }
 
-        let space_len =
-            u16::from_be_bytes(bytes[..2].try_into().expect("fixed-width slice")) as usize;
+        let space_len = usize::from(read_u16_be(bytes, 0)?);
         if bytes.len() < 2 + space_len + 10 {
             return Err(LegacyProtocolError::ShortBuffer);
         }
@@ -504,16 +505,8 @@ impl SearchStartRequest {
         let space = std::str::from_utf8(&bytes[2..2 + space_len])
             .map_err(|_| LegacyProtocolError::InvalidUtf8)?
             .to_owned();
-        let search_id = u64::from_be_bytes(
-            bytes[2 + space_len..10 + space_len]
-                .try_into()
-                .expect("fixed-width slice"),
-        );
-        let check_count = u16::from_be_bytes(
-            bytes[10 + space_len..12 + space_len]
-                .try_into()
-                .expect("fixed-width slice"),
-        ) as usize;
+        let search_id = read_u64_be(bytes, 2 + space_len)?;
+        let check_count = usize::from(read_u16_be(bytes, 10 + space_len)?);
         let (checks, offset) = decode_checks(bytes, 12 + space_len, check_count)?;
 
         if offset != bytes.len() {
@@ -539,7 +532,7 @@ impl SearchContinueRequest {
         }
 
         Ok(Self {
-            search_id: u64::from_be_bytes(bytes[..8].try_into().expect("fixed-width slice")),
+            search_id: read_u64_be(bytes, 0)?,
         })
     }
 }
@@ -560,18 +553,13 @@ impl SearchItemResponse {
             return Err(LegacyProtocolError::ShortBuffer);
         }
 
-        let search_id = u64::from_be_bytes(bytes[..8].try_into().expect("fixed-width slice"));
-        let key_len =
-            u16::from_be_bytes(bytes[8..10].try_into().expect("fixed-width slice")) as usize;
+        let search_id = read_u64_be(bytes, 0)?;
+        let key_len = usize::from(read_u16_be(bytes, 8)?);
         if bytes.len() < 10 + key_len + 2 {
             return Err(LegacyProtocolError::ShortBuffer);
         }
         let key = bytes[10..10 + key_len].to_vec();
-        let attr_count = u16::from_be_bytes(
-            bytes[10 + key_len..12 + key_len]
-                .try_into()
-                .expect("fixed-width slice"),
-        ) as usize;
+        let attr_count = usize::from(read_u16_be(bytes, 10 + key_len)?);
         let (attributes, offset) = decode_attributes(bytes, 12 + key_len, attr_count)?;
 
         if offset != bytes.len() {
@@ -616,30 +604,21 @@ impl AtomicRequest {
             return Err(LegacyProtocolError::ShortBuffer);
         }
 
-        let key_len =
-            u16::from_be_bytes(bytes[..2].try_into().expect("fixed-width slice")) as usize;
+        let key_len = usize::from(read_u16_be(bytes, 0)?);
         if bytes.len() < 2 + key_len + 5 {
             return Err(LegacyProtocolError::ShortBuffer);
         }
 
         let key = bytes[2..2 + key_len].to_vec();
         let flags = bytes[2 + key_len];
-        let check_count = u16::from_be_bytes(
-            bytes[3 + key_len..5 + key_len]
-                .try_into()
-                .expect("fixed-width slice"),
-        ) as usize;
+        let check_count = usize::from(read_u16_be(bytes, 3 + key_len)?);
         let (checks, offset) = decode_checks(bytes, 5 + key_len, check_count)?;
 
         if bytes.len() < offset + 2 {
             return Err(LegacyProtocolError::ShortBuffer);
         }
 
-        let funcall_count = u16::from_be_bytes(
-            bytes[offset..offset + 2]
-                .try_into()
-                .expect("fixed-width slice"),
-        ) as usize;
+        let funcall_count = usize::from(read_u16_be(bytes, offset)?);
         let (funcalls, offset) = decode_funcalls(bytes, offset + 2, funcall_count)?;
 
         if offset != bytes.len() {
@@ -666,9 +645,7 @@ impl AtomicResponse {
         }
 
         Ok(Self {
-            status: decode_return_code(u16::from_be_bytes(
-                bytes[..2].try_into().expect("fixed-width slice"),
-            ))?,
+            status: decode_return_code(read_u16_be(bytes, 0)?)?,
         })
     }
 }
@@ -766,11 +743,7 @@ fn decode_checks(
             return Err(LegacyProtocolError::ShortBuffer);
         }
 
-        let predicate = decode_predicate(u16::from_be_bytes(
-            bytes[offset..offset + 2]
-                .try_into()
-                .expect("fixed-width slice"),
-        ))?;
+        let predicate = decode_predicate(read_u16_be(bytes, offset)?)?;
         offset += 2;
 
         checks.push(LegacyCheck {
@@ -834,11 +807,7 @@ fn decode_named_value(
         return Err(LegacyProtocolError::ShortBuffer);
     }
 
-    let name_len = u16::from_be_bytes(
-        bytes[offset..offset + 2]
-            .try_into()
-            .expect("fixed-width slice"),
-    ) as usize;
+    let name_len = usize::from(read_u16_be(bytes, offset)?);
     offset += 2;
 
     if bytes.len() < offset + name_len + 5 {
@@ -856,11 +825,7 @@ fn decode_named_value(
 
 fn decode_value(bytes: &[u8], offset: usize) -> Result<(GetValue, usize), LegacyProtocolError> {
     let kind = bytes[offset];
-    let value_len = u32::from_be_bytes(
-        bytes[offset + 1..offset + 5]
-            .try_into()
-            .expect("fixed-width slice"),
-    ) as usize;
+    let value_len = read_u32_be(bytes, offset + 1)? as usize;
     let value_start = offset + 5;
 
     if bytes.len() < value_start + value_len {
@@ -875,9 +840,7 @@ fn decode_value(bytes: &[u8], offset: usize) -> Result<(GetValue, usize), Legacy
             if value_bytes.len() != 8 {
                 return Err(LegacyProtocolError::ShortBuffer);
             }
-            GetValue::Int(i64::from_be_bytes(
-                value_bytes.try_into().expect("fixed-width slice"),
-            ))
+            GetValue::Int(i64::from_be_bytes(read_array(value_bytes, 0)?))
         }
         3 => GetValue::Bytes(value_bytes.to_vec()),
         4 => GetValue::String(
@@ -1015,7 +978,7 @@ pub fn decode_protocol_search_start(
     if bytes.len() < 8 {
         return Err(LegacyProtocolError::ShortBuffer);
     }
-    let search_id = u64::from_be_bytes(bytes[..8].try_into().expect("fixed-width slice"));
+    let search_id = read_u64_be(bytes, 0)?;
     let (checks, used) = decode_protocol_checks(&bytes[8..])?;
     if 8 + used != bytes.len() {
         return Err(LegacyProtocolError::ShortBuffer);
@@ -1031,9 +994,7 @@ pub fn decode_protocol_search_continue(bytes: &[u8]) -> Result<u64, LegacyProtoc
     if bytes.len() != 8 {
         return Err(LegacyProtocolError::ShortBuffer);
     }
-    Ok(u64::from_be_bytes(
-        bytes.try_into().expect("fixed-width slice"),
-    ))
+    Ok(u64::from_be_bytes(read_array(bytes, 0)?))
 }
 
 pub fn encode_protocol_atomic_response(status: u16) -> [u8; 2] {
@@ -1044,9 +1005,7 @@ pub fn decode_protocol_atomic_response(bytes: &[u8]) -> Result<u16, LegacyProtoc
     if bytes.len() != 2 {
         return Err(LegacyProtocolError::ShortBuffer);
     }
-    Ok(u16::from_be_bytes(
-        bytes.try_into().expect("fixed-width slice"),
-    ))
+    Ok(u16::from_be_bytes(read_array(bytes, 0)?))
 }
 
 pub fn encode_protocol_count_response(count: u64) -> [u8; 8] {
@@ -1057,9 +1016,7 @@ pub fn decode_protocol_count_response(bytes: &[u8]) -> Result<u64, LegacyProtoco
     if bytes.len() != 8 {
         return Err(LegacyProtocolError::ShortBuffer);
     }
-    Ok(u64::from_be_bytes(
-        bytes.try_into().expect("fixed-width slice"),
-    ))
+    Ok(u64::from_be_bytes(read_array(bytes, 0)?))
 }
 
 pub fn encode_protocol_get_response(response: &ProtocolGetResponse) -> Vec<u8> {
@@ -1077,7 +1034,7 @@ pub fn decode_protocol_get_response(
     if bytes.len() < 2 {
         return Err(LegacyProtocolError::ShortBuffer);
     }
-    let status = u16::from_be_bytes(bytes[..2].try_into().expect("fixed-width slice"));
+    let status = read_u16_be(bytes, 0)?;
     if status != LegacyReturnCode::Success as u16 {
         if bytes.len() != 2 {
             return Err(LegacyProtocolError::ShortBuffer);
@@ -1142,20 +1099,15 @@ fn decode_protocol_checks(
         if bytes.len() < used + 2 {
             return Err(LegacyProtocolError::ShortBuffer);
         }
-        let attr = u16::from_be_bytes(bytes[used..used + 2].try_into().expect("fixed-width slice"));
+        let attr = read_u16_be(bytes, used)?;
         used += 2;
         let (value, value_used) = decode_protocol_slice(&bytes[used..])?;
         used += value_used;
         if bytes.len() < used + 4 {
             return Err(LegacyProtocolError::ShortBuffer);
         }
-        let datatype =
-            u16::from_be_bytes(bytes[used..used + 2].try_into().expect("fixed-width slice"));
-        let predicate = u16::from_be_bytes(
-            bytes[used + 2..used + 4]
-                .try_into()
-                .expect("fixed-width slice"),
-        );
+        let datatype = read_u16_be(bytes, used)?;
+        let predicate = read_u16_be(bytes, used + 2)?;
         used += 4;
         checks.push(ProtocolAttributeCheck {
             attr,
@@ -1189,7 +1141,7 @@ fn decode_protocol_funcalls(
         if bytes.len() < used + 3 {
             return Err(LegacyProtocolError::ShortBuffer);
         }
-        let attr = u16::from_be_bytes(bytes[used..used + 2].try_into().expect("fixed-width slice"));
+        let attr = read_u16_be(bytes, used)?;
         let name = bytes[used + 2];
         used += 3;
         let (arg1, arg1_used) = decode_protocol_slice(&bytes[used..])?;
@@ -1197,16 +1149,14 @@ fn decode_protocol_funcalls(
         if bytes.len() < used + 2 {
             return Err(LegacyProtocolError::ShortBuffer);
         }
-        let arg1_datatype =
-            u16::from_be_bytes(bytes[used..used + 2].try_into().expect("fixed-width slice"));
+        let arg1_datatype = read_u16_be(bytes, used)?;
         used += 2;
         let (arg2, arg2_used) = decode_protocol_slice(&bytes[used..])?;
         used += arg2_used;
         if bytes.len() < used + 2 {
             return Err(LegacyProtocolError::ShortBuffer);
         }
-        let arg2_datatype =
-            u16::from_be_bytes(bytes[used..used + 2].try_into().expect("fixed-width slice"));
+        let arg2_datatype = read_u16_be(bytes, used)?;
         used += 2;
         funcalls.push(ProtocolFuncall {
             attr,
