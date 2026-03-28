@@ -291,7 +291,7 @@
 - Kind: `outcome`
 - End commit: `801d20f`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+  - no code changes in `worktrees/dist-control-plane`
 - Evidence summary:
   - the worker again reported no file changes
   - the worker named broad implementation design, not missing protocol facts,
