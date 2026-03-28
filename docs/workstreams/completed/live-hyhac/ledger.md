@@ -607,7 +607,7 @@
 - Kind: `outcome`
 - End commit: `2641a75`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - no code changes in `worktrees/admin-server`
   - read-only review against
     `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/main.rs`
     and `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
