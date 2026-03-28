@@ -255,7 +255,10 @@ fn turmoil_recovery_preserves_delete_retry_then_put_visibility_after_replica_out
             },
         )
         .await;
-        assert!(failed_delete.is_err(), "expected replica outage to abort delete");
+        assert!(
+            failed_delete.is_err(),
+            "expected replica outage to abort delete"
+        );
 
         for runtime in [&runtime1, &runtime2] {
             assert_eq!(
@@ -742,5 +745,160 @@ fn madsim_recovery_preserves_delete_group_retry_then_put_visibility_after_replic
             }
             other => panic!("unexpected retained record after recovery: {other:?}"),
         }
+    });
+}
+
+#[cfg(madsim)]
+#[test]
+fn madsim_recovery_preserves_conditional_put_retry_then_delete_visibility_after_replica_outage() {
+    let runtime = madsim::runtime::Runtime::with_seed_and_config(23, madsim::Config::default());
+
+    runtime.block_on(async move {
+        let (transport, runtime1, runtime2) =
+            distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
+
+        let conditional_key = (0..65536)
+            .map(|i| format!("madsim-recovery-conditional-put-{i}"))
+            .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 1)
+            .expect("expected a key routed to node 1");
+        let survivor_key = format!("{conditional_key}-survivor");
+
+        for (key, views) in [(&conditional_key, 19), (&survivor_key, 12)] {
+            let put = HyperdexClientService::handle(
+                runtime1.as_ref(),
+                ClientRequest::Put {
+                    space: "profiles".to_owned(),
+                    key: Bytes::from(key.as_bytes().to_vec()),
+                    mutations: vec![Mutation::Set(Attribute {
+                        name: "profile_views".to_owned(),
+                        value: Value::Int(views),
+                    })],
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(put, ClientResponse::Unit);
+        }
+
+        madsim::time::sleep(Duration::from_millis(5)).await;
+        transport.set_unavailable(2, true).await;
+        madsim::time::sleep(Duration::from_millis(5)).await;
+
+        let failed_conditional_put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::ConditionalPut {
+                space: "profiles".to_owned(),
+                key: Bytes::from(conditional_key.as_bytes().to_vec()),
+                checks: vec![Check {
+                    attribute: "profile_views".to_owned(),
+                    predicate: Predicate::Equal,
+                    value: Value::Int(19),
+                }],
+                mutations: vec![
+                    Mutation::Set(Attribute {
+                        name: "profile_views".to_owned(),
+                        value: Value::Int(30),
+                    }),
+                    Mutation::Numeric {
+                        attribute: "profile_views".to_owned(),
+                        op: data_model::NumericOp::Add,
+                        operand: 5,
+                    },
+                ],
+            },
+        )
+        .await;
+        assert!(
+            failed_conditional_put.is_err(),
+            "expected replica outage to abort conditional put"
+        );
+
+        for runtime in [&runtime1, &runtime2] {
+            assert_eq!(
+                direct_local_profile_views(runtime.as_ref(), &conditional_key).await,
+                Some(19)
+            );
+            assert_eq!(
+                direct_local_profile_views(runtime.as_ref(), &survivor_key).await,
+                Some(12)
+            );
+        }
+
+        let during_outage = BTreeMap::from([
+            (conditional_key.clone(), 19_i64),
+            (survivor_key.clone(), 12_i64),
+        ]);
+        assert_search_and_count_match_model(runtime1.as_ref(), 1, &during_outage).await;
+        assert_search_and_count_match_model(runtime2.as_ref(), 1, &during_outage).await;
+
+        transport.set_unavailable(2, false).await;
+        madsim::time::sleep(Duration::from_millis(5)).await;
+
+        let retried_conditional_put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::ConditionalPut {
+                space: "profiles".to_owned(),
+                key: Bytes::from(conditional_key.as_bytes().to_vec()),
+                checks: vec![Check {
+                    attribute: "profile_views".to_owned(),
+                    predicate: Predicate::Equal,
+                    value: Value::Int(19),
+                }],
+                mutations: vec![
+                    Mutation::Set(Attribute {
+                        name: "profile_views".to_owned(),
+                        value: Value::Int(30),
+                    }),
+                    Mutation::Numeric {
+                        attribute: "profile_views".to_owned(),
+                        op: data_model::NumericOp::Add,
+                        operand: 5,
+                    },
+                ],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(retried_conditional_put, ClientResponse::Unit);
+
+        for runtime in [&runtime1, &runtime2] {
+            assert_eq!(
+                direct_local_profile_views(runtime.as_ref(), &conditional_key).await,
+                Some(35)
+            );
+        }
+
+        let after_retry = BTreeMap::from([
+            (conditional_key.clone(), 35_i64),
+            (survivor_key.clone(), 12_i64),
+        ]);
+        assert_search_and_count_match_model(runtime1.as_ref(), 1, &after_retry).await;
+        assert_search_and_count_match_model(runtime2.as_ref(), 1, &after_retry).await;
+
+        let delete = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Delete {
+                space: "profiles".to_owned(),
+                key: Bytes::from(conditional_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(delete, ClientResponse::Unit);
+
+        for runtime in [&runtime1, &runtime2] {
+            assert_eq!(
+                direct_local_profile_views(runtime.as_ref(), &conditional_key).await,
+                None
+            );
+            assert_eq!(
+                direct_local_profile_views(runtime.as_ref(), &survivor_key).await,
+                Some(12)
+            );
+        }
+
+        let after_delete = BTreeMap::from([(survivor_key.clone(), 12_i64)]);
+        assert_search_and_count_match_model(runtime1.as_ref(), 1, &after_delete).await;
+        assert_search_and_count_match_model(runtime2.as_ref(), 1, &after_delete).await;
     });
 }
