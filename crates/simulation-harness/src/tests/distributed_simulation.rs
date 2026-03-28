@@ -215,6 +215,154 @@ fn turmoil_recovery_preserves_delete_group_retry_then_put_visibility_after_repli
 }
 
 #[test]
+fn turmoil_recovery_preserves_delete_retry_then_put_visibility_after_replica_outage() {
+    let mut sim = turmoil::Builder::new().build();
+
+    sim.client("cluster", async move {
+        let (transport, runtime1, runtime2) =
+            distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
+
+        let delete_key = (0..65536)
+            .map(|i| format!("recovery-delete-{i}"))
+            .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 1)
+            .expect("expected a key routed to node 1");
+        let survivor_key = format!("{delete_key}-survivor");
+
+        for (key, views) in [(&delete_key, 61), (&survivor_key, 12)] {
+            let put = HyperdexClientService::handle(
+                runtime1.as_ref(),
+                ClientRequest::Put {
+                    space: "profiles".to_owned(),
+                    key: Bytes::from(key.as_bytes().to_vec()),
+                    mutations: vec![Mutation::Set(Attribute {
+                        name: "profile_views".to_owned(),
+                        value: Value::Int(views),
+                    })],
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(put, ClientResponse::Unit);
+        }
+
+        transport.set_unavailable(2, true).await;
+
+        let failed_delete = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Delete {
+                space: "profiles".to_owned(),
+                key: Bytes::from(delete_key.as_bytes().to_vec()),
+            },
+        )
+        .await;
+        assert!(failed_delete.is_err(), "expected replica outage to abort delete");
+
+        for runtime in [&runtime1, &runtime2] {
+            assert_eq!(
+                direct_local_profile_views(runtime.as_ref(), &delete_key).await,
+                Some(61)
+            );
+            assert_eq!(
+                direct_local_profile_views(runtime.as_ref(), &survivor_key).await,
+                Some(12)
+            );
+        }
+
+        let during_outage =
+            BTreeMap::from([(delete_key.clone(), 61_i64), (survivor_key.clone(), 12_i64)]);
+        assert_search_and_count_match_model(runtime1.as_ref(), 1, &during_outage).await;
+
+        transport.set_unavailable(2, false).await;
+
+        let retried_delete = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Delete {
+                space: "profiles".to_owned(),
+                key: Bytes::from(delete_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(retried_delete, ClientResponse::Unit);
+
+        for runtime in [&runtime1, &runtime2] {
+            assert_eq!(
+                direct_local_profile_views(runtime.as_ref(), &delete_key).await,
+                None
+            );
+        }
+
+        let after_delete = BTreeMap::from([(survivor_key.clone(), 12_i64)]);
+        assert_search_and_count_match_model(runtime1.as_ref(), 1, &after_delete).await;
+        assert_search_and_count_match_model(runtime2.as_ref(), 1, &after_delete).await;
+
+        let replacement_put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(delete_key.as_bytes().to_vec()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(88),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(replacement_put, ClientResponse::Unit);
+
+        let recovered_state =
+            BTreeMap::from([(delete_key.clone(), 88_i64), (survivor_key.clone(), 12_i64)]);
+        assert_search_and_count_match_model(runtime1.as_ref(), 1, &recovered_state).await;
+        assert_search_and_count_match_model(runtime2.as_ref(), 1, &recovered_state).await;
+
+        let recovered_record = HyperdexClientService::handle(
+            runtime2.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(delete_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        match recovered_record {
+            ClientResponse::Record(Some(record)) => {
+                assert_eq!(record.key, Bytes::from(delete_key.as_bytes().to_vec()));
+                assert_eq!(
+                    record.attributes.get("profile_views"),
+                    Some(&Value::Int(88))
+                );
+            }
+            other => panic!("unexpected recovered record after delete retry/put: {other:?}"),
+        }
+
+        let retained_record = HyperdexClientService::handle(
+            runtime2.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(survivor_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        match retained_record {
+            ClientResponse::Record(Some(record)) => {
+                assert_eq!(record.key, Bytes::from(survivor_key.as_bytes().to_vec()));
+                assert_eq!(
+                    record.attributes.get("profile_views"),
+                    Some(&Value::Int(12))
+                );
+            }
+            other => panic!("unexpected retained record after delete recovery: {other:?}"),
+        }
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[test]
 fn turmoil_delete_group_rejects_divergent_replica_snapshots() {
     let mut sim = turmoil::Builder::new().build();
 

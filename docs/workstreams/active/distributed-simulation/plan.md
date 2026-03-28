@@ -54,20 +54,25 @@ accepted in the right order when ownership changes around a node failure.
   merged tree.
 - [x] (2026-03-29 20:45Z) Landed delete-then-rewrite visibility proof after
   stale rejoin.
-- [ ] Land the next distributed recovery proof beyond the two stale-rejoin
-  visibility/order proofs.
+- [x] (2026-03-28 22:16Z) Landed single-key delete retry/rewrite recovery
+  proof after replica outage.
+- [ ] Land the next distributed recovery proof beyond the stale-rejoin,
+  delete-group, mixed conditional-put, and single-key delete recovery cases.
 
 ## Current Hypothesis
 
-Two stale-rejoin proofs are now in place: ordered writes and delete-then-
-rewrite visibility. The next high-value step is a different recovery shape,
-such as failover under replica loss, recovery with more than one stale peer, or
-another operation family that is not already covered by those two sequences.
+The workstream now covers five concrete recovery proofs on the merged tree:
+stale-rejoin ordered writes, stale-rejoin delete/rewrite visibility,
+delete-group retry after outage, mixed conditional-put retry after outage, and
+single-key delete retry after outage. The next high-value step is either a
+three-node failover/handoff proof or a Madsim proof for one of the non-
+delete-group outage recovery paths.
 
 ## Next Bounded Step
 
-Add the next deterministic Turmoil or Madsim proof that extends recovery
-coverage beyond the current stale-rejoin write and delete/rewrite sequences.
+Add the next deterministic Turmoil or Madsim proof that exercises recovery with
+either three-node failover/handoff or non-delete-group outage recovery under
+Madsim.
 
 ## Surprises & Discoveries
 
@@ -89,3 +94,6 @@ coverage beyond the current stale-rejoin write and delete/rewrite sequences.
 - The second pass now proves a concrete visibility guarantee:
   after stale rejoin, authoritative `Put -> Delete -> Put` transitions are seen
   in order on the recovered node, with no stale resurrection across the delete.
+- The latest pass now proves that a single-key delete which fails during replica
+  outage rolls back cleanly, succeeds after recovery, and does not interfere
+  with a later rewrite observed on both replicas.
