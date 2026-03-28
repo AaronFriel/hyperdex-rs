@@ -1878,7 +1878,7 @@
 - Kind: `outcome`
 - End commit: `2fb432c`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
+  - no code changes in `worktrees/live-hyhac-post-follow`
 - Evidence summary:
   - the delegated product fork returned only a root-status restatement
   - the fresh post-follow worktree remained clean
