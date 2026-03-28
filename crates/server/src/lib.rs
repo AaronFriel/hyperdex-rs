@@ -1,17 +1,19 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use bytes::Bytes;
 use cluster_config::{
     ClusterConfig, ClusterNode, ConsensusBackend, PlacementBackend, StorageBackend,
     TransportBackend,
 };
 use control_plane::{Catalog, InMemoryCatalog};
 use data_model::{
-    parse_hyperdex_space, Attribute, Check, Mutation, NumericOp, Predicate, Record, Space, Value,
-    ValueKind,
+    parse_hyperdex_space, Attribute, AttributeDefinition, Check, Mutation, NumericOp, Predicate,
+    Record, Space, Value, ValueKind,
 };
 use data_plane::DataPlane;
 use engine_memory::MemoryEngine;
@@ -478,6 +480,7 @@ impl ClusterRuntime {
         key: bytes::Bytes,
         mutations: Vec<Mutation>,
     ) -> Result<DataPlaneResponse> {
+        let mutations = self.materialize_key_mutation(&space, &key, mutations)?;
         match self.data_plane.put(&space, key.clone(), &mutations)? {
             WriteResult::Written | WriteResult::Missing => {
                 self.replicate_put_to_secondaries(&space, &key, &mutations)
@@ -604,6 +607,7 @@ impl ClusterRuntime {
         checks: Vec<Check>,
         mutations: Vec<Mutation>,
     ) -> Result<DataPlaneResponse> {
+        let mutations = self.materialize_key_mutation(&space, &key, mutations)?;
         match self
             .data_plane
             .conditional_put(&space, key.clone(), &checks, &mutations)?
@@ -629,6 +633,35 @@ impl ClusterRuntime {
             }
             WriteResult::ConditionFailed => Ok(DataPlaneResponse::ConditionFailed),
         }
+    }
+
+    fn materialize_key_mutation(
+        &self,
+        space_name: &str,
+        key: &bytes::Bytes,
+        mut mutations: Vec<Mutation>,
+    ) -> Result<Vec<Mutation>> {
+        let space = self
+            .catalog
+            .get_space(space_name)?
+            .ok_or_else(|| anyhow!("unknown space `{space_name}`"))?;
+        let key_attribute = space.key_attribute.clone();
+        let already_present = mutations.iter().any(|mutation| match mutation {
+            Mutation::Set(attribute) => attribute.name == key_attribute,
+            _ => false,
+        });
+
+        if !already_present {
+            mutations.insert(
+                0,
+                Mutation::Set(Attribute {
+                    name: key_attribute,
+                    value: Value::Bytes(key.clone()),
+                }),
+            );
+        }
+
+        Ok(mutations)
     }
 
     pub async fn handle_internode_request(
@@ -2543,16 +2576,41 @@ fn legacy_named_value_from_record(value: &Value) -> Result<GetValue> {
     }
 }
 
+fn legacy_default_value_for_kind(kind: &ValueKind) -> Result<Value> {
+    match kind {
+        ValueKind::Bytes | ValueKind::String | ValueKind::Document => {
+            Ok(Value::Bytes(Bytes::new()))
+        }
+        ValueKind::Int => Ok(Value::Int(0)),
+        ValueKind::Float => Ok(Value::Float(0.0.into())),
+        ValueKind::List(_) => Ok(Value::List(Vec::new())),
+        ValueKind::Set(_) => Ok(Value::Set(BTreeSet::new())),
+        ValueKind::Map { .. } => Ok(Value::Map(BTreeMap::new())),
+        ValueKind::Bool | ValueKind::Timestamp(_) => {
+            Err(anyhow!("legacy daemon protocol does not support {kind:?} yet"))
+        }
+    }
+}
+
+fn legacy_record_value<'a>(
+    record: &'a Record,
+    attribute: &AttributeDefinition,
+) -> Result<Cow<'a, Value>> {
+    match record.attributes.get(&attribute.name) {
+        Some(value) => Ok(Cow::Borrowed(value)),
+        None => Ok(Cow::Owned(legacy_default_value_for_kind(&attribute.kind)?)),
+    }
+}
+
 fn legacy_named_attributes_from_record(space: &Space, record: &Record) -> Result<Vec<GetAttribute>> {
     space
         .attributes
         .iter()
-        .filter_map(|attribute| {
-            record.attributes.get(&attribute.name).map(|value| {
-                Ok(GetAttribute {
-                    name: attribute.name.clone(),
-                    value: legacy_named_value_from_record(value)?,
-                })
+        .map(|attribute| {
+            let value = legacy_record_value(record, attribute)?;
+            Ok(GetAttribute {
+                name: attribute.name.clone(),
+                value: legacy_named_value_from_record(value.as_ref())?,
             })
         })
         .collect()
@@ -3222,11 +3280,8 @@ fn legacy_protocol_values_from_record(space: &Space, record: &Record) -> Result<
         .attributes
         .iter()
         .map(|attribute| {
-            let value = record
-                .attributes
-                .get(&attribute.name)
-                .ok_or_else(|| anyhow!("record missing attribute {}", attribute.name))?;
-            legacy_protocol_value_from_kind(&attribute.kind, value)
+            let value = legacy_record_value(record, attribute)?;
+            legacy_protocol_value_from_kind(&attribute.kind, value.as_ref())
         })
         .collect()
 }
@@ -5945,6 +6000,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn client_put_materializes_key_attribute_for_search_and_count() {
+        let runtime = bootstrap_runtime();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first,\n\
+                    map(float, string) still_looking\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "still_looking".to_owned(),
+                    value: Value::Map(BTreeMap::new()),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+
+        let search = HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Search {
+                space: "profiles".to_owned(),
+                checks: vec![Check {
+                    attribute: "username".to_owned(),
+                    predicate: Predicate::Equal,
+                    value: Value::Bytes(Bytes::from_static(b"ada")),
+                }],
+            },
+        )
+        .await
+        .unwrap();
+        assert!(matches!(search, ClientResponse::SearchResult(records) if records.len() == 1));
+
+        let count = HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Count {
+                space: "profiles".to_owned(),
+                checks: vec![Check {
+                    attribute: "username".to_owned(),
+                    predicate: Predicate::Equal,
+                    value: Value::Bytes(Bytes::from_static(b"ada")),
+                }],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(count, ClientResponse::Count(1));
+    }
+
+    #[tokio::test]
     async fn legacy_get_returns_record_attributes() {
         let runtime = bootstrap_runtime();
         HyperdexAdminService::handle(
@@ -6004,6 +6122,76 @@ mod tests {
         let response = decode_protocol_get_response(&body).unwrap();
         assert_eq!(response.status, LegacyReturnCode::Success as u16);
         assert_eq!(response.values, vec![b"Ada".to_vec(), 5_i64.to_le_bytes().to_vec()]);
+    }
+
+    #[tokio::test]
+    async fn legacy_get_fills_defaults_for_sparse_record_attributes() {
+        let runtime = bootstrap_runtime();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first,\n\
+                    int profile_views,\n\
+                    list(string) pending_requests,\n\
+                    set(int) friendids,\n\
+                    map(string, int) upvotes\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+                mutations: vec![
+                    Mutation::Set(Attribute {
+                        name: "username".to_owned(),
+                        value: Value::Bytes(Bytes::from_static(b"ada")),
+                    }),
+                    Mutation::Set(Attribute {
+                        name: "first".to_owned(),
+                        value: Value::String("Ada".to_owned()),
+                    }),
+                ],
+            },
+        )
+        .await
+        .unwrap();
+
+        let (header, body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqGet,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 19,
+            },
+            &legacy_request_body(19, encode_protocol_get_request(b"ada")),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(header.message_type, LegacyMessageType::RespGet);
+        let response = decode_protocol_get_response(&body).unwrap();
+        assert_eq!(response.status, LegacyReturnCode::Success as u16);
+        assert_eq!(
+            response.values,
+            vec![
+                b"Ada".to_vec(),
+                0_i64.to_le_bytes().to_vec(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            ]
+        );
     }
 
     #[tokio::test]
