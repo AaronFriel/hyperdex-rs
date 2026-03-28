@@ -183,6 +183,33 @@ impl Default for SpaceOptions {
     }
 }
 
+pub fn format_hyperdex_space(space: &Space) -> String {
+    let mut lines = Vec::new();
+    lines.push(format!("space {}", space.name));
+    lines.push(format!("key {}", space.key_attribute));
+    lines.push("attributes".to_owned());
+
+    for attribute in &space.attributes {
+        lines.push(format!(
+            "    {} {},",
+            format_value_kind(&attribute.kind),
+            attribute.name
+        ));
+    }
+
+    for subspace in &space.subspaces {
+        lines.push(format!("subspace {}", subspace.dimensions.join(", ")));
+    }
+
+    lines.push(format!(
+        "tolerate {} failures",
+        space.options.fault_tolerance
+    ));
+    lines.push(format!("create {} partitions", space.options.partitions));
+    lines.push(String::new());
+    lines.join("\n")
+}
+
 pub fn parse_hyperdex_space(input: &str) -> Result<Space, DataModelError> {
     let mut name = None;
     let mut key_attribute = None;
@@ -307,6 +334,7 @@ fn parse_attribute_definition(input: &str) -> Result<AttributeDefinition, DataMo
 
 fn parse_value_kind(input: &str) -> Result<ValueKind, DataModelError> {
     match input {
+        "bool" => return Ok(ValueKind::Bool),
         "string" => return Ok(ValueKind::String),
         "int" | "int64" => return Ok(ValueKind::Int),
         "float" => return Ok(ValueKind::Float),
@@ -333,12 +361,7 @@ fn parse_value_kind(input: &str) -> Result<ValueKind, DataModelError> {
         .strip_prefix("map(")
         .and_then(|rest| rest.strip_suffix(')'))
     {
-        let mut parts = inner.splitn(2, ',');
-        let key = parts
-            .next()
-            .ok_or_else(|| DataModelError::InvalidSchema(input.to_owned()))?;
-        let value = parts
-            .next()
+        let (key, value) = split_top_level_once(inner, ',')
             .ok_or_else(|| DataModelError::InvalidSchema(input.to_owned()))?;
         return Ok(ValueKind::Map {
             key: Box::new(parse_value_kind(key.trim())?),
@@ -369,6 +392,55 @@ fn parse_value_kind(input: &str) -> Result<ValueKind, DataModelError> {
     Err(DataModelError::InvalidSchema(format!(
         "unsupported type expression: {input}"
     )))
+}
+
+fn split_top_level_once(input: &str, delimiter: char) -> Option<(&str, &str)> {
+    let mut depth = 0usize;
+
+    for (idx, ch) in input.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            _ if ch == delimiter && depth == 0 => {
+                return Some((&input[..idx], &input[idx + ch.len_utf8()..]));
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+fn format_value_kind(kind: &ValueKind) -> String {
+    match kind {
+        ValueKind::Bool => "bool".to_owned(),
+        ValueKind::Int => "int".to_owned(),
+        ValueKind::Float => "float".to_owned(),
+        ValueKind::Bytes => "bytes".to_owned(),
+        ValueKind::String => "string".to_owned(),
+        ValueKind::Document => "document".to_owned(),
+        ValueKind::Timestamp(unit) => format!("timestamp({})", format_time_unit(*unit)),
+        ValueKind::List(inner) => format!("list({})", format_value_kind(inner)),
+        ValueKind::Set(inner) => format!("set({})", format_value_kind(inner)),
+        ValueKind::Map { key, value } => {
+            format!(
+                "map({}, {})",
+                format_value_kind(key),
+                format_value_kind(value)
+            )
+        }
+    }
+}
+
+fn format_time_unit(unit: TimeUnit) -> &'static str {
+    match unit {
+        TimeUnit::Second => "second",
+        TimeUnit::Minute => "minute",
+        TimeUnit::Hour => "hour",
+        TimeUnit::Day => "day",
+        TimeUnit::Week => "week",
+        TimeUnit::Month => "month",
+    }
 }
 
 #[cfg(test)]

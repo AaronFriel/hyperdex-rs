@@ -11,3 +11,6 @@ bytes.workspace = true
 ordered-float.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+hegel = { package = "hegeltest", version = "0.2.6" }
