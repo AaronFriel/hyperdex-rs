@@ -33,7 +33,7 @@ live failures meaningful instead of noisy.
 ## Goal
 
 Create a pure-Rust HyperDex replacement at
-`/home/friel/c/aaronfriel/hyperdex-rs` that preserves separate coordinator and
+`this repository` that preserves separate coordinator and
 daemon processes, exposes both a legacy HyperDex-compatible frontend and a
 modern gRPC frontend, forms a real distributed cluster, passes the `hyhac`
 test suite against a live deployment, and then keeps expanding the system with
