@@ -1,0 +1,1 @@
+mod hegel_properties;

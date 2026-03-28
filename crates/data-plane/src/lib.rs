@@ -83,3 +83,6 @@ impl DataPlane {
         Ok(self.placement.locate(key, &layout)?.primary)
     }
 }
+
+#[cfg(test)]
+mod tests;

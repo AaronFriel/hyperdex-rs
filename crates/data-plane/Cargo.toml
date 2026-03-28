@@ -13,3 +13,7 @@ control-plane = { path = "../control-plane" }
 data-model = { path = "../data-model" }
 placement-core = { path = "../placement-core" }
 storage-core = { path = "../storage-core" }
+
+[dev-dependencies]
+cluster-config = { path = "../cluster-config" }
+hegel = { package = "hegeltest", version = "0.3.4" }
