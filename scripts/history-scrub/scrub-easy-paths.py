@@ -10,6 +10,7 @@ TARGET = HOME_PREFIX
 REPO_PREFIX = f"{HOME_PREFIX}/c/aaronfriel/hyperdex-rs/"
 REPO_ROOT = REPO_PREFIX[:-1]
 REPLACEMENTS = (
+    (f"{HOME_PREFIX}/.cargo", "$CARGO_HOME"),
     (f"{HOME_PREFIX}/c/aaronfriel/HyperDex", "HyperDex"),
     (f"{HOME_PREFIX}/HyperDex", "HyperDex"),
     (f"{HOME_PREFIX}/c/aaronfriel/hyhac", "hyhac"),

@@ -77,28 +77,29 @@ in an explicit later bucket.
   rewritten-history reduction.
 - [x] (2026-03-28 19:44Z) Reconciled the first owned pass onto `main` and
   revalidated the counts on the merged branch.
+- [x] (2026-03-28 22:19Z) Expanded the history scrubber to remove the
+  cargo-home residual bucket from rewritten history on the rebased baseline.
 
 ## Current Hypothesis
 
-The easy repository-local bucket is now gone from the current tree on `main`.
-The remaining work is no longer broad search-and-replace; it is a narrower
-pass over the deferred external-local bucket, especially HyperDex and `hyhac`
-sibling-repo references in historical ledgers and the two live test-fixture
-paths in `crates/server/tests/dist_multiprocess_harness.rs`. The remaining
-`repo_local_refs=2` reported by the rewrite rehearsal appears to be a
-counter-accounting defect, not a surviving easy-path match.
+The rebased `main` baseline now has zero machine-specific home-directory
+references in the current tree outside the excluded research area. The next
+real residue was the historical cargo-home bucket, mostly old
+async-modernization notes that named the tonic-build source under a
+machine-specific cargo registry path. That bucket is now handled by the rewrite
+scrubber, which cuts the rewritten-history count on the current baseline from
+`28` to `20` total references. The remaining `repo_local_refs=3` reported by
+the rewrite rehearsal still looks separate from that cargo-home bucket and
+likely needs a narrower accounting or residual-pass follow-up.
 
 ## Next Bounded Step
 
-Pick one external-local sub-bucket and remove it cleanly:
+Inspect the remaining rewritten-history residue after the cargo-home reduction:
 
-- either convert the two live test-fixture paths in
-  `crates/server/tests/dist_multiprocess_harness.rs` to environment-driven or
-  repository-relative discovery
-- or reduce the historical HyperDex and `hyhac` command/source references in
-  archived ledgers without damaging their evidence value
-- and tighten the history counter so the rewrite rehearsal reports the same
-  repo-local count as the direct debug grep
+- identify the three remaining `repo_local_refs` and determine whether they are
+  actual surviving paths or a counting defect
+- then choose the next bounded residual bucket from the remaining `17`
+  external-local rewritten-history references
 
 ## Surprises & Discoveries
 
@@ -137,3 +138,10 @@ Pick one external-local sub-bucket and remove it cleanly:
     `external_local_refs=101`
   - rewrite rehearsal: `total_refs=2377`, `repo_local_refs=2`,
     `external_local_refs=2375`
+- On the rebased `main` baseline after later scrub work:
+  - current tree: `total_refs=0`, `repo_local_refs=0`,
+    `external_local_refs=0`
+  - rewrite rehearsal before the cargo-home expansion:
+    `total_refs=28`, `repo_local_refs=3`, `external_local_refs=25`
+  - rewrite rehearsal after the cargo-home expansion:
+    `total_refs=20`, `repo_local_refs=3`, `external_local_refs=17`
