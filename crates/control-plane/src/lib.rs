@@ -12,6 +12,7 @@ pub trait Catalog: Send + Sync {
     fn list_spaces(&self) -> Result<Vec<SpaceName>>;
     fn get_space(&self, name: &str) -> Result<Option<Space>>;
     fn register_daemon(&self, node: ClusterNode) -> Result<bool>;
+    fn replace_daemons(&self, nodes: Vec<ClusterNode>) -> Result<bool>;
     fn layout(&self) -> Result<ClusterLayout>;
 }
 
@@ -60,6 +61,17 @@ impl Catalog for InMemoryCatalog {
             Some(existing) => existing != node,
             None => true,
         };
+        Ok(changed)
+    }
+
+    fn replace_daemons(&self, nodes: Vec<ClusterNode>) -> Result<bool> {
+        let mut guard = self.nodes.write();
+        let next = nodes
+            .into_iter()
+            .map(|node| (node.id, node))
+            .collect::<BTreeMap<_, _>>();
+        let changed = *guard != next;
+        *guard = next;
         Ok(changed)
     }
 

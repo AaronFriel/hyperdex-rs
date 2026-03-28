@@ -869,9 +869,7 @@ impl ClusterRuntime {
     }
 
     fn apply_config_view(&self, view: &ConfigView) -> Result<()> {
-        for node in &view.cluster.nodes {
-            self.catalog.register_daemon(node.clone())?;
-        }
+        self.catalog.replace_daemons(view.cluster.nodes.clone())?;
 
         *self.cluster_config.lock().expect("cluster config poisoned") = view.cluster.clone();
 

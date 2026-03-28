@@ -559,6 +559,86 @@ async fn runtime_register_daemon_updates_config_and_layout() {
 }
 
 #[tokio::test]
+async fn apply_config_view_removes_departed_nodes_from_routing_layout() {
+    let stale_config = ClusterConfig {
+        nodes: vec![
+            ClusterNode {
+                id: 1,
+                host: "10.0.0.1".to_owned(),
+                control_port: 1982,
+                data_port: 2012,
+            },
+            ClusterNode {
+                id: 2,
+                host: "10.0.0.2".to_owned(),
+                control_port: 2982,
+                data_port: 3012,
+            },
+            ClusterNode {
+                id: 3,
+                host: "10.0.0.3".to_owned(),
+                control_port: 3982,
+                data_port: 4012,
+            },
+        ],
+        replicas: 1,
+        ..ClusterConfig::default()
+    };
+    let runtime = ClusterRuntime::for_node(stale_config, 2).unwrap();
+    let profiles = parse_hyperdex_space(
+        "space profiles\n\
+         key username\n\
+         attributes\n\
+            string first,\n\
+            int profile_views\n\
+         tolerate 0 failures\n",
+    )
+    .unwrap();
+    HyperdexAdminService::handle(&runtime, AdminRequest::CreateSpace(profiles.clone()))
+        .await
+        .unwrap();
+
+    let stale_key = (0..65536)
+        .map(|i| format!("rejoin-routing-{i}"))
+        .find(|key| runtime.route_primary_for_space("profiles", key.as_bytes()).unwrap() == 3)
+        .expect("expected a key routed to departed node 3 before convergence");
+
+    runtime
+        .apply_config_view(&ConfigView {
+            version: 7,
+            stable_through: 7,
+            cluster: ClusterConfig {
+                nodes: vec![
+                    ClusterNode {
+                        id: 1,
+                        host: "10.0.0.1".to_owned(),
+                        control_port: 1982,
+                        data_port: 2012,
+                    },
+                    ClusterNode {
+                        id: 2,
+                        host: "10.0.0.2".to_owned(),
+                        control_port: 2982,
+                        data_port: 3012,
+                    },
+                ],
+                replicas: 1,
+                ..ClusterConfig::default()
+            },
+            spaces: vec![profiles],
+        })
+        .unwrap();
+
+    assert_eq!(runtime.catalog.layout().unwrap().nodes, vec![1, 2]);
+    assert_ne!(
+        runtime
+            .route_primary_for_space("profiles", stale_key.as_bytes())
+            .unwrap(),
+        3
+    );
+}
+
+#[tokio::test]
 async fn legacy_admin_space_add_success_maps_to_hyperdex_status() {
     let runtime = bootstrap_runtime();
 
