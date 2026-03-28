@@ -52,15 +52,15 @@ design.
   `worktrees/failure-testing` checkout for one owned fork.
 - [x] (2026-03-28 23:35Z) Landed a deterministic schema-convergence proof plus
   the required distributed-read fix.
-- [ ] Choose the next broken distributed assumption and repeat the cycle with
-  a similarly short validator.
+- [x] (2026-03-28 23:55Z) Landed rollback-on-failed-replication fixes for
+  writes and deletes in `f4e4215` and `4a3e876`.
+- [ ] Choose the next broken distributed assumption after schema convergence
+  and replica-loss rollback coverage.
 
 ## Current Hypothesis
 
-The first proof confirmed that schema convergence is a real distributed risk,
-not just a test gap. The next useful pass should target a different broken
-assumption, such as stale placement during a write path or a recovery-ordering
-problem.
+The highest-value next step is likely another mutation or routing assumption,
+because the rollback work now covers failed replicated writes and deletes.
 
 ## Next Bounded Step
 
@@ -84,5 +84,8 @@ exposes a real bug.
 
 ## Outcomes & Retrospective
 
-- The first pass found a real bug: distributed `Search` and `Count` would
-  abort if one live replica was behind on schema state.
+- The first three passes found real distributed bugs:
+  - schema-convergence reads could abort on a live but stale replica
+  - failed replicated writes could leak local primary state
+  - failed replicated deletes could remove primary state without a committed
+    replication result

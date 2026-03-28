@@ -30,7 +30,7 @@
 
 - Timestamp: `2026-03-28 23:35Z`
 - Kind: `outcome`
-- End commit: `pending root commit`
+- End commit: `adc5b25`
 - Artifact location:
   - `crates/server/src/lib.rs`
   - `crates/simulation-harness/src/tests/mod.rs`
@@ -46,3 +46,40 @@
 - Disposition: `advance`
 - Next move: pick the next distributed assumption and add the next adversarial
   proof.
+
+### Entry `flt-002` - Outcome
+
+- Timestamp: `2026-03-28 23:55Z`
+- Kind: `outcome`
+- End commit: `f4e4215`
+- Artifact location:
+  - `crates/server/src/lib.rs`
+  - `crates/simulation-harness/src/tests/mod.rs`
+- Evidence summary:
+  - Added `turmoil_reverts_primary_put_when_replica_transport_fails`.
+  - The new proof exposed a bug where failed replicated writes could still
+    leave a locally visible record on the primary.
+  - The primary write path now restores the prior local record when replica
+    fanout fails.
+- Conclusion: failed replicated writes now roll back cleanly instead of
+  leaking primary-local state.
+- Disposition: `advance`
+- Next move: test another mutation path under replica-loss conditions.
+
+### Entry `flt-003` - Outcome
+
+- Timestamp: `2026-03-28 23:55Z`
+- Kind: `outcome`
+- End commit: `4a3e876`
+- Artifact location:
+  - `crates/server/src/lib.rs`
+  - `crates/simulation-harness/src/tests/mod.rs`
+- Evidence summary:
+  - Added `turmoil_reverts_primary_delete_when_replica_transport_fails`.
+  - The new proof exposed a bug where failed replicated deletes removed the
+    primary record without a committed replication result.
+  - The primary delete path now restores the prior local record when replica
+    fanout fails.
+- Conclusion: failed replicated deletes now match the write rollback contract.
+- Disposition: `advance`
+- Next move: choose the next distinct routing or mutation assumption to break.

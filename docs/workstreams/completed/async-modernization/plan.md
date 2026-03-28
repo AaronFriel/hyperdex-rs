@@ -53,20 +53,19 @@ edits.
   `worktrees/async-modernization` checkout for one owned fork.
 - [x] (2026-03-28 23:35Z) Removed `async_trait` from the admin/client protocol
   service traits and their server implementations in `ef0879f`.
-- [ ] Choose the next meaningful cross-crate surface after the protocol traits
-  and repeat the conversion with a similarly small validator.
+- [x] (2026-03-28 23:55Z) Removed `async_trait` from `consensus-core` and then
+  from the transport boundary itself in `c2b2c10` and `5777625`.
 
 ## Current Hypothesis
 
-The protocol service boundary was a good first target. The next useful pass is
-likely in transport or consensus traits, where the cross-crate surface is
-still shared enough to matter and still small enough to land cleanly.
+The current phase is complete. The remaining async-trait usage in this area is
+limited to tonic-generated impls, which are not a worthwhile cleanup target on
+their own.
 
 ## Next Bounded Step
 
-Pick the next cross-crate async trait surface after the protocol traits,
-convert it to native Rust async traits end to end, and validate the result
-without broad unrelated refactoring.
+None in this phase. Promote a follow-up only if there is a reason to redesign
+the gRPC service layer beyond the current boxed-future transport interface.
 
 ## Surprises & Discoveries
 
@@ -87,3 +86,6 @@ without broad unrelated refactoring.
 - `ef0879f` removed `async_trait` from `hyperdex-admin-protocol`,
   `hyperdex-client-protocol`, and the corresponding `ClusterRuntime`
   implementations.
+- `c2b2c10` removed `async_trait` from `consensus-core`.
+- `5777625` redesigned the transport boundary so `ClusterTransport::send`
+  returns a boxed future and no longer needs `async_trait`.

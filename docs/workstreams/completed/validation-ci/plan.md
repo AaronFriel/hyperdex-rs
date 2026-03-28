@@ -54,21 +54,19 @@ the live acceptance path still needs a practical compromise.
 - [x] (2026-03-28 18:15Z) Bound this workstream to the dedicated
   `worktrees/validation-ci` checkout and made local `act` execution part of
   the validator.
-- [ ] Land the first workflow set and verify it locally with `actionlint` plus
-  local `act` plus the equivalent cargo commands.
+- [x] (2026-03-28 23:55Z) Landed the first workflow set on `main` in
+  `54c406f` and validated it with `actionlint`, `act`, and the repository
+  helper scripts.
 
 ## Current Hypothesis
 
-The repository is missing basic CI structure, not suffering from an obscure CI
-bug. A first bounded workflow set should land quickly and immediately improve
-merge discipline.
+The first phase is complete. The next CI work, if promoted later, should be
+about widening coverage honestly rather than bootstrapping the basics.
 
 ## Next Bounded Step
 
-Install or bootstrap `act` if needed, create `.github/workflows` with
-formatting, clippy, workspace tests, and a bounded acceptance path derived
-from `scripts/verify-live-acceptance.sh`, then prove the implemented jobs
-locally with `act`.
+None in this phase. Promote a follow-up only when the current limited clippy
+scope or broader acceptance coverage becomes the next highest-value gap.
 
 ## Surprises & Discoveries
 
@@ -86,4 +84,6 @@ locally with `act`.
 
 ## Outcomes & Retrospective
 
-- Pending.
+- `54c406f` added act-backed GitHub Actions workflows plus CI helper scripts.
+- The workflow set is explicit about its current limits instead of pretending
+  to lint or test more than it really can under `act`.

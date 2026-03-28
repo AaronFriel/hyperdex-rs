@@ -55,14 +55,15 @@ panic behavior to explicit contracts and then set the next ratchet.
   active root priority set.
 - [x] (2026-03-28 18:15Z) Bound this workstream to the dedicated
   `worktrees/panic-hardening` checkout for one owned fork.
-- [ ] Land the first bounded no-panic and unwrap-reduction pass.
+- [x] (2026-03-28 23:55Z) Landed decoder hardening in `legacy-protocol` and
+  `hyperdex-admin-protocol` in `694545e` and `44f8c58`.
+- [ ] Choose the next public/runtime boundary after the two decoder passes.
 
 ## Current Hypothesis
 
-The best first pass is likely around coordinator or daemon startup, legacy
-frontend request handling, or protocol decode entry points, because those are
-public contracts where panic behavior is least acceptable and easiest to
-justify tightening first.
+After the decoder passes, the next useful boundary is likely `server/src/main.rs`
+startup or `legacy-frontend`, because those are still public/runtime edges with
+panic behavior and weaker contracts.
 
 ## Next Bounded Step
 
@@ -88,4 +89,7 @@ next Clippy ratchet from that result.
 
 ## Outcomes & Retrospective
 
-- Pending.
+- Two meaningful decoder boundaries are already hardened.
+- In both decoder passes, `#[no_panic]` proved harder than the raw
+  unwrap/expect removal itself, which suggests the next step should keep that
+  contract narrow and evidence-driven.

@@ -30,3 +30,30 @@
   - first workflow set on `main`
   - actionlint-clean YAML
   - one bounded commit ready for reconciliation
+
+### Entry `vci-001` - Outcome
+
+- Timestamp: `2026-03-28 23:55Z`
+- Kind: `outcome`
+- End commit: `54c406f`
+- Artifact location:
+  - `.actrc`
+  - `.github/workflows/actionlint.yml`
+  - `.github/workflows/lint.yml`
+  - `.github/workflows/test.yml`
+  - `.github/workflows/acceptance.yml`
+  - `scripts/check-clippy.sh`
+  - `scripts/check-workspace-tests.sh`
+  - `scripts/verify-live-acceptance.sh`
+- Evidence summary:
+  - `actionlint` passes on the workflow set.
+  - `act --list` sees the expected jobs.
+  - Root validation passed
+    `act -W .github/workflows/acceptance.yml -j quick-live-acceptance --pull=false`.
+  - The branch validation also passed the `format`, `clippy`, and `workspace`
+    jobs under `act`.
+- Conclusion: the repository now has a truthful first CI layer backed by local
+  `act` proof.
+- Disposition: `advance`
+- Next move: revisit CI only when it is time to widen the clippy scope or add
+  more acceptance coverage.

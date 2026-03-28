@@ -37,10 +37,8 @@ region-aware georeplication.
 
 ### Active
 
-1. [validation-ci](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/validation-ci/plan.md)
-2. [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/failure-testing/plan.md)
-3. [async-modernization](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/async-modernization/plan.md)
-4. [panic-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/panic-hardening/plan.md)
+1. [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/failure-testing/plan.md)
+2. [panic-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/panic-hardening/plan.md)
 
 ### Backlog
 
@@ -58,19 +56,12 @@ region-aware georeplication.
 
 ## Current Root Focus
 
-Reconcile substantive code from the four active workstreams, keep the root
-package small, and bias each coordination pass toward landed product changes
-instead of plan narration.
+Keep the large set of newly-landed code honest, keep the root package aligned
+with the actual repository state, and choose the next promotion after this
+round of validation, failure-testing, async cleanup, and panic hardening.
 
 ## Next Root Move
 
-Arm a watchdog, launch one owned fork per active workstream, and use fast
-validators for each fork:
-
-- `validation-ci`: build GitHub Actions and verify them locally with `act`
-- `failure-testing`: landed one deterministic schema-convergence proof; next
-  step is another broken-assumption proof after the current fix is reconciled
-- `async-modernization`: landed one native-async conversion; next step is the
-  next meaningful cross-crate surface after the protocol traits
-- `panic-hardening`: remove panic sites from a public/runtime boundary and add
-  the first practical `#[no_panic]` contract
+Archive the finished `validation-ci` and current `async-modernization` phase,
+keep `failure-testing` and `panic-hardening` active with the next bounded
+steps, and then decide which backlog priority to promote next.
