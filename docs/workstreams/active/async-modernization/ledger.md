@@ -111,7 +111,7 @@
 - Artifact location:
   - `docs/workstreams/active/async-modernization/plan.md`
   - `target/debug/build/transport-grpc-85a685a876548cf5/out/hyperdex.v1.rs`
-  - `/home/friel/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-build-0.12.3/src/server.rs`
+  - local tonic-build 0.12.3 server generator source
 - Evidence summary:
   - The remaining uses are only `#[tonic::async_trait]` in
     `crates/transport-grpc/src/lib.rs` and `crates/server/src/main.rs`.
