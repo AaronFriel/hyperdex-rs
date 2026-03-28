@@ -1658,7 +1658,7 @@
   `worktrees/live-hyhac-process-eof`
 - Start commit: `acfdcdc`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-process-eof` on
+  - `worktrees/live-hyhac-process-eof` on
     `live-hyhac-process-eof`
 - Mutable surface:
   - `crates/server/**`
