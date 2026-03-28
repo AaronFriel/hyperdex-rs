@@ -1587,7 +1587,7 @@
   `ClientGarbage` failure, or return the next exact coordinator-side mismatch
   with code and validators.
 - Owner: next forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-config-body`
+  `worktrees/live-hyhac-config-body`
 - Start commit: `1d6093c`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-config-body` on
