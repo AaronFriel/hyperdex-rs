@@ -484,7 +484,7 @@
 - Hypothesis: one substantial server worker can implement the full
   coordinator-side legacy admin path now that the codec and the exact server
   insertion points are both available.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Owner: dedicated worker in `worktrees/admin-server`
 - Start commit: `489de25`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
