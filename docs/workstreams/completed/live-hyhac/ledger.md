@@ -1788,7 +1788,7 @@
   `worktrees/live-hyhac-large-object`
 - Start commit: `19fc81f`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object`
+  - `worktrees/live-hyhac-large-object`
     on `live-hyhac-large-object`
 - Mutable surface:
   - `crates/server/**`
