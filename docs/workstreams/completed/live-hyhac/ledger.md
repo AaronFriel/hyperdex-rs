@@ -370,7 +370,7 @@
 - Kind: `outcome`
 - End commit: `f2da7e5`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - no code changes in `worktrees/admin-server`
 - Evidence summary:
   - the dedicated server worker was interrupted after the worktree stayed clean
     at `801d20f`
