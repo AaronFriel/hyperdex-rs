@@ -183,7 +183,7 @@
 - Owner: forked worker on `panic-hardening`
 - Start commit: `db696ce`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/panic-hardening`
+  - `worktrees/panic-hardening`
   - `panic-hardening`
 - Mutable surface:
   - `crates/server/src/lib.rs`
