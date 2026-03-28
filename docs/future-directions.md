@@ -6,7 +6,7 @@ active root AutoPlan board so the repository can preserve useful ideas without
 pretending they are all in flight at once.
 
 For grouping and dependency order, see
-[capability-ladder.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/capability-ladder.md).
+[capability-ladder.md](docs/capability-ladder.md).
 
 ## User-Prioritized Directions
 
