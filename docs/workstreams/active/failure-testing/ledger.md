@@ -333,3 +333,57 @@
 - Disposition: `advance`
 - Next move: push the same ownership-convergence pressure onto another mutation
   shape besides `Put`.
+
+### Entry `flt-010` - Outcome
+
+- Timestamp: `2026-03-29 21:05Z`
+- Kind: `outcome`
+- End commit: `74e7633`
+- Artifact location:
+  - `crates/transport-core/src/lib.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/simulation-harness/src/tests/mod.rs`
+- Evidence summary:
+  - Added
+    `turmoil_rejects_stale_local_delete_across_peer_outage_and_recovery`.
+  - The proof exposed a real bug: a peer with an older cluster view could still
+    veto the authoritative primary's mutation during validation.
+  - `DataPlaneRequest::ValidatePrimary` now carries `expected_cluster_size`, and
+    the runtime no longer lets a smaller stale cluster view block a newer one.
+  - The simulated transport now treats an unregistered simulated node as
+    `connection refused`, which matches the runtime's unavailable-peer path.
+  - Root validation passed with:
+    - `cargo test -p simulation-harness turmoil_rejects_stale_local_delete_across_peer_outage_and_recovery -- --nocapture`
+    - `cargo test -p server`
+- Conclusion: stale-primary delete validation now respects the newer cluster
+  view during recovery instead of letting the older view veto it.
+- Disposition: `advance`
+- Next move: push the ownership-convergence tests to another operation family,
+  likely `ConditionalPut` or a mixed multi-step mutation sequence.
+
+### Entry `flt-010` - Preregistration
+
+- Timestamp: `2026-03-29 20:40Z`
+- Kind: `preregister`
+- Hypothesis: another primary-only mutation shape near `Put`, most likely
+  `Delete` or `ConditionalPut`, may still accept stale local-primary state
+  during peer outage or recovery even though plain writes are now defended.
+- Owner: next forked worker on `failure-testing`
+- Start commit: `46949a1`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/failure-testing`
+  - `failure-testing`
+- Mutable surface:
+  - `crates/transport-core/**`
+  - `crates/server/**`
+  - `crates/simulation-harness/**`
+- Validator:
+  - fastest useful check:
+    one targeted deterministic simulation test for the chosen mutation shape
+  - strong checks:
+    - `cargo test -p simulation-harness`
+    - `cargo test -p server`
+- Expected artifacts:
+  - one new ownership-convergence proof outside the `Put` path
+  - a runtime fix if the proof exposes a bug
+  - one bounded commit ready for reconciliation

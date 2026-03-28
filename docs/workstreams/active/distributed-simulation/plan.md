@@ -52,18 +52,22 @@ accepted in the right order when ownership changes around a node failure.
   active board.
 - [x] (2026-03-29 20:25Z) Landed the first recovery-ordering proof on the
   merged tree.
-- [ ] Land the next distributed recovery proof beyond stale rejoin ordering.
+- [x] (2026-03-29 20:45Z) Landed delete-then-rewrite visibility proof after
+  stale rejoin.
+- [ ] Land the next distributed recovery proof beyond the two stale-rejoin
+  visibility/order proofs.
 
 ## Current Hypothesis
 
-The first stale-rejoin ordering proof is now in place. The next high-value
-step is another deterministic recovery scenario that couples node return or
-failover with a different operation family or with multi-node disagreement.
+Two stale-rejoin proofs are now in place: ordered writes and delete-then-
+rewrite visibility. The next high-value step is a different recovery shape,
+such as failover under replica loss, recovery with more than one stale peer, or
+another operation family that is not already covered by those two sequences.
 
 ## Next Bounded Step
 
 Add the next deterministic Turmoil or Madsim proof that extends recovery
-coverage beyond ordered writes after stale rejoin.
+coverage beyond the current stale-rejoin write and delete/rewrite sequences.
 
 ## Surprises & Discoveries
 
@@ -82,3 +86,6 @@ coverage beyond ordered writes after stale rejoin.
 - The first pass now proves a concrete recovery-ordering guarantee:
   a rejected stale local-primary write does not leak through recovery, and two
   later authoritative writes are observed in order on the recovered node.
+- The second pass now proves a concrete visibility guarantee:
+  after stale rejoin, authoritative `Put -> Delete -> Put` transitions are seen
+  in order on the recovered node, with no stale resurrection across the delete.

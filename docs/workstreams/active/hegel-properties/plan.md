@@ -22,15 +22,18 @@ behavior instead of leaving Hegel isolated to one or two narrow checks.
 
 ## Acceptance Evidence
 
-- `simulation-harness` gains another Hegel-backed property that exercises real
-  distributed behavior.
-- The Hegel properties are clearly aimed at logical-state coverage, not just a
-  rerun of a deterministic Turmoil scenario.
-- `cargo test -p simulation-harness` stays green after the property lands.
+- The repository gains another Hegel-backed property that exercises a real
+  correctness boundary.
+- The Hegel properties are clearly aimed at logical-state coverage or reusable
+  invariants, not just a rerun of a deterministic Turmoil scenario.
+- The relevant crate stays green after the property lands.
 
 ## Mutable Surface
 
-- `crates/simulation-harness/**`
+- the best crate for the property under test, such as:
+  - `crates/simulation-harness/**`
+  - `crates/placement-core/**`
+  - protocol or storage crates when the property belongs there
 - workstream files for this track
 
 ## Dependencies / Blockers
@@ -39,10 +42,10 @@ behavior instead of leaving Hegel isolated to one or two narrow checks.
 
 ## Plan Of Work
 
-Pick one distributed property family at a time and express it as a generated
-Hegel test over the real runtime. Favor logical query semantics, replicated
-state transitions, and operation-sequence behavior that would be tedious to
-cover by hand.
+Pick one correctness boundary at a time and express it as a generated Hegel
+test in the crate where that invariant naturally belongs. Favor logical query
+semantics, replicated state transitions, placement invariants, and other
+operation-sequence behavior that would be tedious to cover by hand.
 
 ## Progress
 
@@ -50,18 +53,24 @@ cover by hand.
   active board.
 - [x] (2026-03-29 20:05Z) Landed
   `hegel_distributed_runtime_preserves_logical_delete_group_search_and_count`.
-- [ ] Add the next Hegel property on a different distributed behavior family.
+- [x] (2026-03-29 20:35Z) Landed
+  `hegel_distributed_runtime_preserves_mixed_mutation_query_model`.
+- [x] (2026-03-29 20:55Z) Landed
+  `hegel_placement_strategies_preserve_replica_invariants_and_input_order_independence`
+  in `placement-core`.
+- [ ] Add the next Hegel property in another high-value correctness boundary.
 
 ## Current Hypothesis
 
-Hegel is best used here for generated logical-state checks over the real
-runtime: delete-group semantics, search/count consistency, routed mutation
-sequences, and eventually more transaction-like multi-step behavior.
+Hegel is best used here for generated logical-state checks and reusable
+invariants at multiple layers: runtime query semantics, mixed routed mutation
+sequences, placement invariants, and later protocol/storage behavior where the
+crate-local invariant is more natural than a full runtime simulation.
 
 ## Next Bounded Step
 
-Add the next Hegel property that covers a distinct distributed behavior family
-from the new delete-group/search/count proof.
+Add the next Hegel property in a different correctness boundary from the
+already-landed runtime and placement properties, ideally protocol or storage.
 
 ## Surprises & Discoveries
 
@@ -69,6 +78,8 @@ from the new delete-group/search/count proof.
   generated routed `Put`, `DeleteGroup`, and `Get` operations now prove that
   replicated `Search` and `Count` stay logically deduplicated from either
   runtime.
+- Hegel is no longer isolated to `simulation-harness`; `placement-core` now has
+  a generated invariant check for both placement strategies.
 
 ## Decision Log
 
@@ -81,4 +92,8 @@ from the new delete-group/search/count proof.
 ## Outcomes & Retrospective
 
 - `hegel_distributed_runtime_preserves_logical_delete_group_search_and_count`
-  is the first property in this dedicated track.
+  established the first runtime-level property in this track.
+- `hegel_distributed_runtime_preserves_mixed_mutation_query_model` broadened
+  runtime-level mixed-operation coverage.
+- `hegel_placement_strategies_preserve_replica_invariants_and_input_order_independence`
+  pushed Hegel into `placement-core`.

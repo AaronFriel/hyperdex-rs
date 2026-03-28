@@ -45,3 +45,85 @@
 - Disposition: `advance`
 - Next move: add another Hegel property on a distinct distributed behavior
   family.
+
+### Entry `hgl-002` - Outcome
+
+- Timestamp: `2026-03-29 20:35Z`
+- Kind: `outcome`
+- End commit: `a253e11`
+- Artifact location:
+  - `crates/simulation-harness/src/tests/mod.rs`
+- Evidence summary:
+  - Added `hegel_distributed_runtime_preserves_mixed_mutation_query_model`.
+  - The new property generates mixed routed operations across a replicated
+    two-node runtime:
+    - `Put`
+    - `ConditionalPut`
+    - `Delete`
+    - `Get`
+    - threshold `Search`
+    - threshold `Count`
+  - After every step it checks both runtimes against one logical model, so the
+    property covers routed mutation semantics plus query consistency across a
+    mixed operation sequence.
+  - Root validation passed with:
+    - `cargo test -p simulation-harness hegel_distributed_runtime_preserves_mixed_mutation_query_model -- --nocapture`
+- Conclusion: the Hegel track now has a broader mixed-operation runtime model,
+  not just the delete-group/search/count property.
+- Disposition: `advance`
+- Next move: push Hegel into another crate boundary where the invariant belongs.
+
+### Entry `hgl-003` - Outcome
+
+- Timestamp: `2026-03-29 20:55Z`
+- Kind: `outcome`
+- End commit: `fdd1158`
+- Artifact location:
+  - `crates/placement-core/Cargo.toml`
+  - `crates/placement-core/src/tests/mod.rs`
+  - `crates/placement-core/src/tests/hegel.rs`
+- Evidence summary:
+  - Added
+    `hegel_placement_strategies_preserve_replica_invariants_and_input_order_independence`.
+  - The property proves for generated layouts and keys that both
+    `RendezvousPlacement` and `HyperSpacePlacement` preserve core placement
+    invariants:
+    - `primary == replicas[0]`
+    - replica count is clamped correctly
+    - replica owners are unique
+    - every replica belongs to the layout
+    - partition metadata is in range
+  - It also proves both strategies are independent of input node order for the
+    same logical layout.
+  - Root validation passed with:
+    - `cargo test -p placement-core hegel_placement_strategies_preserve_replica_invariants_and_input_order_independence -- --nocapture`
+- Conclusion: Hegel now exercises a reusable correctness boundary in
+  `placement-core`, not only full-runtime behavior.
+- Disposition: `advance`
+- Next move: choose another crate-local invariant, ideally in protocol or
+  storage.
+
+### Entry `hgl-002` - Preregistration
+
+- Timestamp: `2026-03-29 20:40Z`
+- Kind: `preregister`
+- Hypothesis: Hegel can cover another distributed behavior family beyond
+  delete-group/search/count by mixing more replicated operations into one
+  generated state model.
+- Owner: next forked worker on `hegel-properties`
+- Start commit: `46949a1`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/simulation-applicability`
+  - `simulation-applicability`
+- Mutable surface:
+  - `crates/simulation-harness/**`
+  - workstream files for this track if needed
+- Validator:
+  - fastest useful check:
+    one targeted Hegel test for the new property
+  - strong checks:
+    - `cargo test -p simulation-harness`
+- Expected artifacts:
+  - one new Hegel-backed distributed property
+  - a green targeted validator
+  - one bounded commit ready for reconciliation

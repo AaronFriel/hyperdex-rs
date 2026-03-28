@@ -64,21 +64,22 @@ design.
   schema-gap behavior in `b6ae810`, `a4ea7d3`, `fb77107`, and `2b7d144`.
 - [x] (2026-03-29 20:25Z) Landed stale-local-primary rejection plus the
   peer-outage variant on the merged tree.
-- [ ] Choose the next ownership-convergence failure after stale-local-primary
-  write rejection.
+- [x] (2026-03-29 21:05Z) Landed stale-primary delete recovery hardening.
+- [ ] Choose the next ownership-convergence failure beyond `Put` and `Delete`.
 
 ## Current Hypothesis
 
-The next highest-value step is still ownership convergence, but the write path
-is now better defended. The next proof should stress a nearby operation shape:
-delete, conditional write, or another mutation that could still slip through
-while ownership changes under transport loss or recovery.
+The next highest-value step is still ownership convergence, but both `Put` and
+`Delete` are now better defended. The next proof should stress another nearby
+operation shape, most likely `ConditionalPut`, or a more complex sequence where
+ownership disagreement and recovery interact with multiple operations.
 
 ## Next Bounded Step
 
 Add the shortest honest deterministic proof for the next ownership-convergence
-operation shape after `Put`, and touch runtime code only if the proof shows the
-runtime can accept or expose incorrect state during ownership change.
+operation shape after `Put` and `Delete`, and touch runtime code only if the
+proof shows the runtime can accept or expose incorrect state during ownership
+change.
 
 ## Surprises & Discoveries
 
@@ -112,3 +113,6 @@ runtime can accept or expose incorrect state during ownership change.
   - distributed `Search` and `Count` needed to tolerate schema-gap replicas
   - distributed `DeleteGroup` needed to skip schema-gap replicas without
     silently skipping true transport failures
+- The newest pass found and fixed a third ownership-convergence bug:
+  - an older cluster view could still veto the authoritative primary's delete
+    during validation after outage and recovery
