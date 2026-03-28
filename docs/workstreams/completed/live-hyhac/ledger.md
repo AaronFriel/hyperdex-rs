@@ -1855,7 +1855,7 @@
 - Owner: delegated worker `019d316c-56ed-7b83-ade6-f5f83c32c7d9` (`Pauli`)
 - Start commit: `64104e7`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
+  - `worktrees/live-hyhac-post-follow`
     on `live-hyhac-post-follow`
 - Mutable surface:
   - `crates/server/**`
