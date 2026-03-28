@@ -1,5 +1,11 @@
 # AutoPlan: hyperdex-rs distributed HyperDex replacement
 
+This file is archived. It preserves the phase-1 root AutoPlan from the Hyhac
+compatibility and distributed-baseline effort. The active root AutoPlan is now
+[docs/autoplan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/autoplan.md).
+Some internal links below still reflect the phase-1 layout and should be read
+as historical context rather than the current filesystem contract.
+
 This root AutoPlan is a living document. The sections `Progress`,
 `Workstream Board`, `Current Root Focus`, `Next Root Move`,
 `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective`
@@ -12,12 +18,9 @@ document follows the fallback rules at
 
 ## Companion Files
 
-- Root loop ledger: [loop-ledger-hyperdex-rs.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/loop-ledger-hyperdex-rs.md)
-- Workstreams directory: [workstreams](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams)
-- `hyhac` compatibility notes: [hyhac-compatibility-surface.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/hyhac-compatibility-surface.md)
-- Paper notes: [papers-and-mvp-notes.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/papers-and-mvp-notes.md)
-- Future directions: [future-directions.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/future-directions.md)
-- Worktree inventory: [worktrees.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/worktrees.md)
+- Archived phase-1 ledger: [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/archive/phase-1/ledger.md)
+- Current root AutoPlan: [autoplan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/autoplan.md)
+- Current workstream index: [workstreams.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams.md)
 
 ## Purpose / Big Picture
 

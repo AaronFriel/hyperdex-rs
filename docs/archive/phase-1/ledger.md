@@ -1,5 +1,9 @@
 # Root Loop Ledger: hyperdex-rs
 
+This file is archived. It preserves the phase-1 root coordination history from
+the Hyhac compatibility and distributed-baseline effort. The active root
+ledger is now [docs/ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/ledger.md).
+
 This file is the orchestration ledger for the `hyperdex-rs` effort. It records
 root-level coordination moves, not every local edit.
 
