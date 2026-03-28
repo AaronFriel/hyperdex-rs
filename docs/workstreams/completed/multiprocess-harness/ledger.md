@@ -360,7 +360,7 @@
   `legacy_hyhac_large_object_probe_hits_clientgarbage_fast` without touching
   product code.
 - Owner: next forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire`
+  `worktrees/clientgarbage-wire`
 - Start commit: `4902f03`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on
