@@ -10,7 +10,7 @@
 - Owner: next forked worker on `recovery-ordering`
 - Start commit: `e76e696`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/recovery-ordering`
+  - `worktrees/recovery-ordering`
   - `recovery-ordering`
 - Mutable surface:
   - `crates/simulation-harness/**`
