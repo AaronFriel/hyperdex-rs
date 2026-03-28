@@ -1718,7 +1718,7 @@
   eof` failures are gone, or reduce it to the next exact daemon-side mismatch
   with code and validators.
 - Owner: next forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object`
+  `worktrees/live-hyhac-large-object`
 - Start commit: `5879fab`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object` on
