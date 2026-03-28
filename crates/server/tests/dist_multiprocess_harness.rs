@@ -2010,7 +2010,7 @@ fn grpc_route_runtime(
 
 #[tokio::test]
 #[serial]
-async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()> {
+async fn slow_coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let tempdir = TempDir::new()?;
     let mut coordinator_port = ReservedPort::new()?;
@@ -2158,7 +2158,7 @@ async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()>
 
 #[tokio::test]
 #[serial]
-async fn legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Result<()> {
+async fn slow_legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let tempdir = TempDir::new()?;
     let mut coordinator_port = ReservedPort::new()?;
@@ -2332,7 +2332,7 @@ async fn legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Resu
 
 #[tokio::test]
 #[serial]
-async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Result<()> {
+async fn slow_degraded_search_and_count_survive_one_daemon_process_shutdown() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let tempdir = TempDir::new()?;
     let mut coordinator_port = ReservedPort::new()?;
@@ -2531,7 +2531,7 @@ async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Resu
 
 #[tokio::test]
 #[serial]
-async fn legacy_admin_wait_until_stable_probe_reports_bootstrap_progress() -> Result<()> {
+async fn slow_legacy_admin_wait_until_stable_probe_reports_bootstrap_progress() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let mut proxy_port = ReservedPort::new()?;
     let proxy_address = localhost(proxy_port.port())?;
@@ -2613,7 +2613,8 @@ async fn legacy_admin_wait_until_stable_probe_reports_bootstrap_progress() -> Re
 
 #[tokio::test]
 #[serial]
-async fn legacy_admin_add_space_probe_completes_after_bootstrap_and_robust_call() -> Result<()> {
+async fn slow_legacy_admin_add_space_probe_completes_after_bootstrap_and_robust_call() -> Result<()>
+{
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let mut proxy_port = ReservedPort::new()?;
     let proxy_address = localhost(proxy_port.port())?;
@@ -2712,7 +2713,7 @@ async fn legacy_admin_add_space_probe_completes_after_bootstrap_and_robust_call(
 
 #[tokio::test]
 #[serial]
-async fn legacy_admin_add_space_succeeds_against_live_cluster() -> Result<()> {
+async fn slow_legacy_admin_add_space_succeeds_against_live_cluster() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
 
@@ -2727,7 +2728,7 @@ async fn legacy_admin_add_space_succeeds_against_live_cluster() -> Result<()> {
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_large_object_probe_hits_clientgarbage_fast() -> Result<()> {
+async fn slow_legacy_hyhac_large_object_probe_hits_clientgarbage_fast() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
 
@@ -2761,7 +2762,8 @@ async fn legacy_hyhac_large_object_probe_hits_clientgarbage_fast() -> Result<()>
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_large_object_probe_reports_no_daemon_traffic_after_startup() -> Result<()> {
+async fn slow_legacy_hyhac_large_object_probe_reports_no_daemon_traffic_after_startup() -> Result<()>
+{
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let capture_file = tempfile::NamedTempFile::new()?;
     let capture_path = capture_file.path().to_path_buf();
@@ -2800,7 +2802,7 @@ async fn legacy_hyhac_large_object_probe_reports_no_daemon_traffic_after_startup
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_large_object_probe_reports_immediate_unknownspace_before_deferred_loop(
+async fn slow_legacy_hyhac_large_object_probe_reports_immediate_unknownspace_before_deferred_loop(
 ) -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let capture_file = tempfile::NamedTempFile::new()?;
@@ -2873,7 +2875,8 @@ async fn legacy_hyhac_large_object_probe_reports_immediate_unknownspace_before_d
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup() -> Result<()> {
+async fn slow_legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup(
+) -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let capture_file = tempfile::NamedTempFile::new()?;
     let capture_path = capture_file.path().to_path_buf();
@@ -2954,7 +2957,7 @@ async fn legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setu
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair() -> Result<()> {
+async fn slow_legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let (
         _tempdir,
@@ -3054,7 +3057,7 @@ async fn legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair() 
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence() -> Result<()> {
+async fn slow_legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let mut proxy_port = ReservedPort::new()?;
     let proxy_address = localhost(proxy_port.port())?;
@@ -3139,7 +3142,7 @@ async fn legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence() 
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_integer_div_probe_turns_green_after_full_profiles_setup() -> Result<()> {
+async fn slow_legacy_hyhac_integer_div_probe_turns_green_after_full_profiles_setup() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
     let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
@@ -3202,7 +3205,7 @@ async fn legacy_hyhac_integer_div_probe_turns_green_after_full_profiles_setup() 
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_pooled_probe_turns_green_after_map_atomic_compatibility() -> Result<()> {
+async fn slow_legacy_hyhac_pooled_probe_turns_green_after_map_atomic_compatibility() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
     let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
@@ -3337,7 +3340,7 @@ async fn legacy_hyhac_pooled_probe_turns_green_after_map_atomic_compatibility() 
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_split_acceptance_suite_passes_live_cluster() -> Result<()> {
+async fn slow_legacy_hyhac_split_acceptance_suite_passes_live_cluster() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
 
     let admin_cluster = spawn_single_daemon_cluster().await?;
@@ -3478,7 +3481,7 @@ async fn legacy_hyhac_split_acceptance_suite_passes_live_cluster() -> Result<()>
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_split_acceptance_suite_passes_two_daemon_live_cluster() -> Result<()> {
+async fn slow_legacy_hyhac_split_acceptance_suite_passes_two_daemon_live_cluster() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
 
     let admin_cluster = spawn_two_daemon_cluster().await?;
@@ -3709,7 +3712,8 @@ async fn legacy_hyhac_split_acceptance_suite_passes_two_daemon_live_cluster() ->
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_map_int_int_add_probe_turns_green_after_full_profiles_setup() -> Result<()> {
+async fn slow_legacy_hyhac_map_int_int_add_probe_turns_green_after_full_profiles_setup(
+) -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
     let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
@@ -3760,7 +3764,7 @@ async fn legacy_hyhac_map_int_int_add_probe_turns_green_after_full_profiles_setu
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_map_string_string_prepend_probe_turns_green_after_full_profiles_setup(
+async fn slow_legacy_hyhac_map_string_string_prepend_probe_turns_green_after_full_profiles_setup(
 ) -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
@@ -3809,7 +3813,7 @@ async fn legacy_hyhac_map_string_string_prepend_probe_turns_green_after_full_pro
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_map_int_string_prepend_probe_turns_green_after_numeric_map_boundary(
+async fn slow_legacy_hyhac_map_int_string_prepend_probe_turns_green_after_numeric_map_boundary(
 ) -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
