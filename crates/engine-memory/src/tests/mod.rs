@@ -1,6 +1,8 @@
 use super::*;
 use data_model::{Attribute, Check, Mutation, Predicate};
 
+mod hegel;
+
 #[test]
 fn conditional_put_respects_checks() {
     let engine = MemoryEngine::new();
