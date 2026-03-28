@@ -527,7 +527,7 @@
   in `worktrees/full-schema-roundtrip-repro`
 - Start commit: `94b13c5`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/full-schema-roundtrip-repro`
+  - `worktrees/full-schema-roundtrip-repro`
     on `full-schema-roundtrip-repro`
 - Mutable surface:
   - `Cargo.toml`
