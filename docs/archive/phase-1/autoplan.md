@@ -136,7 +136,7 @@ These workstreams are completed and moved under
 - [simulation-proof](docs/workstreams/completed/simulation-proof/plan.md):
   deterministic degraded-read proof drift is fixed and the simulation harness
   is back on a green baseline.
-- [multiprocess-harness](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/multiprocess-harness/plan.md):
+- [multiprocess-harness](docs/workstreams/completed/multiprocess-harness/plan.md):
   the real-process harness is stable enough to support product work without
   pretending to be the product.
 - [coordinator-config-evidence](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/coordinator-config-evidence/plan.md):
