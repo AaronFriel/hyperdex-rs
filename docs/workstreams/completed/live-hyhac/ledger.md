@@ -462,7 +462,7 @@
 - Kind: `outcome`
 - End commit: `489de25`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
+  - `crates/hyperdex-admin-protocol/src/lib.rs`
 - Evidence summary:
   - the codec worker produced `ac16953` and root reconciled it as `489de25`
     (`Add legacy admin codec helpers`)
