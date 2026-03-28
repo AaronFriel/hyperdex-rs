@@ -2347,7 +2347,7 @@
   full-schema post-large-object pooled failure, where `roundtrip` returns
   `ClientReconfigure`, and move the honest live baseline forward again.
 - Owner: delegated worker `019d31ce-097e-7e51-bc7d-03b86e2996f6` (`Descartes`)
-  in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-get-reconfigure`
+  in `worktrees/live-hyhac-get-reconfigure`
 - Start commit: `94b13c5`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-get-reconfigure`
