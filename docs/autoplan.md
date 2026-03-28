@@ -37,10 +37,10 @@ georeplication.
 
 ### Active
 
-1. [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/failure-testing/plan.md)
-2. [distributed-simulation](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/distributed-simulation/plan.md)
-3. [hegel-properties](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/hegel-properties/plan.md)
-4. [history-scrub](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/history-scrub/plan.md)
+1. [failure-testing](docs/workstreams/active/failure-testing/plan.md)
+2. [distributed-simulation](docs/workstreams/active/distributed-simulation/plan.md)
+3. [hegel-properties](docs/workstreams/active/hegel-properties/plan.md)
+4. [history-scrub](docs/workstreams/active/history-scrub/plan.md)
 
 ### Backlog
 
