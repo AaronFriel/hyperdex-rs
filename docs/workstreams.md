@@ -28,13 +28,13 @@ Each workstream directory contains:
 
 ## Backlog
 
-- [warp-transactions](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/warp-transactions/plan.md)
-- [georeplication](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/georeplication/plan.md)
-- [programmability](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/programmability/plan.md)
-- [graph-vector-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/graph-vector-layer/plan.md)
-- [temporal-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/temporal-layer/plan.md)
-- [object-storage-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/object-storage-layer/plan.md)
-- [database-corpus](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/database-corpus/plan.md)
+- [warp-transactions](docs/workstreams/backlog/warp-transactions/plan.md)
+- [georeplication](docs/workstreams/backlog/georeplication/plan.md)
+- [programmability](docs/workstreams/backlog/programmability/plan.md)
+- [graph-vector-layer](docs/workstreams/backlog/graph-vector-layer/plan.md)
+- [temporal-layer](docs/workstreams/backlog/temporal-layer/plan.md)
+- [object-storage-layer](docs/workstreams/backlog/object-storage-layer/plan.md)
+- [database-corpus](docs/workstreams/backlog/database-corpus/plan.md)
 
 ## Completed
 
