@@ -59,7 +59,7 @@ active product pass.
   control back to product work.
 - [ ] Produce a smaller truthful post-success repro or prove the current
   full-schema probe is already the right loop.
-  Current owner: `019d31bc-eb2a-7f40-b735-2f35a49b2c12` (`Russell`) on
+  Current owner: `019d31c1-1662-75d3-83bf-8b2c03e809d7` (`Bohr`) on
   `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro`.
 
 ## Current Hypothesis
