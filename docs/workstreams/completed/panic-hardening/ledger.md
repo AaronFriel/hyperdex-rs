@@ -10,7 +10,7 @@
 - Owner: forked worker on `panic-hardening`
 - Start commit: `9104047`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/panic-hardening`
+  - `worktrees/panic-hardening`
   - `panic-hardening`
 - Mutable surface:
   - `crates/server/**`
