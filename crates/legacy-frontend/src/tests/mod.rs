@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use super::*;
 use legacy_protocol::{
     decode_protocol_atomic_request, decode_protocol_atomic_response, decode_protocol_count_request,

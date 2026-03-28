@@ -1,3 +1,5 @@
+#![deny(clippy::expect_used, clippy::unwrap_used)]
+
 use anyhow::{anyhow, bail, Result};
 use cluster_config::{ClusterConfig, ClusterNode};
 use data_model::{SchemaFormat, Space, SpaceName, SpaceOptions, Subspace, ValueKind};
@@ -1308,7 +1310,8 @@ fn decode_c_string(bytes: &[u8]) -> Result<&str> {
 }
 
 fn read_slice_array<const N: usize>(bytes: &[u8], label: &str) -> Result<[u8; N]> {
-    bytes.try_into()
+    bytes
+        .try_into()
         .map_err(|_| anyhow!("{label} did not contain exactly {N} bytes"))
 }
 

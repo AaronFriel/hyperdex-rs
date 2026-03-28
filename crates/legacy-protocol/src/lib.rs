@@ -1,3 +1,5 @@
+#![deny(clippy::expect_used, clippy::unwrap_used)]
+
 use thiserror::Error;
 
 pub const BUSYBEE_HEADER_SIZE: usize = 4;
@@ -323,14 +325,13 @@ fn read_u64_be(bytes: &[u8], offset: usize) -> Result<u64, LegacyProtocolError> 
     Ok(u64::from_be_bytes(read_array(bytes, offset)?))
 }
 
-fn read_array<const N: usize>(
-    bytes: &[u8],
-    offset: usize,
-) -> Result<[u8; N], LegacyProtocolError> {
+fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Result<[u8; N], LegacyProtocolError> {
     let end = offset
         .checked_add(N)
         .ok_or(LegacyProtocolError::ShortBuffer)?;
-    let slice = bytes.get(offset..end).ok_or(LegacyProtocolError::ShortBuffer)?;
+    let slice = bytes
+        .get(offset..end)
+        .ok_or(LegacyProtocolError::ShortBuffer)?;
     let mut out = [0u8; N];
     out.copy_from_slice(slice);
     Ok(out)
