@@ -38,8 +38,8 @@ georeplication.
 ### Active
 
 1. [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/failure-testing/plan.md)
-2. [simulation-applicability](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/simulation-applicability/plan.md)
-3. [recovery-ordering](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/recovery-ordering/plan.md)
+2. [distributed-simulation](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/distributed-simulation/plan.md)
+3. [hegel-properties](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/hegel-properties/plan.md)
 
 ### Backlog
 
@@ -57,13 +57,13 @@ georeplication.
 
 ## Current Root Focus
 
-Keep the green HyperDex replacement baseline honest while shifting simulation
-work from scattered point proofs to stronger system-level evidence: re-evaluate
-the parked ownership-convergence patch, identify where Turmoil, Madsim, and
-Hegel can say more about recovery and ordering, and land the next proof that
-actually strengthens distributed guarantees.
+Keep the green HyperDex replacement baseline honest while making proof work
+more deliberate: keep failure-oriented bug-finding active, treat Turmoil and
+Madsim as the distributed-failure and recovery tool family, and give Hegel its
+own property-testing track with broader state-space coverage than a single test.
 
 ## Next Root Move
 
-Rearm the watchdog against the new active set and launch the next
-simulation-focused passes from the corrected board.
+Keep reconciling real code from the three active tracks: land the next Hegel
+property, land the next deterministic distributed recovery proof, and move the
+parked ownership-convergence fix forward on the current tree.

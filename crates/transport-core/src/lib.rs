@@ -51,6 +51,11 @@ pub enum DataPlaneRequest {
         checks: Vec<Check>,
         mutations: Vec<Mutation>,
     },
+    ValidatePrimary {
+        space: String,
+        key: Bytes,
+        expected_primary: u64,
+    },
     ReplicatedPut {
         space: String,
         key: Bytes,

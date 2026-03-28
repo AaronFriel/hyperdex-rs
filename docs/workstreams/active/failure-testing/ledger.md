@@ -302,3 +302,34 @@
 - Disposition: `reframe`
 - Next move: re-evaluate this patch against the future root state once the
   unrelated overlapping edits are resolved or integrated.
+
+### Entry `flt-009` - Outcome
+
+- Timestamp: `2026-03-29 20:25Z`
+- Kind: `outcome`
+- End commit:
+  - `b4bfc28`
+  - `d184146`
+- Artifact location:
+  - `crates/transport-core/src/lib.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/simulation-harness/src/tests/mod.rs`
+- Evidence summary:
+  - The parked ownership-convergence result was rebuilt and tightened on top of
+    current `main`.
+  - The runtime now uses `DataPlaneRequest::ValidatePrimary` so primary-only
+    `Put`, `ConditionalPut`, and `Delete` paths require peer confirmation
+    before local acceptance.
+  - The stricter follow-up prevents an unavailable newer-view peer from letting
+    a stale local primary accept a write without any reachable confirmation.
+  - Added deterministic proofs for:
+    - `turmoil_rejects_local_mutation_when_peer_has_newer_primary_view`
+    - `turmoil_rejects_stale_local_mutation_across_peer_outage_and_recovery`
+  - Root validation passed with:
+    - `cargo test -p simulation-harness`
+    - `cargo test -p server`
+- Conclusion: stale local-primary writes are now rejected both when a newer-view
+  peer is reachable and when that peer is temporarily unavailable.
+- Disposition: `advance`
+- Next move: push the same ownership-convergence pressure onto another mutation
+  shape besides `Put`.

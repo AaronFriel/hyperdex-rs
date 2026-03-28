@@ -316,6 +316,28 @@ async fn distributed_runtime_fixture_with_diverged_cluster_views(
     (transport, runtime1, runtime2)
 }
 
+fn converged_two_node_config() -> ClusterConfig {
+    ClusterConfig {
+        nodes: vec![
+            ClusterNode {
+                id: 1,
+                host: "node1".to_owned(),
+                control_port: 1001,
+                data_port: 2001,
+            },
+            ClusterNode {
+                id: 2,
+                host: "node2".to_owned(),
+                control_port: 1002,
+                data_port: 2002,
+            },
+        ],
+        replicas: 1,
+        internode_transport: TransportBackend::Grpc,
+        ..ClusterConfig::default()
+    }
+}
+
 async fn distributed_runtime_pair() -> (Arc<ClusterRuntime>, Arc<ClusterRuntime>) {
     let (_, runtime1, runtime2) = distributed_runtime_fixture().await;
     (runtime1, runtime2)
@@ -366,6 +388,22 @@ fn stale_placement_mutation_target(
             (primary1 == 2 && primary2 != 2).then_some((primary1, primary2, key))
         })
         .expect("expected a key whose primary diverges across cluster views")
+}
+
+fn stale_local_primary_target(
+    runtime1: &Arc<ClusterRuntime>,
+    runtime2: &Arc<ClusterRuntime>,
+    prefix: &str,
+) -> (u64, u64, String) {
+    (0..65536)
+        .map(|i| format!("{prefix}-{i}"))
+        .find_map(|key| {
+            let primary1 = runtime1.route_primary(key.as_bytes()).ok()?;
+            let primary2 = runtime2.route_primary(key.as_bytes()).ok()?;
+            (primary1 == runtime1.local_node_id() && primary1 != primary2)
+                .then_some((primary1, primary2, key))
+        })
+        .expect("expected a key whose local primary ownership diverges")
 }
 
 fn ensure_hegel_server_command() -> String {
@@ -445,6 +483,73 @@ fn profiles_schema() -> String {
         int profile_views\n\
      tolerate 0 failures\n"
         .to_owned()
+}
+
+fn profile_views_ge_checks(threshold: i64) -> Vec<Check> {
+    vec![Check {
+        attribute: "profile_views".to_owned(),
+        predicate: Predicate::GreaterThanOrEqual,
+        value: Value::Int(threshold),
+    }]
+}
+
+fn expected_profile_views_at_or_above(
+    model: &BTreeMap<String, i64>,
+    threshold: i64,
+) -> BTreeMap<String, i64> {
+    model
+        .iter()
+        .filter(|(_, views)| **views >= threshold)
+        .map(|(key, views)| (key.clone(), *views))
+        .collect()
+}
+
+fn search_result_profile_views(response: ClientResponse) -> BTreeMap<String, i64> {
+    let ClientResponse::SearchResult(records) = response else {
+        panic!("expected search response");
+    };
+
+    let mut logical = BTreeMap::new();
+    for record in records {
+        let key = String::from_utf8(record.key.to_vec()).expect("search key must be utf-8");
+        let views = match record.attributes.get("profile_views") {
+            Some(Value::Int(value)) => *value,
+            other => panic!("unexpected record attribute: {other:?}"),
+        };
+        assert!(
+            logical.insert(key, views).is_none(),
+            "distributed search returned duplicate logical keys"
+        );
+    }
+    logical
+}
+
+async fn assert_search_and_count_match_model(
+    runtime: &ClusterRuntime,
+    threshold: i64,
+    expected: &BTreeMap<String, i64>,
+) {
+    let search = HyperdexClientService::handle(
+        runtime,
+        ClientRequest::Search {
+            space: "profiles".to_owned(),
+            checks: profile_views_ge_checks(threshold),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(search_result_profile_views(search), *expected);
+
+    let count = HyperdexClientService::handle(
+        runtime,
+        ClientRequest::Count {
+            space: "profiles".to_owned(),
+            checks: profile_views_ge_checks(threshold),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(count, ClientResponse::Count(expected.len() as u64));
 }
 
 fn replicated_profiles_schema() -> String {
@@ -1205,27 +1310,7 @@ fn turmoil_preserves_correctness_when_stale_node_rejoins_cluster() {
             "expected routed mutation to fail while node 2 still has stale placement"
         );
 
-        let corrected_config = ClusterConfig {
-            nodes: vec![
-                ClusterNode {
-                    id: 1,
-                    host: "node1".to_owned(),
-                    control_port: 1001,
-                    data_port: 2001,
-                },
-                ClusterNode {
-                    id: 2,
-                    host: "node2".to_owned(),
-                    control_port: 1002,
-                    data_port: 2002,
-                },
-            ],
-            replicas: 1,
-            internode_transport: TransportBackend::Grpc,
-            ..ClusterConfig::default()
-        };
-
-        let mut recovered_runtime = ClusterRuntime::for_node(corrected_config, 2).unwrap();
+        let mut recovered_runtime = ClusterRuntime::for_node(converged_two_node_config(), 2).unwrap();
         recovered_runtime.install_cluster_transport(transport.clone(), TransportRuntime::Grpc);
         let recovered_runtime = Arc::new(recovered_runtime);
         HyperdexAdminService::handle(
@@ -1263,10 +1348,271 @@ fn turmoil_preserves_correctness_when_stale_node_rejoins_cluster() {
         match recovered_record {
             ClientResponse::Record(Some(record)) => {
                 assert_eq!(record.key, Bytes::from(rejoin_key.as_bytes().to_vec()));
-                assert_eq!(record.attributes.get("profile_views"), Some(&Value::Int(41)));
+                assert_eq!(
+                    record.attributes.get("profile_views"),
+                    Some(&Value::Int(41))
+                );
             }
             other => panic!("unexpected recovered record after rejoin: {other:?}"),
         }
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[test]
+fn turmoil_recovery_preserves_operation_order_after_stale_local_primary_rejoin() {
+    let mut sim = turmoil::Builder::new().build();
+
+    sim.client("cluster", async move {
+        let (transport, current_runtime, stale_runtime) =
+            distributed_runtime_fixture_with_diverged_cluster_views(profiles_schema()).await;
+
+        let (current_primary, stale_primary, recovery_key) = stale_placement_mutation_target(
+            &current_runtime,
+            &stale_runtime,
+            "stale-recovery-ordering",
+        );
+        assert_eq!(current_primary, 2);
+        assert_ne!(stale_primary, current_primary);
+
+        let rejected_put = HyperdexClientService::handle(
+            current_runtime.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(recovery_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(7),
+                })],
+            },
+        )
+        .await;
+        assert!(
+            rejected_put.is_err(),
+            "expected the stale local-primary write to fail before recovery"
+        );
+
+        let mut recovered_runtime =
+            ClusterRuntime::for_node(converged_two_node_config(), current_primary).unwrap();
+        recovered_runtime.install_cluster_transport(transport.clone(), TransportRuntime::Grpc);
+        let recovered_runtime = Arc::new(recovered_runtime);
+        HyperdexAdminService::handle(
+            recovered_runtime.as_ref(),
+            AdminRequest::CreateSpaceDsl(profiles_schema()),
+        )
+        .await
+        .unwrap();
+        transport
+            .register(current_primary, recovered_runtime.clone())
+            .await;
+
+        let first_write = HyperdexClientService::handle(
+            current_runtime.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(recovery_key.as_bytes().to_vec()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(11),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(first_write, ClientResponse::Unit);
+
+        let first_view = HyperdexClientService::handle(
+            recovered_runtime.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(recovery_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        match first_view {
+            ClientResponse::Record(Some(record)) => {
+                assert_eq!(
+                    record.attributes.get("profile_views"),
+                    Some(&Value::Int(11))
+                );
+            }
+            other => panic!("unexpected recovered-node view after first write: {other:?}"),
+        }
+
+        let second_write = HyperdexClientService::handle(
+            current_runtime.as_ref(),
+            ClientRequest::ConditionalPut {
+                space: "profiles".to_owned(),
+                key: Bytes::from(recovery_key.as_bytes().to_vec()),
+                checks: vec![Check {
+                    attribute: "profile_views".to_owned(),
+                    predicate: Predicate::Equal,
+                    value: Value::Int(11),
+                }],
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(29),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(second_write, ClientResponse::Unit);
+
+        let recovered_view = HyperdexClientService::handle(
+            recovered_runtime.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(recovery_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        match &recovered_view {
+            ClientResponse::Record(Some(record)) => {
+                assert_eq!(record.key, Bytes::from(recovery_key.as_bytes().to_vec()));
+                assert_eq!(
+                    record.attributes.get("profile_views"),
+                    Some(&Value::Int(29))
+                );
+            }
+            other => panic!("unexpected recovered-node view after ordered writes: {other:?}"),
+        }
+
+        let authoritative_view = HyperdexClientService::handle(
+            current_runtime.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(recovery_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(authoritative_view, recovered_view);
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[test]
+fn turmoil_rejects_local_mutation_when_peer_has_newer_primary_view() {
+    let mut sim = turmoil::Builder::new().build();
+
+    sim.client("cluster", async move {
+        let (_, runtime1, runtime2) =
+            distributed_runtime_fixture_with_diverged_cluster_views(profiles_schema()).await;
+
+        let (runtime1_primary, runtime2_primary, stale_key) =
+            stale_local_primary_target(&runtime1, &runtime2, "stale-local-primary-put");
+        assert_eq!(runtime1_primary, runtime1.local_node_id());
+        assert_ne!(runtime2_primary, runtime1_primary);
+
+        let put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(stale_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(73),
+                })],
+            },
+        )
+        .await;
+        assert!(
+            put.is_err(),
+            "expected stale local primary mutation to fail when a peer has a newer primary view"
+        );
+
+        let local_record = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(stale_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(local_record, ClientResponse::Record(None));
+
+        let remote_record = HyperdexClientService::handle(
+            runtime2.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(stale_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(remote_record, ClientResponse::Record(None));
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[test]
+fn turmoil_rejects_stale_local_mutation_across_peer_outage_and_recovery() {
+    let mut sim = turmoil::Builder::new().build();
+
+    sim.client("cluster", async move {
+        let (transport, runtime1, runtime2) =
+            distributed_runtime_fixture_with_diverged_cluster_views(profiles_schema()).await;
+
+        let (runtime1_primary, runtime2_primary, stale_key) =
+            stale_local_primary_target(&runtime1, &runtime2, "stale-local-primary-recovery");
+        assert_eq!(runtime1_primary, runtime1.local_node_id());
+        assert_ne!(runtime2_primary, runtime1_primary);
+
+        transport.set_unavailable(runtime2.local_node_id(), true).await;
+
+        let put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(stale_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(91),
+                })],
+            },
+        )
+        .await;
+        assert!(
+            put.is_err(),
+            "expected stale local primary mutation to fail while peer with newer view is temporarily unavailable"
+        );
+
+        transport.set_unavailable(runtime2.local_node_id(), false).await;
+
+        let local_record = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(stale_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(local_record, ClientResponse::Record(None));
+
+        let remote_record = HyperdexClientService::handle(
+            runtime2.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(stale_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(remote_record, ClientResponse::Record(None));
 
         Ok::<(), Box<dyn std::error::Error>>(())
     });
@@ -2005,6 +2351,118 @@ fn hegel_distributed_runtime_routes_numeric_mutation() {
                     assert_eq!(actual, expected_value);
                 }
                 other => panic!("unexpected primary get response: {other:?}"),
+            }
+        });
+    })
+    .settings(hegel::Settings::new().test_cases(15))
+    .run();
+}
+
+#[test]
+fn hegel_distributed_runtime_preserves_logical_delete_group_search_and_count() {
+    let _guard = HEGEL_ENV_LOCK.lock().unwrap();
+    let hegel_server_command = ensure_hegel_server_command();
+    unsafe {
+        std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
+    }
+
+    // Generated routed writes and delete-group operations must still present one
+    // logical query result set from either runtime, even though records are
+    // physically replicated on both nodes.
+    hegel::Hegel::new(|tc: hegel::TestCase| {
+        let ops: Vec<(u8, u8, u8, u16, u16)> = tc.draw(
+            hegel::generators::vecs(hegel::generators::tuples5(
+                hegel::generators::integers::<u8>().max_value(2),
+                hegel::generators::integers::<u8>().max_value(1),
+                hegel::generators::integers::<u8>().max_value(7),
+                hegel::generators::integers::<u16>().max_value(119),
+                hegel::generators::integers::<u16>().max_value(119),
+            ))
+            .min_size(1)
+            .max_size(20),
+        );
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async move {
+            let (_, runtime1, runtime2) =
+                distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
+            let runtimes = [runtime1, runtime2];
+            let mut model = BTreeMap::<String, i64>::new();
+
+            for (kind, runtime_id, key_id, value_id, threshold_id) in ops {
+                let runtime = &runtimes[usize::from(runtime_id)];
+                let key = format!("hegel-delete-group-k{key_id}");
+                let key_bytes = Bytes::from(key.clone().into_bytes());
+                let value = i64::from(value_id);
+                let threshold = i64::from(threshold_id);
+
+                match kind {
+                    0 => {
+                        let response = HyperdexClientService::handle(
+                            runtime.as_ref(),
+                            ClientRequest::Put {
+                                space: "profiles".to_owned(),
+                                key: key_bytes,
+                                mutations: vec![Mutation::Set(Attribute {
+                                    name: "profile_views".to_owned(),
+                                    value: Value::Int(value),
+                                })],
+                            },
+                        )
+                        .await
+                        .unwrap();
+                        assert_eq!(response, ClientResponse::Unit);
+                        model.insert(key, value);
+                    }
+                    1 => {
+                        let expected_deleted = model
+                            .iter()
+                            .filter(|(_, views)| **views >= threshold)
+                            .count() as u64;
+                        let response = HyperdexClientService::handle(
+                            runtime.as_ref(),
+                            ClientRequest::DeleteGroup {
+                                space: "profiles".to_owned(),
+                                checks: profile_views_ge_checks(threshold),
+                            },
+                        )
+                        .await
+                        .unwrap();
+                        assert_eq!(response, ClientResponse::Deleted(expected_deleted));
+                        model.retain(|_, views| *views < threshold);
+                    }
+                    2 => {
+                        let response = HyperdexClientService::handle(
+                            runtime.as_ref(),
+                            ClientRequest::Get {
+                                space: "profiles".to_owned(),
+                                key: key_bytes,
+                            },
+                        )
+                        .await
+                        .unwrap();
+                        match response {
+                            ClientResponse::Record(Some(record)) => {
+                                let actual = match record.attributes.get("profile_views") {
+                                    Some(Value::Int(value)) => Some(*value),
+                                    _ => None,
+                                };
+                                assert_eq!(actual, model.get(&key).copied());
+                            }
+                            ClientResponse::Record(None) => {
+                                assert_eq!(model.get(&key), None);
+                            }
+                            other => panic!("unexpected get response: {other:?}"),
+                        }
+                    }
+                    _ => unreachable!("operation kind is bounded to 0..=2"),
+                }
+
+                let expected = expected_profile_views_at_or_above(&model, threshold);
+                assert_search_and_count_match_model(runtimes[0].as_ref(), threshold, &expected)
+                    .await;
+                assert_search_and_count_match_model(runtimes[1].as_ref(), threshold, &expected)
+                    .await;
             }
         });
     })

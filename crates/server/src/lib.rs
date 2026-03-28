@@ -513,7 +513,12 @@ impl ClusterRuntime {
             .collect()
     }
 
-    async fn restore_record_on_node(&self, node_id: u64, space: &str, record: Record) -> Result<()> {
+    async fn restore_record_on_node(
+        &self,
+        node_id: u64,
+        space: &str,
+        record: Record,
+    ) -> Result<()> {
         let key = record.key.clone();
         let mutations = Self::record_restore_mutations(record);
         if node_id == self.local_node_id {
@@ -542,7 +547,9 @@ impl ClusterRuntime {
                 DataPlaneResponse::Record(_)
                 | DataPlaneResponse::SearchResult(_)
                 | DataPlaneResponse::Deleted(_) => {
-                    anyhow::bail!("unexpected response to replicated rollback put on replica {node_id}")
+                    anyhow::bail!(
+                        "unexpected response to replicated rollback put on replica {node_id}"
+                    )
                 }
             }
         }
@@ -589,12 +596,72 @@ impl ClusterRuntime {
         Ok(())
     }
 
+    async fn confirm_local_primary_with_peers(
+        &self,
+        space: &str,
+        key: &bytes::Bytes,
+    ) -> Result<()> {
+        let mut confirmed_by_peer = false;
+        let mut skipped_unavailable_peer = false;
+
+        for node_id in self.cluster_node_ids()? {
+            if node_id == self.local_node_id {
+                continue;
+            }
+
+            match self
+                .forward_data_request(
+                    node_id,
+                    DataPlaneRequest::ValidatePrimary {
+                        space: space.to_owned(),
+                        key: key.clone(),
+                        expected_primary: self.local_node_id,
+                    },
+                )
+                .await
+            {
+                Ok(DataPlaneResponse::Unit) => {
+                    confirmed_by_peer = true;
+                }
+                Ok(DataPlaneResponse::ConditionFailed) => {
+                    anyhow::bail!(
+                        "peer {node_id} rejected local primary ownership for `{space}` on node {}",
+                        self.local_node_id
+                    );
+                }
+                Ok(
+                    DataPlaneResponse::Record(_)
+                    | DataPlaneResponse::SearchResult(_)
+                    | DataPlaneResponse::Deleted(_),
+                ) => {
+                    anyhow::bail!("unexpected response to primary validation on peer {node_id}");
+                }
+                Err(err) if should_skip_schema_gap_replica(&err) => continue,
+                Err(err) if should_skip_unavailable_read(&err) => {
+                    skipped_unavailable_peer = true;
+                    continue;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+
+        if skipped_unavailable_peer && !confirmed_by_peer {
+            anyhow::bail!(
+                "could not confirm local primary ownership for `{space}` on node {} with any reachable peer",
+                self.local_node_id
+            );
+        }
+
+        Ok(())
+    }
+
     async fn apply_primary_put(
         &self,
         space: String,
         key: bytes::Bytes,
         mutations: Vec<Mutation>,
     ) -> Result<DataPlaneResponse> {
+        self.confirm_local_primary_with_peers(&space, &key).await?;
         let mutations = self.materialize_key_mutation(&space, &key, mutations)?;
         let previous = self.data_plane.get(&space, &key)?;
         match self.data_plane.put(&space, key.clone(), &mutations)? {
@@ -656,9 +723,7 @@ impl ClusterRuntime {
         }
 
         if snapshots.is_empty() {
-            anyhow::bail!(
-                "distributed delete-group had no reachable replicas for space `{space}`"
-            );
+            anyhow::bail!("distributed delete-group had no reachable replicas for space `{space}`");
         }
 
         let mut deleted_total = 0u64;
@@ -695,7 +760,10 @@ impl ClusterRuntime {
                 }
                 Err(err) => {
                     let rollback = self
-                        .rollback_delete_group_snapshots(&space, &snapshots[..applied_snapshot_count])
+                        .rollback_delete_group_snapshots(
+                            &space,
+                            &snapshots[..applied_snapshot_count],
+                        )
                         .await;
                     return match rollback {
                         Ok(()) => Err(err),
@@ -798,6 +866,7 @@ impl ClusterRuntime {
         checks: Vec<Check>,
         mutations: Vec<Mutation>,
     ) -> Result<DataPlaneResponse> {
+        self.confirm_local_primary_with_peers(&space, &key).await?;
         let mutations = self.materialize_key_mutation(&space, &key, mutations)?;
         let previous = self.data_plane.get(&space, &key)?;
         match self
@@ -823,6 +892,7 @@ impl ClusterRuntime {
         space: String,
         key: bytes::Bytes,
     ) -> Result<DataPlaneResponse> {
+        self.confirm_local_primary_with_peers(&space, &key).await?;
         let previous = self.data_plane.get(&space, &key)?;
         match self.data_plane.delete(&space, &key)? {
             WriteResult::Written | WriteResult::Missing => {
@@ -899,6 +969,17 @@ impl ClusterRuntime {
                         self.ensure_local_primary_for_key(&space, &key)?;
                         self.apply_primary_conditional_put(space, key, checks, mutations)
                             .await?
+                    }
+                    DataPlaneRequest::ValidatePrimary {
+                        space,
+                        key,
+                        expected_primary,
+                    } => {
+                        if self.route_primary_for_space(&space, &key)? == expected_primary {
+                            DataPlaneResponse::Unit
+                        } else {
+                            DataPlaneResponse::ConditionFailed
+                        }
                     }
                     DataPlaneRequest::ReplicatedPut {
                         space,
@@ -1977,7 +2058,8 @@ async fn handle_coordinator_admin_frame(
         if frame.payload.len() != 2 * std::mem::size_of::<u64>() {
             anyhow::bail!("legacy admin identify frame must contain exactly two u64 values");
         }
-        let peer_local_id = decode_be_u64_exact(&frame.payload[..8], "legacy admin identify local id")?;
+        let peer_local_id =
+            decode_be_u64_exact(&frame.payload[..8], "legacy admin identify local id")?;
         let peer_remote_id =
             decode_be_u64_exact(&frame.payload[8..16], "legacy admin identify remote id")?;
         if session.observe_identify(peer_local_id, peer_remote_id)? {
@@ -2480,15 +2562,13 @@ pub async fn handle_legacy_request(
                 anyhow::bail!("unexpected runtime response to search request");
             };
 
-            runtime
-                .legacy_searches_guard()?
-                .insert(
-                    search_id,
-                    LegacySearchState {
-                        records: VecDeque::from(records),
-                        format,
-                    },
-                );
+            runtime.legacy_searches_guard()?.insert(
+                search_id,
+                LegacySearchState {
+                    records: VecDeque::from(records),
+                    format,
+                },
+            );
 
             legacy_search_response(runtime, &space, header, nonce, search_id)
         }
@@ -2501,9 +2581,7 @@ pub async fn handle_legacy_request(
         LegacyMessageType::ReqSearchStop => {
             let (nonce, request_body) = legacy_decode_request_nonce(body)?;
             let search_id = decode_protocol_search_continue(request_body)?;
-            runtime
-                .legacy_searches_guard()?
-                .remove(&search_id);
+            runtime.legacy_searches_guard()?.remove(&search_id);
 
             Ok((
                 ResponseHeader {
@@ -2970,10 +3048,7 @@ fn legacy_decode_request_nonce(bytes: &[u8]) -> Result<(u64, &[u8])> {
         anyhow::bail!("legacy request body is missing nonce");
     }
 
-    let nonce = decode_be_u64_exact(
-        &bytes[..std::mem::size_of::<u64>()],
-        "legacy request nonce",
-    )?;
+    let nonce = decode_be_u64_exact(&bytes[..std::mem::size_of::<u64>()], "legacy request nonce")?;
     Ok((nonce, &bytes[std::mem::size_of::<u64>()..]))
 }
 
@@ -3899,8 +3974,7 @@ fn legacy_decode_container_value(kind: &ValueKind, bytes: &[u8]) -> Result<(Valu
             if bytes.len() < 4 {
                 anyhow::bail!("legacy container string element is truncated");
             }
-            let len =
-                decode_le_u32_exact(&bytes[..4], "legacy container string length")? as usize;
+            let len = decode_le_u32_exact(&bytes[..4], "legacy container string length")? as usize;
             if bytes.len() < 4 + len {
                 anyhow::bail!("legacy container string element is truncated");
             }
@@ -4101,9 +4175,12 @@ fn legacy_decode_f64(bytes: &[u8]) -> Result<f64> {
 }
 
 fn decode_be_u64_exact(bytes: &[u8], label: &str) -> Result<u64> {
-    let raw = bytes
-        .try_into()
-        .map_err(|_| anyhow!("{label} is not exactly {} bytes", std::mem::size_of::<u64>()))?;
+    let raw = bytes.try_into().map_err(|_| {
+        anyhow!(
+            "{label} is not exactly {} bytes",
+            std::mem::size_of::<u64>()
+        )
+    })?;
     Ok(u64::from_be_bytes(raw))
 }
 
@@ -4114,23 +4191,32 @@ fn lock_mutex<'a, T>(mutex: &'a Mutex<T>, label: &str) -> Result<MutexGuard<'a, 
 }
 
 fn decode_le_u32_exact(bytes: &[u8], label: &str) -> Result<u32> {
-    let raw = bytes
-        .try_into()
-        .map_err(|_| anyhow!("{label} is not exactly {} bytes", std::mem::size_of::<u32>()))?;
+    let raw = bytes.try_into().map_err(|_| {
+        anyhow!(
+            "{label} is not exactly {} bytes",
+            std::mem::size_of::<u32>()
+        )
+    })?;
     Ok(u32::from_le_bytes(raw))
 }
 
 fn decode_le_i64_exact(bytes: &[u8], label: &str) -> Result<i64> {
-    let raw = bytes
-        .try_into()
-        .map_err(|_| anyhow!("{label} is not exactly {} bytes", std::mem::size_of::<i64>()))?;
+    let raw = bytes.try_into().map_err(|_| {
+        anyhow!(
+            "{label} is not exactly {} bytes",
+            std::mem::size_of::<i64>()
+        )
+    })?;
     Ok(i64::from_le_bytes(raw))
 }
 
 fn decode_le_f64_exact(bytes: &[u8], label: &str) -> Result<f64> {
-    let raw = bytes
-        .try_into()
-        .map_err(|_| anyhow!("{label} is not exactly {} bytes", std::mem::size_of::<f64>()))?;
+    let raw = bytes.try_into().map_err(|_| {
+        anyhow!(
+            "{label} is not exactly {} bytes",
+            std::mem::size_of::<f64>()
+        )
+    })?;
     Ok(f64::from_le_bytes(raw))
 }
 

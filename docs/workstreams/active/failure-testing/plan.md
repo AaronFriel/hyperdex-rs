@@ -62,22 +62,23 @@ design.
 - [x] (2026-03-29 10:10Z) Added stale-node rejoin proof in `06370d6`.
 - [x] (2026-03-29 18:05Z) Hardened distributed delete-group rollback and
   schema-gap behavior in `b6ae810`, `a4ea7d3`, `fb77107`, and `2b7d144`.
-- [ ] Choose the next broken distributed assumption after schema-convergence
-  delete-group hardening.
+- [x] (2026-03-29 20:25Z) Landed stale-local-primary rejection plus the
+  peer-outage variant on the merged tree.
+- [ ] Choose the next ownership-convergence failure after stale-local-primary
+  write rejection.
 
 ## Current Hypothesis
 
-The next highest-value step is now a primary-handoff or config-convergence
-mutation path that overlaps with changing ownership, not just stale reads.
-The runtime now has rollback coverage, stale-placement write guards, rejoin
-proof, and delete-group schema-gap hardening, so the next proof should stress
-what happens while ownership changes under an in-flight write or delete.
+The next highest-value step is still ownership convergence, but the write path
+is now better defended. The next proof should stress a nearby operation shape:
+delete, conditional write, or another mutation that could still slip through
+while ownership changes under transport loss or recovery.
 
 ## Next Bounded Step
 
-Add the shortest honest deterministic proof for a primary-handoff or
-config-convergence mutation scenario, and touch runtime code only if the proof
-shows the runtime can accept or expose incorrect state during ownership change.
+Add the shortest honest deterministic proof for the next ownership-convergence
+operation shape after `Put`, and touch runtime code only if the proof shows the
+runtime can accept or expose incorrect state during ownership change.
 
 ## Surprises & Discoveries
 
