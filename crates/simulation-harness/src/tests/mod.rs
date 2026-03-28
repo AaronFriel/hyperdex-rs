@@ -912,6 +912,83 @@ fn turmoil_reverts_primary_conditional_put_when_replica_transport_fails() {
 }
 
 #[test]
+fn turmoil_reverts_delete_group_when_replica_transport_fails() {
+    let mut sim = turmoil::Builder::new().build();
+
+    sim.client("cluster", async move {
+        let (transport, runtime1, runtime2) =
+            distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
+
+        let failing_key = (0..65536)
+            .map(|i| format!("replica-failure-delete-group-{i}"))
+            .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 1)
+            .expect("expected a key routed to node 1");
+
+        let put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(failing_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(61),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(put, ClientResponse::Unit);
+
+        transport.set_unavailable(2, true).await;
+
+        let delete_group = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::DeleteGroup {
+                space: "profiles".to_owned(),
+                checks: vec![Check {
+                    attribute: "profile_views".to_owned(),
+                    predicate: Predicate::Equal,
+                    value: Value::Int(61),
+                }],
+            },
+        )
+        .await;
+        assert!(
+            delete_group.is_err(),
+            "expected replica transport failure to surface"
+        );
+
+        let local_record = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(failing_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(matches!(local_record, ClientResponse::Record(Some(_))));
+
+        transport.set_unavailable(2, false).await;
+
+        let recovered_record = HyperdexClientService::handle(
+            runtime2.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(failing_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(matches!(recovered_record, ClientResponse::Record(Some(_))));
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[test]
 fn turmoil_rejects_or_recovers_routed_mutation_under_stale_placement() {
     let mut sim = turmoil::Builder::new().build();
 

@@ -490,11 +490,7 @@ impl ClusterRuntime {
         match previous {
             Some(record) => {
                 self.data_plane.delete(space, key)?;
-                let mutations = record
-                    .attributes
-                    .into_iter()
-                    .map(|(name, value)| Mutation::Set(Attribute { name, value }))
-                    .collect::<Vec<_>>();
+                let mutations = Self::record_restore_mutations(record);
                 match self.data_plane.put(space, key.clone(), &mutations)? {
                     WriteResult::Written | WriteResult::Missing => Ok(()),
                     WriteResult::ConditionFailed => {
@@ -507,6 +503,62 @@ impl ClusterRuntime {
                 Ok(())
             }
         }
+    }
+
+    fn record_restore_mutations(record: Record) -> Vec<Mutation> {
+        record
+            .attributes
+            .into_iter()
+            .map(|(name, value)| Mutation::Set(Attribute { name, value }))
+            .collect()
+    }
+
+    async fn restore_record_on_node(&self, node_id: u64, space: &str, record: Record) -> Result<()> {
+        let key = record.key.clone();
+        let mutations = Self::record_restore_mutations(record);
+        if node_id == self.local_node_id {
+            match self.data_plane.put(space, key, &mutations)? {
+                WriteResult::Written | WriteResult::Missing => Ok(()),
+                WriteResult::ConditionFailed => {
+                    anyhow::bail!("local rollback conditional failure for space `{space}`")
+                }
+            }
+        } else {
+            match self
+                .forward_data_request(
+                    node_id,
+                    DataPlaneRequest::ReplicatedPut {
+                        space: space.to_owned(),
+                        key,
+                        mutations,
+                    },
+                )
+                .await?
+            {
+                DataPlaneResponse::Unit => Ok(()),
+                DataPlaneResponse::ConditionFailed => anyhow::bail!(
+                    "replica rollback conditional failure on node {node_id} for space `{space}`"
+                ),
+                DataPlaneResponse::Record(_)
+                | DataPlaneResponse::SearchResult(_)
+                | DataPlaneResponse::Deleted(_) => {
+                    anyhow::bail!("unexpected response to replicated rollback put on replica {node_id}")
+                }
+            }
+        }
+    }
+
+    async fn rollback_delete_group_snapshots(
+        &self,
+        space: &str,
+        snapshots: &[(u64, Vec<Record>)],
+    ) -> Result<()> {
+        for (node_id, records) in snapshots.iter().rev() {
+            for record in records.iter().cloned() {
+                self.restore_record_on_node(*node_id, space, record).await?;
+            }
+        }
+        Ok(())
     }
 
     async fn replicate_delete_to_secondaries(&self, space: &str, key: &bytes::Bytes) -> Result<()> {
@@ -565,22 +617,52 @@ impl ClusterRuntime {
         space: String,
         checks: Vec<Check>,
     ) -> Result<u64> {
-        let mut deleted_total = 0u64;
-        for node_id in self.cluster_node_ids()? {
-            let deleted = if node_id == self.local_node_id {
-                self.data_plane.delete_matching(&space, &checks)?
+        let node_ids = self.cluster_node_ids()?;
+        let mut snapshots = Vec::with_capacity(node_ids.len());
+        for node_id in &node_ids {
+            let records = if *node_id == self.local_node_id {
+                self.data_plane.search(&space, &checks)?
             } else {
                 match self
                     .forward_data_request(
-                        node_id,
-                        DataPlaneRequest::ReplicatedDeleteGroup {
+                        *node_id,
+                        DataPlaneRequest::Search {
                             space: space.clone(),
                             checks: checks.clone(),
                         },
                     )
                     .await?
                 {
-                    DataPlaneResponse::Deleted(count) => count,
+                    DataPlaneResponse::SearchResult(records) => records,
+                    DataPlaneResponse::Unit
+                    | DataPlaneResponse::ConditionFailed
+                    | DataPlaneResponse::Record(_)
+                    | DataPlaneResponse::Deleted(_) => {
+                        anyhow::bail!(
+                            "unexpected response to delete-group snapshot search on replica {node_id}"
+                        )
+                    }
+                }
+            };
+            snapshots.push((*node_id, records));
+        }
+
+        let mut deleted_total = 0u64;
+        let mut applied_snapshot_count = 0usize;
+        for (node_id, _) in &snapshots {
+            let deleted = if *node_id == self.local_node_id {
+                self.data_plane.delete_matching(&space, &checks)
+            } else {
+                self.forward_data_request(
+                    *node_id,
+                    DataPlaneRequest::ReplicatedDeleteGroup {
+                        space: space.clone(),
+                        checks: checks.clone(),
+                    },
+                )
+                .await
+                .and_then(|response| match response {
+                    DataPlaneResponse::Deleted(count) => Ok(count),
                     DataPlaneResponse::Unit
                     | DataPlaneResponse::ConditionFailed
                     | DataPlaneResponse::Record(_)
@@ -589,9 +671,26 @@ impl ClusterRuntime {
                             "unexpected response to replicated delete-group on replica {node_id}"
                         )
                     }
-                }
+                })
             };
-            deleted_total += deleted;
+
+            match deleted {
+                Ok(count) => {
+                    deleted_total += count;
+                    applied_snapshot_count += 1;
+                }
+                Err(err) => {
+                    let rollback = self
+                        .rollback_delete_group_snapshots(&space, &snapshots[..applied_snapshot_count])
+                        .await;
+                    return match rollback {
+                        Ok(()) => Err(err),
+                        Err(rollback_err) => Err(anyhow!(
+                            "distributed delete-group failed: {err}; rollback failed: {rollback_err}"
+                        )),
+                    };
+                }
+            }
         }
 
         let replica_factor = self.replica_factor()?;
