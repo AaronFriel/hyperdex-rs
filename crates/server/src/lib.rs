@@ -621,7 +621,11 @@ impl ClusterRuntime {
         let mut snapshots = Vec::with_capacity(node_ids.len());
         for node_id in &node_ids {
             let records = if *node_id == self.local_node_id {
-                self.data_plane.search(&space, &checks)?
+                match self.data_plane.search(&space, &checks) {
+                    Ok(records) => records,
+                    Err(err) if should_skip_distributed_read_replica(&err) => continue,
+                    Err(err) => return Err(err),
+                }
             } else {
                 match self
                     .forward_data_request(
@@ -631,20 +635,30 @@ impl ClusterRuntime {
                             checks: checks.clone(),
                         },
                     )
-                    .await?
+                    .await
                 {
-                    DataPlaneResponse::SearchResult(records) => records,
-                    DataPlaneResponse::Unit
-                    | DataPlaneResponse::ConditionFailed
-                    | DataPlaneResponse::Record(_)
-                    | DataPlaneResponse::Deleted(_) => {
+                    Ok(DataPlaneResponse::SearchResult(records)) => records,
+                    Ok(
+                        DataPlaneResponse::Unit
+                        | DataPlaneResponse::ConditionFailed
+                        | DataPlaneResponse::Record(_)
+                        | DataPlaneResponse::Deleted(_),
+                    ) => {
                         anyhow::bail!(
                             "unexpected response to delete-group snapshot search on replica {node_id}"
                         )
                     }
+                    Err(err) if should_skip_distributed_read_replica(&err) => continue,
+                    Err(err) => return Err(err),
                 }
             };
             snapshots.push((*node_id, records));
+        }
+
+        if snapshots.is_empty() {
+            anyhow::bail!(
+                "distributed delete-group had no reachable replicas for space `{space}`"
+            );
         }
 
         let mut deleted_total = 0u64;
@@ -3564,19 +3578,7 @@ fn legacy_apply_protocol_funcall(
             ValueKind::Int => {
                 let current = legacy_existing_i64(record, attribute_name)?;
                 let operand = legacy_numeric_operand_i64(funcall)?;
-                let updated = match funcall.name {
-                    FUNC_NUM_ADD => current.saturating_add(operand),
-                    FUNC_NUM_SUB => current.saturating_sub(operand),
-                    FUNC_NUM_MUL => current.saturating_mul(operand),
-                    FUNC_NUM_DIV => legacy_div_i64(current, operand)?,
-                    FUNC_NUM_MOD => legacy_mod_i64(current, operand)?,
-                    FUNC_NUM_AND => current & operand,
-                    FUNC_NUM_OR => current | operand,
-                    FUNC_NUM_XOR => current ^ operand,
-                    FUNC_NUM_MAX => current.max(operand),
-                    FUNC_NUM_MIN => current.min(operand),
-                    _ => unreachable!(),
-                };
+                let updated = legacy_apply_i64_numeric_funcall(funcall.name, current, operand)?;
                 record
                     .attributes
                     .insert(attribute_name.to_owned(), Value::Int(updated));
@@ -3612,19 +3614,8 @@ fn legacy_apply_protocol_funcall(
                         let current =
                             legacy_existing_map_entry_i64(&map, &map_key, attribute_name)?;
                         let operand = legacy_numeric_operand_i64(funcall)?;
-                        let updated = match funcall.name {
-                            FUNC_NUM_ADD => current.saturating_add(operand),
-                            FUNC_NUM_SUB => current.saturating_sub(operand),
-                            FUNC_NUM_MUL => current.saturating_mul(operand),
-                            FUNC_NUM_DIV => legacy_div_i64(current, operand)?,
-                            FUNC_NUM_MOD => legacy_mod_i64(current, operand)?,
-                            FUNC_NUM_AND => current & operand,
-                            FUNC_NUM_OR => current | operand,
-                            FUNC_NUM_XOR => current ^ operand,
-                            FUNC_NUM_MAX => current.max(operand),
-                            FUNC_NUM_MIN => current.min(operand),
-                            _ => unreachable!(),
-                        };
+                        let updated =
+                            legacy_apply_i64_numeric_funcall(funcall.name, current, operand)?;
                         Value::Int(updated)
                     }
                     other => anyhow::bail!(
@@ -3983,6 +3974,22 @@ fn legacy_div_i64(current: i64, operand: i64) -> Result<i64> {
 
 fn legacy_mod_i64(current: i64, operand: i64) -> Result<i64> {
     Ok(legacy_signed_div_mod_i64(current, operand)?.1)
+}
+
+fn legacy_apply_i64_numeric_funcall(name: u8, current: i64, operand: i64) -> Result<i64> {
+    match name {
+        FUNC_NUM_ADD => Ok(current.saturating_add(operand)),
+        FUNC_NUM_SUB => Ok(current.saturating_sub(operand)),
+        FUNC_NUM_MUL => Ok(current.saturating_mul(operand)),
+        FUNC_NUM_DIV => legacy_div_i64(current, operand),
+        FUNC_NUM_MOD => legacy_mod_i64(current, operand),
+        FUNC_NUM_AND => Ok(current & operand),
+        FUNC_NUM_OR => Ok(current | operand),
+        FUNC_NUM_XOR => Ok(current ^ operand),
+        FUNC_NUM_MAX => Ok(current.max(operand)),
+        FUNC_NUM_MIN => Ok(current.min(operand)),
+        other => anyhow::bail!("legacy integer funcall {other} is not implemented"),
+    }
 }
 
 fn legacy_signed_div_mod_i64(current: i64, operand: i64) -> Result<(i64, i64)> {

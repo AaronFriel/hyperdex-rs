@@ -752,6 +752,66 @@ fn turmoil_search_and_count_work_from_node_missing_local_space_definition() {
 }
 
 #[test]
+fn turmoil_delete_group_works_from_node_missing_local_space_definition() {
+    let mut sim = turmoil::Builder::new().build();
+
+    sim.client("cluster", async move {
+        let (_, runtime1, runtime2) =
+            distributed_runtime_fixture_with_local_schema_only(profiles_schema(), 2).await;
+
+        let remote_key = (0..65536)
+            .map(|i| format!("remote-delete-group-{i}"))
+            .find(|key| runtime2.route_primary(key.as_bytes()).unwrap() == 2)
+            .expect("expected a key routed to node 2");
+
+        let put = HyperdexClientService::handle(
+            runtime2.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(remote_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(29),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(put, ClientResponse::Unit);
+
+        let deleted = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::DeleteGroup {
+                space: "profiles".to_owned(),
+                checks: vec![Check {
+                    attribute: "profile_views".to_owned(),
+                    predicate: Predicate::Equal,
+                    value: Value::Int(29),
+                }],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(deleted, ClientResponse::Deleted(1));
+
+        let record = HyperdexClientService::handle(
+            runtime2.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(remote_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(record, ClientResponse::Record(None));
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[test]
 fn turmoil_reverts_primary_put_when_replica_transport_fails() {
     let mut sim = turmoil::Builder::new().build();
 
