@@ -18,9 +18,9 @@ document follows the fallback rules at
 
 ## Companion Files
 
-- Archived phase-1 ledger: [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/archive/phase-1/ledger.md)
-- Current root AutoPlan: [autoplan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/autoplan.md)
-- Current workstream index: [workstreams.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams.md)
+- Archived phase-1 ledger: [ledger.md](docs/archive/phase-1/ledger.md)
+- Current root AutoPlan: [autoplan.md](docs/autoplan.md)
+- Current workstream index: [workstreams.md](docs/workstreams.md)
 
 ## Purpose / Big Picture
 
