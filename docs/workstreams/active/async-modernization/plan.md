@@ -51,20 +51,22 @@ edits.
   priority for the next phase.
 - [x] (2026-03-28 18:15Z) Bound this workstream to the dedicated
   `worktrees/async-modernization` checkout for one owned fork.
-- [ ] Remove `async_trait` from the first meaningful cross-crate surface and
-  validate the result.
+- [x] (2026-03-28 23:35Z) Removed `async_trait` from the admin/client protocol
+  service traits and their server implementations in `ef0879f`.
+- [ ] Choose the next meaningful cross-crate surface after the protocol traits
+  and repeat the conversion with a similarly small validator.
 
 ## Current Hypothesis
 
-The fastest useful first pass is likely in transport or protocol service
-traits, because those surfaces are shared enough to matter and small enough to
-land cleanly.
+The protocol service boundary was a good first target. The next useful pass is
+likely in transport or consensus traits, where the cross-crate surface is
+still shared enough to matter and still small enough to land cleanly.
 
 ## Next Bounded Step
 
-Pick one cross-crate async trait surface, convert it to native Rust async
-traits, remove `async_trait` from that surface end to end, and validate the
-result without broad unrelated refactoring.
+Pick the next cross-crate async trait surface after the protocol traits,
+convert it to native Rust async traits end to end, and validate the result
+without broad unrelated refactoring.
 
 ## Surprises & Discoveries
 
@@ -82,4 +84,6 @@ result without broad unrelated refactoring.
 
 ## Outcomes & Retrospective
 
-- Pending.
+- `ef0879f` removed `async_trait` from `hyperdex-admin-protocol`,
+  `hyperdex-client-protocol`, and the corresponding `ClusterRuntime`
+  implementations.

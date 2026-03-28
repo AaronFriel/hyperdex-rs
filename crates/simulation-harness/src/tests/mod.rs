@@ -188,6 +188,59 @@ async fn distributed_runtime_fixture(
     distributed_runtime_fixture_with_schema(profiles_schema()).await
 }
 
+async fn distributed_runtime_fixture_with_local_schema_only(
+    schema: String,
+    local_schema_node: u64,
+) -> (Arc<SimTransport>, Arc<ClusterRuntime>, Arc<ClusterRuntime>) {
+    let config = ClusterConfig {
+        nodes: vec![
+            ClusterNode {
+                id: 1,
+                host: "node1".to_owned(),
+                control_port: 1001,
+                data_port: 2001,
+            },
+            ClusterNode {
+                id: 2,
+                host: "node2".to_owned(),
+                control_port: 1002,
+                data_port: 2002,
+            },
+        ],
+        replicas: 1,
+        internode_transport: TransportBackend::Grpc,
+        ..ClusterConfig::default()
+    };
+
+    let transport = Arc::new(SimTransport::default());
+
+    let mut runtime1 = ClusterRuntime::for_node(config.clone(), 1).unwrap();
+    runtime1.install_cluster_transport(transport.clone(), TransportRuntime::Grpc);
+    let runtime1 = Arc::new(runtime1);
+
+    let mut runtime2 = ClusterRuntime::for_node(config, 2).unwrap();
+    runtime2.install_cluster_transport(transport.clone(), TransportRuntime::Grpc);
+    let runtime2 = Arc::new(runtime2);
+
+    transport.register(1, runtime1.clone()).await;
+    transport.register(2, runtime2.clone()).await;
+
+    let schema_owner = match local_schema_node {
+        1 => runtime1.clone(),
+        2 => runtime2.clone(),
+        other => panic!("unsupported schema owner node {other}"),
+    };
+
+    HyperdexAdminService::handle(
+        schema_owner.as_ref(),
+        AdminRequest::CreateSpaceDsl(schema),
+    )
+    .await
+    .unwrap();
+
+    (transport, runtime1, runtime2)
+}
+
 async fn distributed_runtime_pair() -> (Arc<ClusterRuntime>, Arc<ClusterRuntime>) {
     let (_, runtime1, runtime2) = distributed_runtime_fixture().await;
     (runtime1, runtime2)
@@ -450,6 +503,79 @@ fn turmoil_preserves_degraded_read_correctness_after_one_node_loss() {
         .await
         .unwrap();
         assert_eq!(count, ClientResponse::Count(3));
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[test]
+fn turmoil_preserves_search_and_count_during_schema_convergence_gap() {
+    let mut sim = turmoil::Builder::new().build();
+
+    sim.client("cluster", async move {
+        let (_, runtime1, runtime2) =
+            distributed_runtime_fixture_with_local_schema_only(profiles_schema(), 1).await;
+
+        let local_key = (0..65536)
+            .map(|i| format!("stale-schema-{i}"))
+            .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 1)
+            .expect("expected a key routed to node 1");
+
+        let put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(local_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(11),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(put, ClientResponse::Unit);
+
+        assert!(runtime2.route_primary_for_space("profiles", local_key.as_bytes()).is_err());
+
+        let search = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Search {
+                space: "profiles".to_owned(),
+                checks: vec![Check {
+                    attribute: "profile_views".to_owned(),
+                    predicate: Predicate::GreaterThanOrEqual,
+                    value: Value::Int(5),
+                }],
+            },
+        )
+        .await
+        .unwrap();
+        let ClientResponse::SearchResult(records) = search else {
+            panic!("expected search results during schema convergence gap");
+        };
+        let keys = records
+            .iter()
+            .map(|record| record.key.to_vec())
+            .collect::<Vec<_>>();
+        assert_eq!(keys, vec![local_key.as_bytes().to_vec()]);
+
+        let count = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Count {
+                space: "profiles".to_owned(),
+                checks: vec![Check {
+                    attribute: "profile_views".to_owned(),
+                    predicate: Predicate::GreaterThanOrEqual,
+                    value: Value::Int(5),
+                }],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(count, ClientResponse::Count(1));
 
         Ok::<(), Box<dyn std::error::Error>>(())
     });

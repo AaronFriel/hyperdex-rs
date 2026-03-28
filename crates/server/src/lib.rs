@@ -589,7 +589,7 @@ impl ClusterRuntime {
                             "unexpected response to distributed search on replica {node_id}"
                         )
                     }
-                    Err(err) if should_skip_unavailable_read(&err) => {
+                    Err(err) if should_skip_distributed_read_replica(&err) => {
                         skipped_replicas.push(node_id);
                         continue;
                     }
@@ -4399,6 +4399,15 @@ fn should_skip_unavailable_read(err: &anyhow::Error) -> bool {
         || msg.contains("tcp connect error")
         || msg.contains("channel closed")
         || msg.contains("deadline has elapsed")
+}
+
+fn should_skip_distributed_read_replica(err: &anyhow::Error) -> bool {
+    if should_skip_unavailable_read(err) {
+        return true;
+    }
+
+    let msg = err.to_string().to_ascii_lowercase();
+    msg.contains("unknown space") || msg.contains("space ") && msg.contains("does not exist")
 }
 
 pub fn bootstrap_runtime() -> ClusterRuntime {

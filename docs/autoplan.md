@@ -58,9 +58,9 @@ region-aware georeplication.
 
 ## Current Root Focus
 
-Launch and reconcile substantive work in the four active workstreams, keep the
-root package small, and bias each coordination pass toward code landing rather
-than plan narration.
+Reconcile substantive code from the four active workstreams, keep the root
+package small, and bias each coordination pass toward landed product changes
+instead of plan narration.
 
 ## Next Root Move
 
@@ -68,9 +68,9 @@ Arm a watchdog, launch one owned fork per active workstream, and use fast
 validators for each fork:
 
 - `validation-ci`: build GitHub Actions and verify them locally with `act`
-- `failure-testing`: land a deterministic failure-oriented proof tied to a
-  real distributed risk
-- `async-modernization`: remove `async_trait` from one meaningful cross-crate
-  surface
+- `failure-testing`: landed one deterministic schema-convergence proof; next
+  step is another broken-assumption proof after the current fix is reconciled
+- `async-modernization`: landed one native-async conversion; next step is the
+  next meaningful cross-crate surface after the protocol traits
 - `panic-hardening`: remove panic sites from a public/runtime boundary and add
   the first practical `#[no_panic]` contract

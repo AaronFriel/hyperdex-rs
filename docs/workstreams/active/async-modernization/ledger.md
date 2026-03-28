@@ -28,3 +28,25 @@
   - one coherent native-async conversion
   - reduced or isolated `async_trait` usage
   - one bounded commit ready for reconciliation
+
+### Entry `asm-001` - Outcome
+
+- Timestamp: `2026-03-28 23:35Z`
+- Kind: `outcome`
+- End commit: `ef0879f`
+- Artifact location:
+  - `crates/hyperdex-admin-protocol/Cargo.toml`
+  - `crates/hyperdex-admin-protocol/src/lib.rs`
+  - `crates/hyperdex-client-protocol/Cargo.toml`
+  - `crates/hyperdex-client-protocol/src/lib.rs`
+  - `crates/server/src/lib.rs`
+- Evidence summary:
+  - The admin/client protocol service traits now use native `async fn` traits.
+  - The matching `ClusterRuntime` implementations no longer require
+    `#[async_trait]`.
+  - `async-trait` was removed from the two protocol crate manifests.
+- Conclusion: the first bounded async cleanup pass landed cleanly on a
+  coherent cross-crate boundary.
+- Disposition: `advance`
+- Next move: choose the next shared async surface, likely transport or
+  consensus.

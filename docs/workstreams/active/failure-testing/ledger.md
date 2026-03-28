@@ -25,3 +25,24 @@
   - one new deterministic failure-oriented proof
   - a green workspace or a concrete runtime bug with evidence
   - one bounded commit ready for reconciliation
+
+### Entry `flt-001` - Outcome
+
+- Timestamp: `2026-03-28 23:35Z`
+- Kind: `outcome`
+- End commit: `pending root commit`
+- Artifact location:
+  - `crates/server/src/lib.rs`
+  - `crates/simulation-harness/src/tests/mod.rs`
+- Evidence summary:
+  - Added
+    `turmoil_preserves_search_and_count_during_schema_convergence_gap`.
+  - The new proof initially exposed a real bug: a live replica without the
+    space definition could abort distributed `Search` and `Count`.
+  - The server now skips a replica that is merely behind on schema state in
+    the distributed read path.
+- Conclusion: the first failure-oriented simulation step found and fixed a
+  real distributed read correctness bug.
+- Disposition: `advance`
+- Next move: pick the next distributed assumption and add the next adversarial
+  proof.

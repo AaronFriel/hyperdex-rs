@@ -50,19 +50,22 @@ design.
   root priority for the next phase.
 - [x] (2026-03-28 18:15Z) Bound this workstream to the dedicated
   `worktrees/failure-testing` checkout for one owned fork.
-- [ ] Land the first new failure-oriented deterministic proof and keep the
-  workspace green.
+- [x] (2026-03-28 23:35Z) Landed a deterministic schema-convergence proof plus
+  the required distributed-read fix.
+- [ ] Choose the next broken distributed assumption and repeat the cycle with
+  a similarly short validator.
 
 ## Current Hypothesis
 
-The existing simulation surface is broad enough to support a more adversarial
-test immediately. The best first pass is likely a failure of replica
-propagation, stale config visibility, or degraded write/read ordering.
+The first proof confirmed that schema convergence is a real distributed risk,
+not just a test gap. The next useful pass should target a different broken
+assumption, such as stale placement during a write path or a recovery-ordering
+problem.
 
 ## Next Bounded Step
 
-Choose one concrete distributed assumption to break, add the deterministic
-proof in the simulation harness, and only touch runtime code if the proof
+Choose the next concrete distributed assumption to break, add the deterministic
+proof in the simulation harness, and only touch runtime code if that proof
 exposes a real bug.
 
 ## Surprises & Discoveries
@@ -81,4 +84,5 @@ exposes a real bug.
 
 ## Outcomes & Retrospective
 
-- Pending.
+- The first pass found a real bug: distributed `Search` and `Count` would
+  abort if one live replica was behind on schema state.
