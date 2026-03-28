@@ -300,7 +300,7 @@
   decodes it will give the product worker actionable wire evidence without
   touching product code.
 - Owner: next forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire`
+  `worktrees/clientgarbage-wire`
 - Start commit: `ad458f1`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on
