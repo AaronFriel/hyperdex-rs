@@ -485,7 +485,7 @@
   - `/home/friel/c/aaronfriel/HyperDex/common/funcall.cc`
   - `/home/friel/c/aaronfriel/HyperDex/common/attribute_check.cc`
   - `/home/friel/c/aaronfriel/HyperDex/client/pending_atomic.cc`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - upstream `replication_manager::client_atomic` validates `key_change`
     against the target region schema before execution
