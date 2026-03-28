@@ -1,5 +1,4 @@
 use anyhow::{anyhow, bail, Result};
-use async_trait::async_trait;
 use cluster_config::{ClusterConfig, ClusterNode};
 use data_model::{SchemaFormat, Space, SpaceName, SpaceOptions, Subspace, ValueKind};
 use serde::{Deserialize, Serialize};
@@ -205,8 +204,9 @@ pub struct ReplicantBootstrapResponse {
     pub configuration: ReplicantBootstrapConfiguration,
 }
 
-#[async_trait]
+#[allow(async_fn_in_trait)]
 pub trait HyperdexAdminService: Send + Sync {
+    #[allow(async_fn_in_trait)]
     async fn handle(&self, request: AdminRequest) -> anyhow::Result<AdminResponse>;
 }
 

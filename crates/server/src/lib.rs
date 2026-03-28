@@ -4,7 +4,6 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
-use async_trait::async_trait;
 use bytes::Bytes;
 use cityhasher::hash as cityhash64;
 use cluster_config::{
@@ -4226,7 +4225,6 @@ fn map_admin_error_to_coordinator(err: &anyhow::Error) -> CoordinatorReturnCode 
     }
 }
 
-#[async_trait]
 impl HyperdexAdminService for ClusterRuntime {
     async fn handle(&self, request: AdminRequest) -> Result<AdminResponse> {
         match request {
@@ -4255,7 +4253,6 @@ impl HyperdexAdminService for ClusterRuntime {
     }
 }
 
-#[async_trait]
 impl HyperdexClientService for ClusterRuntime {
     async fn handle(&self, request: ClientRequest) -> Result<ClientResponse> {
         match request {

@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use bytes::Bytes;
 use data_model::{Check, Mutation, Record};
 use serde::{Deserialize, Serialize};
@@ -48,7 +47,8 @@ pub enum ClientResponse {
     ConditionFailed,
 }
 
-#[async_trait]
+#[allow(async_fn_in_trait)]
 pub trait HyperdexClientService: Send + Sync {
+    #[allow(async_fn_in_trait)]
     async fn handle(&self, request: ClientRequest) -> anyhow::Result<ClientResponse>;
 }
