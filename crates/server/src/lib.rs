@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::net::{IpAddr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
@@ -268,7 +268,7 @@ impl ClusterRuntime {
     fn create_space(&self, space: Space) -> Result<()> {
         self.storage.create_space(space.name.clone())?;
         self.catalog.create_space(space)?;
-        self.record_config_change();
+        self.record_config_change()?;
         Ok(())
     }
 
@@ -278,7 +278,7 @@ impl ClusterRuntime {
         }
         self.catalog.drop_space(name)?;
         self.storage.drop_space(name)?;
-        self.record_config_change();
+        self.record_config_change()?;
         Ok(())
     }
 
@@ -302,22 +302,29 @@ impl ClusterRuntime {
         self.local_node_id
     }
 
-    fn cluster_node_ids(&self) -> Vec<u64> {
-        self.cluster_config
-            .lock()
-            .expect("cluster config poisoned")
+    fn cluster_config_guard(&self) -> Result<MutexGuard<'_, ClusterConfig>> {
+        lock_mutex(&self.cluster_config, "cluster config")
+    }
+
+    fn coordinator_state_guard(&self) -> Result<MutexGuard<'_, CoordinatorState>> {
+        lock_mutex(&self.coordinator_state, "coordinator state")
+    }
+
+    fn legacy_searches_guard(&self) -> Result<MutexGuard<'_, BTreeMap<u64, LegacySearchState>>> {
+        lock_mutex(&self.legacy_searches, "legacy search state")
+    }
+
+    fn cluster_node_ids(&self) -> Result<Vec<u64>> {
+        Ok(self
+            .cluster_config_guard()?
             .nodes
             .iter()
             .map(|node| node.id)
-            .collect()
+            .collect())
     }
 
-    fn replica_factor(&self) -> u64 {
-        self.cluster_config
-            .lock()
-            .expect("cluster config poisoned")
-            .replicas
-            .max(1) as u64
+    fn replica_factor(&self) -> Result<u64> {
+        Ok(self.cluster_config_guard()?.replicas.max(1) as u64)
     }
 
     pub fn route_primary(&self, key: &[u8]) -> Result<u64> {
@@ -559,7 +566,7 @@ impl ClusterRuntime {
         checks: Vec<Check>,
     ) -> Result<u64> {
         let mut deleted_total = 0u64;
-        for node_id in self.cluster_node_ids() {
+        for node_id in self.cluster_node_ids()? {
             let deleted = if node_id == self.local_node_id {
                 self.data_plane.delete_matching(&space, &checks)?
             } else {
@@ -587,7 +594,7 @@ impl ClusterRuntime {
             deleted_total += deleted;
         }
 
-        let replica_factor = self.replica_factor();
+        let replica_factor = self.replica_factor()?;
         if deleted_total % replica_factor != 0 {
             anyhow::bail!(
                 "distributed delete-group removed {deleted_total} physical records across replica factor {replica_factor}"
@@ -606,7 +613,7 @@ impl ClusterRuntime {
         let mut successful_replicas = 0usize;
         let mut skipped_replicas = Vec::new();
 
-        for node_id in self.cluster_node_ids() {
+        for node_id in self.cluster_node_ids()? {
             let records = if node_id == self.local_node_id {
                 successful_replicas += 1;
                 self.data_plane.search(&space, &checks)?
@@ -811,15 +818,8 @@ impl ClusterRuntime {
     }
 
     fn config_view(&self) -> Result<hyperdex_admin_protocol::ConfigView> {
-        let coordinator_state = *self
-            .coordinator_state
-            .lock()
-            .expect("coordinator state poisoned");
-        let cluster = self
-            .cluster_config
-            .lock()
-            .expect("cluster config poisoned")
-            .clone();
+        let coordinator_state = *self.coordinator_state_guard()?;
+        let cluster = self.cluster_config_guard()?.clone();
         let mut spaces = Vec::new();
         for name in self.catalog.list_spaces()? {
             let Some(space) = self.catalog.get_space(&name)? else {
@@ -841,37 +841,32 @@ impl ClusterRuntime {
     fn register_daemon(&self, node: ClusterNode) -> Result<()> {
         let catalog_changed = self.catalog.register_daemon(node.clone())?;
         let config_changed = {
-            let mut cluster_config = self.cluster_config.lock().expect("cluster config poisoned");
+            let mut cluster_config = self.cluster_config_guard()?;
             upsert_cluster_node(&mut cluster_config.nodes, node)
         };
 
         if catalog_changed || config_changed {
-            self.record_config_change();
+            self.record_config_change()?;
         }
 
         Ok(())
     }
 
-    fn stable_version(&self) -> u64 {
-        self.coordinator_state
-            .lock()
-            .expect("coordinator state poisoned")
-            .stable_through
+    fn stable_version(&self) -> Result<u64> {
+        Ok(self.coordinator_state_guard()?.stable_through)
     }
 
-    fn record_config_change(&self) {
-        let mut coordinator_state = self
-            .coordinator_state
-            .lock()
-            .expect("coordinator state poisoned");
+    fn record_config_change(&self) -> Result<()> {
+        let mut coordinator_state = self.coordinator_state_guard()?;
         coordinator_state.version += 1;
         coordinator_state.stable_through = coordinator_state.version;
+        Ok(())
     }
 
     fn apply_config_view(&self, view: &ConfigView) -> Result<()> {
         self.catalog.replace_daemons(view.cluster.nodes.clone())?;
 
-        *self.cluster_config.lock().expect("cluster config poisoned") = view.cluster.clone();
+        *self.cluster_config_guard()? = view.cluster.clone();
 
         let local_spaces = self.catalog.list_spaces()?;
         let remote_spaces = view
@@ -899,10 +894,7 @@ impl ClusterRuntime {
             }
         }
 
-        *self
-            .coordinator_state
-            .lock()
-            .expect("coordinator state poisoned") = CoordinatorState {
+        *self.coordinator_state_guard()? = CoordinatorState {
             version: view.version,
             stable_through: view.stable_through,
         };
@@ -911,7 +903,7 @@ impl ClusterRuntime {
     }
 
     fn remote_node(&self, node_id: u64) -> Result<RemoteNode> {
-        let cluster_config = self.cluster_config.lock().expect("cluster config poisoned");
+        let cluster_config = self.cluster_config_guard()?;
         let Some(node) = cluster_config.nodes.iter().find(|node| node.id == node_id) else {
             return Err(anyhow!(
                 "cluster config does not define remote node {node_id}"
@@ -1135,8 +1127,8 @@ impl CoordinatorAdminSession {
         Ok(())
     }
 
-    fn queue_ready_waits(&mut self, runtime: &ClusterRuntime) {
-        let stable_version = legacy_condition_state(runtime.stable_version());
+    fn queue_ready_waits(&mut self, runtime: &ClusterRuntime) -> Result<()> {
+        let stable_version = legacy_condition_state(runtime.stable_version()?);
         let ready = self
             .pending_waits
             .iter()
@@ -1154,6 +1146,8 @@ impl CoordinatorAdminSession {
                 Vec::new(),
             );
         }
+
+        Ok(())
     }
 
     fn take_pending_frames(&mut self) -> Vec<BusyBeeFrame> {
@@ -1910,7 +1904,7 @@ async fn handle_coordinator_admin_frame(
                     session.pending_config_waits.insert(nonce, state);
                 }
             } else if object == b"hyperdex" && condition == b"stable" {
-                let stable_version = legacy_condition_state(runtime.stable_version());
+                let stable_version = legacy_condition_state(runtime.stable_version()?);
                 if state <= stable_version {
                     session.queue_condition_completion(
                         nonce,
@@ -2030,7 +2024,7 @@ async fn handle_coordinator_admin_frame(
     }
 
     session.queue_ready_config_waits(runtime, config_encoder)?;
-    session.queue_ready_waits(runtime);
+    session.queue_ready_waits(runtime)?;
     Ok(())
 }
 
@@ -2359,9 +2353,7 @@ pub async fn handle_legacy_request(
             };
 
             runtime
-                .legacy_searches
-                .lock()
-                .expect("legacy search state poisoned")
+                .legacy_searches_guard()?
                 .insert(
                     search_id,
                     LegacySearchState {
@@ -2382,9 +2374,7 @@ pub async fn handle_legacy_request(
             let (nonce, request_body) = legacy_decode_request_nonce(body)?;
             let search_id = decode_protocol_search_continue(request_body)?;
             runtime
-                .legacy_searches
-                .lock()
-                .expect("legacy search state poisoned")
+                .legacy_searches_guard()?
                 .remove(&search_id);
 
             Ok((
@@ -2866,10 +2856,7 @@ fn legacy_search_response(
     nonce: u64,
     search_id: u64,
 ) -> Result<(ResponseHeader, Vec<u8>)> {
-    let mut searches = runtime
-        .legacy_searches
-        .lock()
-        .expect("legacy search state poisoned");
+    let mut searches = runtime.legacy_searches_guard()?;
     let Some(state) = searches.get_mut(&search_id) else {
         return Ok((
             ResponseHeader {
@@ -3999,6 +3986,12 @@ fn decode_be_u64_exact(bytes: &[u8], label: &str) -> Result<u64> {
     Ok(u64::from_be_bytes(raw))
 }
 
+fn lock_mutex<'a, T>(mutex: &'a Mutex<T>, label: &str) -> Result<MutexGuard<'a, T>> {
+    mutex
+        .lock()
+        .map_err(|_| anyhow!("{label} poisoned while handling request"))
+}
+
 fn decode_le_u32_exact(bytes: &[u8], label: &str) -> Result<u32> {
     let raw = bytes
         .try_into()
@@ -4090,7 +4083,7 @@ pub async fn handle_coordinator_control_method(
         ),
         ("wait_until_stable", CoordinatorAdminRequest::WaitUntilStable) => (
             CoordinatorReturnCode::Success,
-            serde_json::to_vec(&runtime.stable_version())?,
+            serde_json::to_vec(&runtime.stable_version()?)?,
         ),
         ("config_get", CoordinatorAdminRequest::ConfigGet) => (
             CoordinatorReturnCode::Success,
@@ -4277,7 +4270,7 @@ pub async fn handle_replicant_admin_request(
         CoordinatorAdminRequest::WaitUntilStable => Ok(ReplicantConditionCompletion {
             nonce,
             status: ReplicantReturnCode::Success,
-            state: legacy_condition_state(runtime.stable_version()),
+            state: legacy_condition_state(runtime.stable_version()?),
             data: Vec::new(),
         }
         .encode()),
@@ -4330,7 +4323,7 @@ impl HyperdexAdminService for ClusterRuntime {
             AdminRequest::ListSpaces => Ok(AdminResponse::Spaces(self.catalog.list_spaces()?)),
             AdminRequest::DumpConfig => Ok(AdminResponse::Config(self.config_view()?)),
             AdminRequest::WaitUntilStable => Ok(AdminResponse::Stable {
-                version: self.stable_version(),
+                version: self.stable_version()?,
             }),
         }
     }

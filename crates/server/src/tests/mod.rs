@@ -747,7 +747,7 @@ async fn replicant_wait_until_stable_maps_to_condition_completion() {
     assert_eq!(completion.status, ReplicantReturnCode::Success);
     assert_eq!(
         completion.state,
-        legacy_condition_state(runtime.stable_version())
+        legacy_condition_state(runtime.stable_version().unwrap())
     );
     assert!(completion.data.is_empty());
 }
