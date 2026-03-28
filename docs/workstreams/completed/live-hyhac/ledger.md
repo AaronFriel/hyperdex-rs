@@ -705,7 +705,7 @@
 - Kind: `outcome`
 - End commit: `51002a7`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - no code changes in `worktrees/admin-server`
 - Evidence summary:
   - the service-core worker still produced no diff
   - it returned a precise blocker report: the server has no Rust decoder for
