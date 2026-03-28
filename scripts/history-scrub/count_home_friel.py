@@ -79,9 +79,10 @@ def count_tree(root: Path) -> CountResult:
     return result
 
 
-def count_history(root: Path) -> CountResult:
+def count_history(root: Path, all_refs: bool) -> CountResult:
+    rev_args = ["--all"] if all_refs else ["HEAD"]
     objects = subprocess.check_output(
-        ["git", "rev-list", "--objects", "--all"], cwd=root, text=True
+        ["git", "rev-list", "--objects", *rev_args], cwd=root, text=True
     ).splitlines()
     paths_by_oid: dict[str, str] = {}
     for line in objects:
@@ -161,12 +162,13 @@ def main() -> int:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--tree", action="store_true")
     group.add_argument("--history", action="store_true")
+    parser.add_argument("--all-refs", action="store_true")
     args = parser.parse_args()
 
     root = repo_root()
     os.chdir(root)
 
-    result = count_tree(root) if args.tree else count_history(root)
+    result = count_tree(root) if args.tree else count_history(root, args.all_refs)
     print_result("tree" if args.tree else "history", result)
     return 0
 
