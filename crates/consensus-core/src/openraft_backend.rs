@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
-use async_trait::async_trait;
 use openraft::errors::{RPCError, ReplicationClosed, StreamingError, Unreachable};
 use openraft::network::{
     Backoff, NetBackoff, NetSnapshot, NetStreamAppend, NetTransferLeader, NetVote, RPCOption,
@@ -165,7 +164,6 @@ impl OpenRaftReplicator {
     }
 }
 
-#[async_trait]
 impl ReplicatedStateMachine<openraft_memstore::ClientRequest> for OpenRaftReplicator {
     async fn apply(&self, command: openraft_memstore::ClientRequest) -> Result<()> {
         self.raft
