@@ -2674,3 +2674,48 @@
   - a reusable verifier under `scripts/**`
   - a documented command surface in the script usage itself
   - proof that the script reproduces the current green live acceptance result
+
+### Entry `hyh-054` - Outcome
+
+- Timestamp: `2026-03-28 03:27Z`
+- Kind: `outcome`
+- End state:
+  - integrated on `main` in `281b8cb`
+- Artifacts:
+  - `281b8cb` (`Fix legacy two-daemon routing and add live Hyhac proof`)
+  - `crates/server/tests/dist_multiprocess_harness.rs`
+  - `crates/server/src/lib.rs`
+- Evidence:
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_split_acceptance_suite_passes_two_daemon_live_cluster -- --nocapture`
+    passed
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_split_acceptance_suite_passes_live_cluster -- --nocapture`
+    passed
+  - `cargo test -p server`
+    passed
+- Conclusion: the Hyhac-facing public surface is now proven on a real
+  two-daemon cluster as well as on the earlier single-daemon split acceptance
+  path.
+- Disposition: `advance`
+- Next move: keep both live proofs green and use them as the public baseline.
+
+### Entry `hyh-055` - Outcome
+
+- Timestamp: `2026-03-28 03:27Z`
+- Kind: `outcome`
+- End state:
+  - integrated on `main` via the landed verifier content and root
+    reconciliation at `40b5d4f`
+- Artifacts:
+  - `scripts/verify-live-acceptance.sh`
+  - `40b5d4f` (`Add reusable live acceptance verifier`)
+- Evidence:
+  - `scripts/verify-live-acceptance.sh --quick`
+    passed
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_split_acceptance_suite_passes_live_cluster -- --nocapture`
+    passed
+- Conclusion: the current green live acceptance path is now packaged as a
+  repository-local verifier instead of only as cargo-test filters and ad hoc
+  shell commands.
+- Disposition: `advance`
+- Next move: keep the verifier green and use it as the default public check for
+  the current Hyhac-facing surface.

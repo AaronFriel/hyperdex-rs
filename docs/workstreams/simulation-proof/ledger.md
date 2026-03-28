@@ -110,3 +110,26 @@
   - a substantive fix for the degraded-read simulation failure
   - green `simulation-harness`
   - green workspace or an exact remaining blocker with proof
+
+### Entry `sim-003` - Outcome
+
+- Timestamp: `2026-03-28 03:27Z`
+- Kind: `outcome`
+- End state:
+  - integrated on `main` in `ddb5357`
+- Artifact location:
+  - `ddb5357` (`Fix degraded-read simulation replication setup`)
+  - `crates/simulation-harness/src/lib.rs`
+- Evidence summary:
+  - `cargo test -p simulation-harness turmoil_preserves_degraded_read_correctness_after_one_node_loss -- --nocapture`
+    passed
+  - `cargo test -p simulation-harness`
+    passed
+  - `cargo test --workspace`
+    passed on root after the later public-frontend proof correction landed
+- Conclusion: the degraded-read simulation failure came from a stale proof
+  setup, not from a runtime regression. The degraded-read proofs now use a
+  replicated schema when they assert replica fallback.
+- Disposition: `advance`
+- Next move: park this workstream again until a new live or runtime failure
+  needs deterministic proof work.

@@ -111,9 +111,9 @@ split, sequencing, or validators need to change.
 
 | Workstream | Status | Owner | Dependencies / Blockers | Plan | Ledger | Worktree / Branch | Fastest Useful Check | Next Step | Latest Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `live-hyhac` | active | root plus two delegated forks | No current product blocker on the single-daemon Hyhac surface. The split live acceptance path now passes end to end; the next useful step is to keep that proof green while extending public acceptance toward a broader live distributed check or reusable verifier. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-two-daemon` and `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-acceptance-script` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_split_acceptance_suite_passes_live_cluster -- --nocapture` | Keep the split live Hyhac acceptance green, then extend public acceptance toward a broader live distributed check and a reusable verification entrypoint. | `advance` |
+| `live-hyhac` | active | root | No current blocker on the public Hyhac-facing surface. The split live acceptance path is green on both single-daemon and two-daemon clusters, and the reusable verifier exists on `main`. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | none active | `scripts/verify-live-acceptance.sh --quick` | Keep the live acceptance proof green and decide what broader public distributed acceptance or operability proof should come next. | `advance` |
 | `multiprocess-harness` | parked | root | No current blocker. The truthful repro work is already good enough to support the next product step. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | none active | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_pooled_probe_reaches_map_atomic_failure_after_integer_boundary -- --nocapture` | Leave parked until the next product pass needs a smaller live repro. | `advance` |
-| `simulation-proof` | active | root plus one delegated fork | The public live proof is green enough that the deterministic degraded-read simulation is the next red path. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/simulation-degraded-read-fix` | `cargo test -p simulation-harness turmoil_preserves_degraded_read_correctness_after_one_node_loss -- --nocapture` | Fix the degraded-read simulation so the workspace returns to green without regressing the live public proofs. | `advance` |
+| `simulation-proof` | parked | root | No current blocker. The deterministic degraded-read simulation is fixed and the workspace is green again. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | none active | `cargo test -p simulation-harness turmoil_preserves_degraded_read_correctness_after_one_node_loss -- --nocapture` | Leave parked until a new live or runtime failure needs deterministic proof work again. | `advance` |
 | `coordinator-config-evidence` | parked | root | Not on the critical path. The next active question is later than the coordinator follow/bootstrap path. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Leave parked until the product pass needs another exact source comparison. | `advance` |
 
 ## Progress
@@ -149,24 +149,26 @@ split, sequencing, or validators need to change.
   work on `main`, turned the stale map-failure probes into green live checks,
   and proved the Hyhac suite passes on a real cluster when exercised in the
   correct live phases.
-- [ ] Extend the live public acceptance proof beyond the split single-daemon
-  Hyhac path without regressing the current surface.
+- [x] (2026-03-28 03:27Z) Extended the live public acceptance proof to a real
+  two-daemon cluster, added a reusable verifier script, fixed the stale
+  degraded-read simulation assumption, and returned `cargo test --workspace`
+  to green on root.
+- [ ] Decide the next broader public distributed acceptance or operability
+  proof beyond the current live Hyhac and workspace-green baseline.
 
 ## Current Root Focus
 
-Drive the live compatibility path through the newly-cleared integer and float
-atomic sections and keep the next iterations biased toward material code in
-`crates/**`. The active problem is no longer bootstrap, schema creation, the
-first daemon round-trip, the large-object post-success stall, or the pooled
-`roundtrip`, `conditional`, `search`, `count`, integer atomic, and float
-atomic failures. The active problem is now map-valued atomic mutation.
+Keep the repository on the new green baseline: live Hyhac acceptance is proven
+on both single-daemon and two-daemon clusters, the reusable verifier exists,
+and the deterministic proof path is green again. The next step is no longer an
+open compatibility bug already known from current evidence; it is choosing the
+next broader acceptance target without regressing what is now green.
 
 ## Next Root Move
 
-Keep the newly-cleared pooled path through float atomics green, park the
-harness unless the next product pass needs a smaller live repro, and launch
-two product-owned forks on map-valued atomic mutation with the same honest
-full-schema setup.
+Refresh the root package to match the integrated state, close the stale
+watchdog handle, and then choose the next broader public distributed or
+operability proof from a green baseline instead of from a failing one.
 
 ## Surprises & Discoveries
 

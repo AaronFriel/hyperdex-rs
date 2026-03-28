@@ -42,12 +42,10 @@ mutations, degraded reads, and schema-correct attribute use.
 
 ## Plan Of Work
 
-Start from the confirmed red deterministic boundary:
-`turmoil_preserves_degraded_read_correctness_after_one_node_loss` now fails on
-integrated `main` after the new two-daemon public routing work. Fix that
-degraded-read simulation path first, keep the live public proofs green, and
-then rerun the broader workspace validator before reopening any speculative
-proof expansion.
+Start from the currently green deterministic baseline and only reopen this
+workstream when a real live or runtime failure needs new proof coverage or a
+proof correction. The last bounded step fixed a stale degraded-read assumption
+and returned the workspace to green.
 
 ## Progress
 
@@ -57,21 +55,20 @@ proof expansion.
   property into `6d55620` (`Add Hegel routed numeric mutation coverage`).
 - [x] (2026-03-27 04:33Z) Tightened the remaining schema-permissive single-node
   Hegel sequence test in `5cc0cf8` (`Fix Hegel single-node schema usage`).
-- [ ] Fix the deterministic degraded-read simulation so `cargo test
-  --workspace` returns to green on current `main`.
+- [x] (2026-03-28 03:27Z) Fixed the stale degraded-read simulation assumption,
+  aligned the degraded-read proofs to a replicated schema, and returned
+  `cargo test --workspace` to green on root.
 
 ## Current Hypothesis
 
-The next useful proof step is no longer speculative. The deterministic
-degraded-read simulation is red on current `main`, while the live public
-Hyhac-facing proofs are green. That makes the simulation failure the next real
-product or proof bug to close.
+The current proof surface is back in a good holding state. The next useful
+proof step should come from a fresh live or runtime failure rather than from a
+stale simulation assumption.
 
 ## Next Bounded Step
 
-Fix `turmoil_preserves_degraded_read_correctness_after_one_node_loss` without
-regressing the live public acceptance proofs, then rerun `cargo test
---workspace`.
+Hold this workstream parked until a new live or runtime failure needs a
+deterministic proof change.
 
 ## Surprises & Discoveries
 
@@ -80,12 +77,12 @@ regressing the live public acceptance proofs, then rerun `cargo test
   shared `/tmp` collisions before adding the property itself.
   Evidence: `ensure_hegel_server_command()` already uses
   `std::process::id()` in `crates/simulation-harness/src/lib.rs`.
-- Observation: after the new two-daemon public routing work landed, the next
-  red path is the deterministic degraded-read simulation rather than another
-  public compatibility gap.
-  Evidence: `cargo test -p simulation-harness turmoil_preserves_degraded_read_correctness_after_one_node_loss -- --nocapture`
-  now fails on integrated `main` with `get failed on all replicas for space
-  'profiles' after remote failure on replica 2`.
+- Observation: the earlier degraded-read simulation failure was a stale proof
+  assumption rather than a runtime regression.
+  Evidence: the degraded-read tests were using a schema with `tolerate 0
+  failures`, while asserting replica fallback after one node loss; after
+  switching those proofs to a replicated schema, `cargo test -p
+  simulation-harness` and `cargo test --workspace` both passed again.
 
 ## Decision Log
 

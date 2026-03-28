@@ -50,11 +50,11 @@ until the suite passes.
 Keep one honest live validator on `main`, shorten it only when that directly
 improves engineering cycle time, and drive remaining compatibility or proof
 gaps through real changes in `crates/**` or a directly relevant live
-verification harness. The current step starts from a stronger baseline: the
-live Hyhac surface is green through admin add/remove, pooled data operations,
-shared data operations, and the CBString checks when run in the correct live
-phases. The next pass should broaden that public proof toward more distributed
-live acceptance without regressing the current surface.
+verification harness. The current baseline is broader now: the live Hyhac
+surface is green on both a single-daemon cluster and a real two-daemon
+cluster, and a reusable verifier exists for the single-daemon acceptance path.
+The next pass should broaden public distributed or operability proof from that
+green baseline without regressing it.
 
 ## Progress
 
@@ -86,25 +86,27 @@ live acceptance without regressing the current surface.
   split live acceptance proof that runs Hyhac admin add/remove on a fresh
   cluster, pooled/shared data checks on a full-schema cluster, and CBString
   directly.
-- [ ] Extend the live acceptance proof beyond the split single-daemon Hyhac
-  path without regressing the current green surface.
+- [x] (2026-03-28 03:27Z) Extended the live public proof to a real two-daemon
+  cluster and added a reusable `scripts/verify-live-acceptance.sh` entrypoint
+  for the current green single-daemon acceptance path.
+- [ ] Decide the next broader public distributed or operability proof from the
+  new green live baseline.
 
 ## Current Hypothesis
 
-There is no current live mismatch on the single-daemon Hyhac surface when the
-suite is exercised honestly: admin add/remove must run on a fresh cluster,
-pooled/shared data checks must run after the full `profiles` schema exists, and
-CBString can run directly. The next useful gap is not another late map-atomic
-failure; it is broader public distributed acceptance beyond that split
-single-daemon proof.
+There is no current live mismatch on the Hyhac-facing public surface that is
+already covered: the suite is green on a split single-daemon path, and the
+same surface is also green on a real two-daemon cluster. The next useful gap is
+not a known compatibility failure but the next broader public distributed or
+operability proof worth adding.
 
 ## Next Bounded Step
 
-Keep the split live acceptance check green as the main public validator. Use a
+Keep the split live acceptance check and the reusable verifier green. Use a
 supporting harness or script only if it broadens public distributed proof or
 materially shortens the next live acceptance loop without hiding setup
-requirements. The next bounded step is to extend the live proof toward a more
-distributed public acceptance path or a reusable verifier.
+requirements. The next bounded step is to choose and implement the next broader
+public distributed or operability proof from this green baseline.
 
 ## Surprises & Discoveries
 
@@ -152,6 +154,14 @@ distributed public acceptance path or a reusable verifier.
   Evidence: `legacy_hyhac_split_acceptance_suite_passes_live_cluster` passes on
   `main`, proving `Can add a space`, `Can remove a space`, `*pooled*`,
   `*shared*`, and `*CBString*` on live Rust-backed clusters.
+- Observation: the same Hyhac-facing surface is also green on a real
+  two-daemon cluster.
+  Evidence: `legacy_hyhac_split_acceptance_suite_passes_two_daemon_live_cluster`
+  passes on `main`.
+- Observation: the current live proof is no longer trapped inside cargo test
+  filters.
+  Evidence: `scripts/verify-live-acceptance.sh --quick` passes on `main` and
+  runs the current green acceptance path directly.
 
 ## Decision Log
 
