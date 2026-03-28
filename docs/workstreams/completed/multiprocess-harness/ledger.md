@@ -473,7 +473,7 @@
   `worktrees/post-success-repro`
 - Start commit: `df25106`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro` on
+  - `worktrees/post-success-repro` on
     `post-success-repro`
 - Mutable surface:
   - `Cargo.toml`
