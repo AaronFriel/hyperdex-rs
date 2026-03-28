@@ -1902,7 +1902,7 @@
 - Owner: delegated worker `019d316f-5ffb-7f62-885c-e7eddcc6345f` (`Confucius`)
 - Start commit: `2fb432c`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
+  - `worktrees/live-hyhac-post-follow`
     on `live-hyhac-post-follow`
 - Mutable surface:
   - `crates/server/**`
