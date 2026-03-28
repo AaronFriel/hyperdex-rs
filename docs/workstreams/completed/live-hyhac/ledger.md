@@ -2127,7 +2127,7 @@
 - Kind: `outcome`
 - End commit: `589ce4f`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - `589ce4f` adds
     `legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup`
