@@ -2987,90 +2987,6 @@ async fn legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence() 
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_pooled_probe_reaches_map_atomic_failure_after_integer_boundary() -> Result<()>
-{
-    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
-    let cluster = spawn_single_daemon_cluster().await?;
-    let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
-        setup_full_profiles_schema(cluster.coordinator_address).await?;
-
-    let (exit_status, stdout, stderr) = run_hyhac_selected_tests_direct(
-        cluster.coordinator_address,
-        "*pooled*",
-        Duration::from_secs(30),
-    )
-    .await?;
-    eprintln!(
-        "hyhac full-profiles pooled probe: add_exit={add_exit_status:?} add_stdout=`{add_stdout}` add_stderr=`{add_stderr}` stable_exit={stable_exit_status:?} stable_stdout=`{stable_stdout}` stable_stderr=`{stable_stderr}` exit_status={exit_status:?} stdout=`{stdout}` stderr=`{stderr}`"
-    );
-
-    let map_section_idx = stdout
-        .find("        map:\n          int-int:\n            union: [OK, passed 100 tests]")
-        .context("pooled hyhac probe did not preserve map int-int union success")?;
-
-    assert_eq!(add_exit_status.map(|status| status.code()), Some(Some(0)));
-    assert_eq!(
-        stable_exit_status.map(|status| status.code()),
-        Some(Some(0))
-    );
-    assert!(
-        stdout.contains("Can store a large object: [OK]"),
-        "expected the large-object boundary to stay green"
-    );
-    assert!(
-        stdout.contains("roundtrip: [OK, passed 100 tests]"),
-        "expected the pooled roundtrip boundary to stay green"
-    );
-    assert!(
-        stdout.contains("conditional: [OK, passed 100 tests]"),
-        "expected the pooled conditional boundary to stay green"
-    );
-    assert!(
-        stdout.contains("search: [OK, passed 100 tests]"),
-        "expected the pooled search boundary to stay green"
-    );
-    assert!(
-        stdout.contains("count: [OK, passed 100 tests]"),
-        "expected the pooled count boundary to stay green"
-    );
-    assert!(
-        stdout.contains(
-            "        integer:\n          add: [OK, passed 100 tests]\n          sub: [OK, passed 100 tests]\n          mul: [OK, passed 100 tests]\n          div: [OK, passed 100 tests]\n          mod: [OK, passed 100 tests]"
-        ),
-        "expected the pooled integer atomic section to stay green through div and mod"
-    );
-    assert!(
-        stdout.contains(
-            "        float:\n          add: [OK, passed 100 tests]\n          sub: [OK, passed 100 tests]\n          mul: [OK, passed 100 tests]\n          div: [OK, passed 100 tests]"
-        ),
-        "expected the pooled float atomic section to stay green"
-    );
-    assert!(
-        stdout[map_section_idx..].contains("            add: [Failed]"),
-        "expected the pooled probe to reach map add failure after map int-int union"
-    );
-    assert!(
-        stdout.contains("Failed in running atomic op:\n  test name: \"add\""),
-        "expected the pooled map add failure details to be present"
-    );
-    assert!(
-        stdout.contains("  error:     ClientServererror"),
-        "expected the pooled map add failure to report the current server error"
-    );
-    assert!(
-        stdout.contains("          div: [OK, passed 100 tests]"),
-        "expected the integer div boundary to stay green"
-    );
-    assert!(
-        exit_status.is_some(),
-        "expected the pooled hyhac probe to finish before the deadline"
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-#[serial]
 async fn legacy_hyhac_integer_div_probe_turns_green_after_full_profiles_setup() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
@@ -3134,7 +3050,127 @@ async fn legacy_hyhac_integer_div_probe_turns_green_after_full_profiles_setup() 
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_map_int_int_add_probe_fails_after_full_profiles_setup() -> Result<()> {
+async fn legacy_hyhac_pooled_probe_reaches_string_map_failure_after_numeric_map_boundary() -> Result<()>
+{
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+    let cluster = spawn_single_daemon_cluster().await?;
+    let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
+        setup_full_profiles_schema(cluster.coordinator_address).await?;
+
+    let (exit_status, stdout, stderr) = run_hyhac_selected_tests_direct(
+        cluster.coordinator_address,
+        "*pooled*",
+        Duration::from_secs(30),
+    )
+    .await?;
+    eprintln!(
+        "hyhac full-profiles pooled probe: add_exit={add_exit_status:?} add_stdout=`{add_stdout}` add_stderr=`{add_stderr}` stable_exit={stable_exit_status:?} stable_stdout=`{stable_stdout}` stable_stderr=`{stable_stderr}` exit_status={exit_status:?} stdout=`{stdout}` stderr=`{stderr}`"
+    );
+
+    let map_section_idx = stdout
+        .find("        map:\n          int-int:\n            union: [OK, passed 100 tests]")
+        .context("pooled hyhac probe did not preserve map int-int union success")?;
+
+    assert_eq!(add_exit_status.map(|status| status.code()), Some(Some(0)));
+    assert_eq!(
+        stable_exit_status.map(|status| status.code()),
+        Some(Some(0))
+    );
+    assert!(
+        stdout.contains("Can store a large object: [OK]"),
+        "expected the large-object boundary to stay green"
+    );
+    assert!(
+        stdout.contains("roundtrip: [OK, passed 100 tests]"),
+        "expected the pooled roundtrip boundary to stay green"
+    );
+    assert!(
+        stdout.contains("conditional: [OK, passed 100 tests]"),
+        "expected the pooled conditional boundary to stay green"
+    );
+    assert!(
+        stdout.contains("search: [OK, passed 100 tests]"),
+        "expected the pooled search boundary to stay green"
+    );
+    assert!(
+        stdout.contains("count: [OK, passed 100 tests]"),
+        "expected the pooled count boundary to stay green"
+    );
+    assert!(
+        stdout.contains(
+            "        integer:\n          add: [OK, passed 100 tests]\n          sub: [OK, passed 100 tests]\n          mul: [OK, passed 100 tests]\n          div: [OK, passed 100 tests]\n          mod: [OK, passed 100 tests]"
+        ),
+        "expected the pooled integer atomic section to stay green through div and mod"
+    );
+    assert!(
+        stdout.contains(
+            "        float:\n          add: [OK, passed 100 tests]\n          sub: [OK, passed 100 tests]\n          mul: [OK, passed 100 tests]\n          div: [OK, passed 100 tests]"
+        ),
+        "expected the pooled float atomic section to stay green"
+    );
+    assert!(
+        stdout[map_section_idx..].contains(
+            "          int-int:\n            union: [OK, passed 100 tests]\n            add: [OK, passed 100 tests]\n            sub: [OK, passed 100 tests]\n            mul: [OK, passed 100 tests]\n            div: [OK, passed 100 tests]\n            and: [OK, passed 100 tests]\n            or: [OK, passed 100 tests]\n            xor: [OK, passed 100 tests]"
+        ),
+        "expected the pooled probe to keep the int-int numeric map section green"
+    );
+    assert!(
+        stdout[map_section_idx..].contains(
+            "          int-float:\n            union: [OK, passed 100 tests]\n            add: [OK, passed 100 tests]\n            sub: [OK, passed 100 tests]\n            mul: [OK, passed 100 tests]\n            div: [OK, passed 100 tests]"
+        ),
+        "expected the pooled probe to keep the int-float numeric map section green"
+    );
+    assert!(
+        stdout[map_section_idx..].contains(
+            "          float-int:\n            union: [OK, passed 100 tests]\n            add: [OK, passed 100 tests]\n            sub: [OK, passed 100 tests]\n            mul: [OK, passed 100 tests]\n            div: [OK, passed 100 tests]\n            and: [OK, passed 100 tests]\n            or: [OK, passed 100 tests]\n            xor: [OK, passed 100 tests]"
+        ),
+        "expected the pooled probe to keep the float-int numeric map section green"
+    );
+    assert!(
+        stdout[map_section_idx..].contains(
+            "          float-float:\n            union: [OK, passed 100 tests]\n            add: [OK, passed 100 tests]\n            sub: [OK, passed 100 tests]\n            mul: [OK, passed 100 tests]\n            div: [OK, passed 100 tests]"
+        ),
+        "expected the pooled probe to keep the float-float numeric map section green"
+    );
+    assert!(
+        stdout[map_section_idx..].contains(
+            "          string-int:\n            union: [OK, passed 100 tests]\n            add: [OK, passed 100 tests]\n            sub: [OK, passed 100 tests]\n            mul: [OK, passed 100 tests]\n            div: [OK, passed 100 tests]\n            and: [OK, passed 100 tests]\n            or: [OK, passed 100 tests]\n            xor: [OK, passed 100 tests]"
+        ),
+        "expected the pooled probe to keep the string-int numeric map section green"
+    );
+    assert!(
+        stdout[map_section_idx..].contains(
+            "          string-float:\n            union: [OK, passed 100 tests]\n            add: [OK, passed 100 tests]\n            sub: [OK, passed 100 tests]\n            mul: [OK, passed 100 tests]\n            div: [OK, passed 100 tests]"
+        ),
+        "expected the pooled probe to keep the string-float numeric map section green"
+    );
+    assert!(
+        stdout[map_section_idx..].contains("          int-string:\n            union: [OK, passed 100 tests]"),
+        "expected the pooled probe to reach the string-valued map section"
+    );
+    assert!(
+        stdout[map_section_idx..].contains("            prepend: [Failed]"),
+        "expected the pooled probe to reach the next int-string prepend failure"
+    );
+    assert!(
+        stdout.contains("Failed in running atomic op:\n  test name: \"prepend\""),
+        "expected the pooled string-map failure details to be present"
+    );
+    assert!(
+        stdout.contains("  error:     ClientServererror"),
+        "expected the pooled string-map failure to report the current server error"
+    );
+    assert!(
+        exit_status.is_some(),
+        "expected the pooled hyhac probe to finish before the deadline"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn legacy_hyhac_map_int_int_add_probe_turns_green_after_full_profiles_setup() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
     let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
@@ -3160,16 +3196,16 @@ async fn legacy_hyhac_map_int_int_add_probe_fails_after_full_profiles_setup() ->
         "expected the focused probe to stay inside the pooled map int-int atomic group"
     );
     assert!(
-        stdout.contains("add: [Failed]"),
-        "expected the focused probe to reach the current map add failure"
+        stdout.contains("add: [OK, passed 100 tests]"),
+        "expected the focused probe to show map int-int add success"
     );
     assert!(
-        stdout.contains("Failed in running atomic op:\n  test name: \"add\""),
-        "expected the focused probe to report the map add failure details"
+        !stdout.contains("[Failed]"),
+        "expected the focused probe to avoid later failures"
     );
     assert!(
-        stdout.contains("  error:     ClientServererror"),
-        "expected the focused probe to report the current server error"
+        !stdout.contains("ClientServererror"),
+        "expected the focused probe to avoid the prior server error"
     );
     assert!(
         !stdout.contains("integer:\n"),
@@ -3227,6 +3263,58 @@ async fn legacy_hyhac_map_string_string_prepend_probe_turns_green_after_full_pro
         exit_status.map(|status| status.code()),
         Some(Some(0)),
         "expected the focused probe to exit successfully"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn legacy_hyhac_map_int_string_prepend_probe_fails_after_numeric_map_boundary() -> Result<()>
+{
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+    let cluster = spawn_single_daemon_cluster().await?;
+    let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
+        setup_full_profiles_schema(cluster.coordinator_address).await?;
+
+    let (exit_status, stdout, stderr) = run_hyhac_selected_tests_direct(
+        cluster.coordinator_address,
+        "*pooled*/*atomic*/*map*/*int-string*/*prepend",
+        Duration::from_secs(15),
+    )
+    .await?;
+    eprintln!(
+        "hyhac full-profiles map-int-string-prepend probe: add_exit={add_exit_status:?} add_stdout=`{add_stdout}` add_stderr=`{add_stderr}` stable_exit={stable_exit_status:?} stable_stdout=`{stable_stdout}` stable_stderr=`{stable_stderr}` exit_status={exit_status:?} stdout=`{stdout}` stderr=`{stderr}`"
+    );
+
+    assert_eq!(add_exit_status.map(|status| status.code()), Some(Some(0)));
+    assert_eq!(
+        stable_exit_status.map(|status| status.code()),
+        Some(Some(0))
+    );
+    assert!(
+        stdout.contains("pooled:\n      atomic:\n        map:\n          int-string:"),
+        "expected the focused probe to stay inside the pooled map int-string atomic group"
+    );
+    assert!(
+        stdout.contains("prepend: [Failed]"),
+        "expected the focused probe to reach the current int-string prepend failure"
+    );
+    assert!(
+        stdout.contains("Failed in running atomic op:\n  test name: \"prepend\""),
+        "expected the focused probe to report the string-map prepend failure details"
+    );
+    assert!(
+        stdout.contains("  error:     ClientServererror"),
+        "expected the focused probe to report the current server error"
+    );
+    assert!(
+        !stdout.contains("int-int:"),
+        "expected the focused probe to avoid rerunning the earlier numeric map group"
+    );
+    assert!(
+        exit_status.is_some(),
+        "expected the focused probe to finish before the deadline"
     );
 
     Ok(())

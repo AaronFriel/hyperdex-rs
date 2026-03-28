@@ -2802,35 +2802,7 @@ fn legacy_validate_protocol_funcall(space: &Space, funcall: &ProtocolFuncall) ->
         }
         FUNC_NUM_ADD | FUNC_NUM_SUB | FUNC_NUM_MUL | FUNC_NUM_DIV | FUNC_NUM_MOD | FUNC_NUM_AND
         | FUNC_NUM_OR | FUNC_NUM_XOR | FUNC_NUM_MAX | FUNC_NUM_MIN => {
-            let expected = match attribute_kind {
-                ValueKind::Int => HYPERDATATYPE_INT64,
-                ValueKind::Float => HYPERDATATYPE_FLOAT,
-                other => anyhow::bail!(
-                    "legacy numeric funcall {} targets non-numeric attr {:?}",
-                    funcall.name,
-                    other
-                ),
-            };
-            if funcall.arg1_datatype != expected {
-                anyhow::bail!(
-                    "legacy numeric datatype {} does not match schema datatype {} for attr {}",
-                    funcall.arg1_datatype,
-                    expected,
-                    funcall.attr
-                );
-            }
-            if !funcall.arg2.is_empty() || funcall.arg2_datatype != 0 {
-                anyhow::bail!("legacy numeric funcalls may not carry arg2");
-            }
-            match attribute_kind {
-                ValueKind::Int => {
-                    let _ = legacy_decode_i64(&funcall.arg1)?;
-                }
-                ValueKind::Float => {
-                    let _ = legacy_decode_f64(&funcall.arg1)?;
-                }
-                _ => unreachable!(),
-            }
+            legacy_validate_numeric_protocol_funcall(funcall, attribute_kind)?;
         }
         FUNC_STRING_APPEND | FUNC_STRING_PREPEND | FUNC_STRING_LTRIM | FUNC_STRING_RTRIM => {
             match attribute_kind {
@@ -3048,6 +3020,98 @@ fn legacy_atomic_can_use_runtime_mutations(space: &Space, funcalls: &[ProtocolFu
     })
 }
 
+fn legacy_validate_numeric_protocol_funcall(
+    funcall: &ProtocolFuncall,
+    attribute_kind: &ValueKind,
+) -> Result<()> {
+    match attribute_kind {
+        ValueKind::Int => {
+            legacy_validate_numeric_operand(funcall, attribute_kind)?;
+            if !funcall.arg2.is_empty() || funcall.arg2_datatype != 0 {
+                anyhow::bail!("legacy scalar numeric funcalls may not carry arg2");
+            }
+        }
+        ValueKind::Float => {
+            legacy_validate_numeric_operand(funcall, attribute_kind)?;
+            if !funcall.arg2.is_empty() || funcall.arg2_datatype != 0 {
+                anyhow::bail!("legacy scalar numeric funcalls may not carry arg2");
+            }
+            legacy_validate_float_numeric_name(funcall.name)?;
+        }
+        ValueKind::Map { key, value } => {
+            let expected_key = legacy_hyperdatatype(key.as_ref())?;
+            if funcall.arg2_datatype != expected_key {
+                anyhow::bail!(
+                    "legacy numeric map key datatype {} does not match schema datatype {} for attr {}",
+                    funcall.arg2_datatype,
+                    expected_key,
+                    funcall.attr
+                );
+            }
+            let _ = legacy_value_from_protocol(funcall.arg2_datatype, &funcall.arg2)?;
+            legacy_validate_numeric_operand(funcall, value.as_ref())?;
+            if matches!(value.as_ref(), ValueKind::Float) {
+                legacy_validate_float_numeric_name(funcall.name)?;
+            }
+        }
+        other => anyhow::bail!(
+            "legacy numeric funcall {} targets non-numeric attr {:?}",
+            funcall.name,
+            other
+        ),
+    }
+
+    Ok(())
+}
+
+fn legacy_validate_numeric_operand(funcall: &ProtocolFuncall, target_kind: &ValueKind) -> Result<()> {
+    match target_kind {
+        ValueKind::Int => match funcall.arg1_datatype {
+            HYPERDATATYPE_INT64 => {
+                let _ = legacy_decode_i64(&funcall.arg1)?;
+            }
+            HYPERDATATYPE_FLOAT => {
+                let _ = legacy_decode_f64(&funcall.arg1)?;
+            }
+            other => {
+                anyhow::bail!(
+                    "legacy numeric datatype {} does not match schema datatype {} for attr {}",
+                    other,
+                    HYPERDATATYPE_INT64,
+                    funcall.attr
+                );
+            }
+        },
+        ValueKind::Float => match funcall.arg1_datatype {
+            HYPERDATATYPE_INT64 => {
+                let _ = legacy_decode_i64(&funcall.arg1)?;
+            }
+            HYPERDATATYPE_FLOAT => {
+                let _ = legacy_decode_f64(&funcall.arg1)?;
+            }
+            other => {
+                anyhow::bail!(
+                    "legacy numeric datatype {} does not match schema datatype {} for attr {}",
+                    other,
+                    HYPERDATATYPE_FLOAT,
+                    funcall.attr
+                );
+            }
+        },
+        other => anyhow::bail!("legacy numeric funcall target is not numeric: {other:?}"),
+    }
+
+    Ok(())
+}
+
+fn legacy_validate_float_numeric_name(name: u8) -> Result<()> {
+    match name {
+        FUNC_NUM_ADD | FUNC_NUM_SUB | FUNC_NUM_MUL | FUNC_NUM_DIV | FUNC_NUM_MAX
+        | FUNC_NUM_MIN => Ok(()),
+        other => anyhow::bail!("legacy float funcall {other} is not implemented"),
+    }
+}
+
 fn legacy_mutations_from_protocol_funcalls(
     space: &Space,
     funcalls: &[ProtocolFuncall],
@@ -3208,7 +3272,7 @@ fn legacy_apply_protocol_funcall(
         | FUNC_NUM_OR | FUNC_NUM_XOR | FUNC_NUM_MAX | FUNC_NUM_MIN => match attribute_kind {
             ValueKind::Float => {
                 let current = legacy_existing_f64(record, attribute_name)?;
-                let operand = legacy_decode_f64(&funcall.arg1)?;
+                let operand = legacy_numeric_operand_f64(funcall)?;
                 let updated = match funcall.name {
                     FUNC_NUM_ADD => current + operand,
                     FUNC_NUM_SUB => current - operand,
@@ -3222,9 +3286,9 @@ fn legacy_apply_protocol_funcall(
                     .attributes
                     .insert(attribute_name.to_owned(), Value::Float(updated.into()));
             }
-            _ => {
+            ValueKind::Int => {
                 let current = legacy_existing_i64(record, attribute_name)?;
-                let operand = legacy_decode_i64(&funcall.arg1)?;
+                let operand = legacy_numeric_operand_i64(funcall)?;
                 let updated = match funcall.name {
                     FUNC_NUM_ADD => current.saturating_add(operand),
                     FUNC_NUM_SUB => current.saturating_sub(operand),
@@ -3242,6 +3306,68 @@ fn legacy_apply_protocol_funcall(
                     .attributes
                     .insert(attribute_name.to_owned(), Value::Int(updated));
             }
+            ValueKind::Map { key, value } => {
+                let mut map = match record.attributes.remove(attribute_name) {
+                    Some(Value::Map(values)) => values,
+                    Some(other) => {
+                        anyhow::bail!("expected map attribute {attribute_name}, got {other:?}")
+                    }
+                    None => Default::default(),
+                };
+                let map_key = legacy_value_from_kind_bytes(key.as_ref(), &funcall.arg2)?;
+                let updated_value = match value.as_ref() {
+                    ValueKind::Float => {
+                        let current =
+                            legacy_existing_map_entry_f64(&map, &map_key, attribute_name)?;
+                        let operand = legacy_numeric_operand_f64(funcall)?;
+                        let updated = match funcall.name {
+                            FUNC_NUM_ADD => current + operand,
+                            FUNC_NUM_SUB => current - operand,
+                            FUNC_NUM_MUL => current * operand,
+                            FUNC_NUM_DIV => current / operand,
+                            FUNC_NUM_MAX => current.max(operand),
+                            FUNC_NUM_MIN => current.min(operand),
+                            other => {
+                                anyhow::bail!("legacy float funcall {other} is not implemented")
+                            }
+                        };
+                        Value::Float(updated.into())
+                    }
+                    ValueKind::Int => {
+                        let current =
+                            legacy_existing_map_entry_i64(&map, &map_key, attribute_name)?;
+                        let operand = legacy_numeric_operand_i64(funcall)?;
+                        let updated = match funcall.name {
+                            FUNC_NUM_ADD => current.saturating_add(operand),
+                            FUNC_NUM_SUB => current.saturating_sub(operand),
+                            FUNC_NUM_MUL => current.saturating_mul(operand),
+                            FUNC_NUM_DIV => legacy_div_i64(current, operand)?,
+                            FUNC_NUM_MOD => legacy_mod_i64(current, operand)?,
+                            FUNC_NUM_AND => current & operand,
+                            FUNC_NUM_OR => current | operand,
+                            FUNC_NUM_XOR => current ^ operand,
+                            FUNC_NUM_MAX => current.max(operand),
+                            FUNC_NUM_MIN => current.min(operand),
+                            _ => unreachable!(),
+                        };
+                        Value::Int(updated)
+                    }
+                    other => anyhow::bail!(
+                        "legacy numeric funcall {} targets non-numeric map values {:?}",
+                        funcall.name,
+                        other
+                    ),
+                };
+                map.insert(map_key, updated_value);
+                record
+                    .attributes
+                    .insert(attribute_name.to_owned(), Value::Map(map));
+            }
+            other => anyhow::bail!(
+                "legacy numeric funcall {} targets non-numeric attr {:?}",
+                funcall.name,
+                other
+            ),
         },
         FUNC_LIST_LPUSH | FUNC_LIST_RPUSH => {
             let mut list = match record.attributes.remove(attribute_name) {
@@ -3609,6 +3735,20 @@ fn legacy_existing_i64(record: &Record, attribute: &str) -> Result<i64> {
     }
 }
 
+fn legacy_existing_map_entry_i64(
+    map: &BTreeMap<Value, Value>,
+    key: &Value,
+    attribute: &str,
+) -> Result<i64> {
+    match map.get(key) {
+        Some(Value::Int(number)) => Ok(*number),
+        Some(other) => Err(anyhow!(
+            "expected int map value for attribute {attribute}, got {other:?}"
+        )),
+        None => Ok(0),
+    }
+}
+
 fn legacy_existing_f64(record: &Record, attribute: &str) -> Result<f64> {
     match record.attributes.get(attribute) {
         Some(Value::Float(number)) => Ok(number.into_inner()),
@@ -3616,6 +3756,37 @@ fn legacy_existing_f64(record: &Record, attribute: &str) -> Result<f64> {
             "expected float attribute {attribute}, got {other:?}"
         )),
         None => Ok(0.0),
+    }
+}
+
+fn legacy_existing_map_entry_f64(
+    map: &BTreeMap<Value, Value>,
+    key: &Value,
+    attribute: &str,
+) -> Result<f64> {
+    match map.get(key) {
+        Some(Value::Float(number)) => Ok(number.into_inner()),
+        Some(Value::Int(number)) => Ok(*number as f64),
+        Some(other) => Err(anyhow!(
+            "expected float map value for attribute {attribute}, got {other:?}"
+        )),
+        None => Ok(0.0),
+    }
+}
+
+fn legacy_numeric_operand_i64(funcall: &ProtocolFuncall) -> Result<i64> {
+    match funcall.arg1_datatype {
+        HYPERDATATYPE_INT64 => legacy_decode_i64(&funcall.arg1),
+        HYPERDATATYPE_FLOAT => Ok(legacy_decode_f64(&funcall.arg1)?.round() as i64),
+        other => anyhow::bail!("legacy int operand datatype {other} is not implemented"),
+    }
+}
+
+fn legacy_numeric_operand_f64(funcall: &ProtocolFuncall) -> Result<f64> {
+    match funcall.arg1_datatype {
+        HYPERDATATYPE_INT64 => Ok(legacy_decode_i64(&funcall.arg1)? as f64),
+        HYPERDATATYPE_FLOAT => legacy_decode_f64(&funcall.arg1),
+        other => anyhow::bail!("legacy float operand datatype {other} is not implemented"),
     }
 }
 
@@ -7014,6 +7185,190 @@ mod tests {
         assert_eq!(
             values.get(&Value::Bytes(Bytes::from_static(b"KZ"))),
             Some(&Value::Bytes(Bytes::from_static(b"'\\x02*+Y\\")))
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_atomic_map_numeric_add_updates_int_int_entry() {
+        let runtime = bootstrap_runtime();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    map(int, int) login_counts\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        let mut login_counts = BTreeMap::new();
+        login_counts.insert(Value::Int(7), Value::Int(2));
+        HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "login_counts".to_owned(),
+                    value: Value::Map(login_counts),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+
+        let (_, body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqAtomic,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 19,
+            },
+            &legacy_request_body(
+                19,
+                encode_protocol_atomic_request(&ProtocolKeyChange {
+                    key: b"ada".to_vec(),
+                    erase: false,
+                    fail_if_not_found: false,
+                    fail_if_found: false,
+                    checks: Vec::new(),
+                    funcalls: vec![ProtocolFuncall {
+                        attr: 1,
+                        name: FUNC_NUM_ADD,
+                        arg1: 3_i64.to_le_bytes().to_vec(),
+                        arg1_datatype: HYPERDATATYPE_INT64,
+                        arg2: 7_i64.to_le_bytes().to_vec(),
+                        arg2_datatype: HYPERDATATYPE_INT64,
+                    }],
+                }),
+            ),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            decode_protocol_atomic_response(&body).unwrap(),
+            LegacyReturnCode::Success as u16
+        );
+
+        let response = HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+            },
+        )
+        .await
+        .unwrap();
+
+        let ClientResponse::Record(Some(record)) = response else {
+            panic!("expected stored record");
+        };
+
+        let Value::Map(values) = record.attributes.get("login_counts").unwrap() else {
+            panic!("expected login_counts map");
+        };
+        assert_eq!(values.get(&Value::Int(7)), Some(&Value::Int(5)));
+    }
+
+    #[tokio::test]
+    async fn legacy_atomic_map_numeric_add_updates_string_float_entry() {
+        let runtime = bootstrap_runtime();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    map(string, float) ratings\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        let mut ratings = BTreeMap::new();
+        ratings.insert(
+            Value::Bytes(Bytes::from_static(b"compiler")),
+            Value::Float(1.5.into()),
+        );
+        HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "ratings".to_owned(),
+                    value: Value::Map(ratings),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+
+        let (_, body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqAtomic,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 19,
+            },
+            &legacy_request_body(
+                19,
+                encode_protocol_atomic_request(&ProtocolKeyChange {
+                    key: b"ada".to_vec(),
+                    erase: false,
+                    fail_if_not_found: false,
+                    fail_if_found: false,
+                    checks: Vec::new(),
+                    funcalls: vec![ProtocolFuncall {
+                        attr: 1,
+                        name: FUNC_NUM_ADD,
+                        arg1: 2.0_f64.to_le_bytes().to_vec(),
+                        arg1_datatype: HYPERDATATYPE_FLOAT,
+                        arg2: b"compiler".to_vec(),
+                        arg2_datatype: HYPERDATATYPE_STRING,
+                    }],
+                }),
+            ),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            decode_protocol_atomic_response(&body).unwrap(),
+            LegacyReturnCode::Success as u16
+        );
+
+        let response = HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+            },
+        )
+        .await
+        .unwrap();
+
+        let ClientResponse::Record(Some(record)) = response else {
+            panic!("expected stored record");
+        };
+
+        let Value::Map(values) = record.attributes.get("ratings").unwrap() else {
+            panic!("expected ratings map");
+        };
+        assert_eq!(
+            values.get(&Value::Bytes(Bytes::from_static(b"compiler"))),
+            Some(&Value::Float(3.5.into()))
         );
     }
 
