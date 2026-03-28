@@ -3,6 +3,8 @@
 use super::*;
 use data_model::{AttributeDefinition, SchemaFormat, SpaceOptions, Subspace, TimeUnit, ValueKind};
 
+mod hegel_properties;
+
 #[derive(Clone, Debug)]
 struct PackedAttribute<'a> {
     name: &'a str,

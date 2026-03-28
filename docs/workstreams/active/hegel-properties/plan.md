@@ -61,20 +61,27 @@ operation-sequence behavior that would be tedious to cover by hand.
 - [x] (2026-03-28 19:28Z) Landed
   `hegel_memory_engine_preserves_conditional_and_delete_matching_model`
   in `engine-memory`.
-- [ ] Add the next Hegel property in another high-value correctness boundary.
+- [x] (2026-03-28 23:36Z) Landed
+  `hegel_admin_requests_round_trip_and_preserve_supported_coordinator_mapping`
+  in `hyperdex-admin-protocol`.
+- [ ] Add the next Hegel property in another high-value correctness boundary
+  beyond runtime, placement, `engine-memory`, `data-model`,
+  `legacy-protocol`, and `hyperdex-admin-protocol`.
 
 ## Current Hypothesis
 
 Hegel is best used here for generated logical-state checks and reusable
 invariants at multiple layers: runtime query semantics, mixed routed mutation
-sequences, placement invariants, and later protocol/storage behavior where the
-crate-local invariant is more natural than a full runtime simulation.
+sequences, placement invariants, storage-state models, and protocol semantics
+where the crate-local invariant is more natural than a full runtime
+simulation.
 
 ## Next Bounded Step
 
 Add the next Hegel property in a different correctness boundary from the
-already-landed runtime, placement, and `engine-memory` properties, ideally
-protocol or another storage/query boundary.
+already-landed runtime, placement, `engine-memory`, `data-model`,
+`legacy-protocol`, and `hyperdex-admin-protocol` properties, ideally
+transport, control-plane, or another storage/query boundary.
 
 ## Surprises & Discoveries
 
@@ -86,6 +93,8 @@ protocol or another storage/query boundary.
   a generated invariant check for both placement strategies.
 - `engine-memory` now also has a generated storage-state model, so Hegel is
   spread across runtime, placement, and storage layers.
+- `hyperdex-admin-protocol` now has a generated request-semantics property, so
+  Hegel is also covering a protocol compatibility boundary.
 
 ## Decision Log
 
@@ -105,3 +114,6 @@ protocol or another storage/query boundary.
   pushed Hegel into `placement-core`.
 - `hegel_memory_engine_preserves_conditional_and_delete_matching_model`
   pushed Hegel into `engine-memory` with a crate-local storage-state model.
+- `hegel_admin_requests_round_trip_and_preserve_supported_coordinator_mapping`
+  pushed Hegel into `hyperdex-admin-protocol` with a generated wire
+  encode/decode plus coordinator-mapping invariant.

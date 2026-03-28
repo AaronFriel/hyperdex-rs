@@ -11,3 +11,6 @@ anyhow.workspace = true
 cluster-config = { path = "../cluster-config" }
 data-model = { path = "../data-model" }
 serde.workspace = true
+
+[dev-dependencies]
+hegel = { package = "hegeltest", version = "0.3.4" }
