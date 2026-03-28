@@ -128,7 +128,7 @@ split, sequencing, or validators need to change.
 ### Phase 1: Compatibility And Distributed Baseline
 
 These workstreams are completed and moved under
-[completed](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed):
+[completed](docs/workstreams/completed):
 
 - [live-hyhac](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/live-hyhac/plan.md):
   the public Hyhac-facing compatibility surface is green on both single-daemon
