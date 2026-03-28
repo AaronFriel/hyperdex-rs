@@ -49,7 +49,7 @@
 - Hypothesis: making the single-node Hegel sequence model use declared
   attributes instead of the undeclared `name` field will tighten generated
   coverage without widening the mutable surface beyond `simulation-harness`.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage`
+- Owner: dedicated worker in `worktrees/sim-coverage`
 - Start commit: `6d55620`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on
