@@ -536,7 +536,7 @@
 - Artifact location:
   - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
   - `/home/friel/c/aaronfriel/HyperDex/client/pending_get_partial.cc`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
   - manual clean-baseline live-cluster probe with daemon capture cleared after
     startup
 - Evidence summary:
