@@ -139,7 +139,7 @@ These workstreams are completed and moved under
 - [multiprocess-harness](docs/workstreams/completed/multiprocess-harness/plan.md):
   the real-process harness is stable enough to support product work without
   pretending to be the product.
-- [coordinator-config-evidence](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/coordinator-config-evidence/plan.md):
+- [coordinator-config-evidence](docs/workstreams/completed/coordinator-config-evidence/plan.md):
   the read-only comparison work turned the early compatibility unknowns into
   concrete fixes and is no longer on the critical path.
 
