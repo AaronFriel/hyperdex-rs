@@ -24,7 +24,6 @@ Each workstream directory contains:
 - [failure-testing](docs/workstreams/active/failure-testing/plan.md)
 - [distributed-simulation](docs/workstreams/active/distributed-simulation/plan.md)
 - [hegel-properties](docs/workstreams/active/hegel-properties/plan.md)
-- [history-scrub](docs/workstreams/active/history-scrub/plan.md)
 
 ## Backlog
 
@@ -49,3 +48,4 @@ Each workstream directory contains:
 - [panic-hardening](docs/workstreams/completed/panic-hardening/plan.md)
 - [fuzzing-hardening](docs/workstreams/completed/fuzzing-hardening/plan.md)
 - [nextest-fast-feedback](docs/workstreams/completed/nextest-fast-feedback/plan.md)
+- [history-scrub](docs/workstreams/completed/history-scrub/plan.md)
