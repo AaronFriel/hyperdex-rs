@@ -226,7 +226,7 @@
 - Kind: `outcome`
 - End commit: `d12c23c`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-probe`
+  - `worktrees/clientgarbage-probe`
 - Evidence summary:
   - the interrupted worker is no longer active
   - `git status --short --branch` in the old worktree shows unrelated edits in
