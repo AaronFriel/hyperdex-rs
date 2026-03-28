@@ -7,7 +7,7 @@
 - Hypothesis: the first live `hyhac` failure against `hyperdex-rs` will appear
   in admin `create space` or `waitUntilStable`, before client traffic starts.
 - Owner: next forked product worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object`
+  `worktrees/live-hyhac-large-object`
 - Start commit: `98def36`
 - Worktree / branch:
   - root checkout on `main`
