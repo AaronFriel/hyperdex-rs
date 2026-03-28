@@ -306,7 +306,7 @@ impl BusyBeeFrame {
             bail!("busybee frame is shorter than the header");
         }
 
-        let header = u32::from_be_bytes(bytes[..BUSYBEE_HEADER_SIZE].try_into().unwrap());
+        let header = u32::from_be_bytes(read_array_at(bytes, 0, "busybee header")?);
         let total_len = (header & BUSYBEE_SIZE_MASK) as usize;
 
         if total_len < BUSYBEE_HEADER_SIZE {
@@ -340,7 +340,7 @@ impl BusyBeeFrame {
                 bail!("busybee stream ended in the middle of a header");
             }
 
-            let header = u32::from_be_bytes(bytes[..BUSYBEE_HEADER_SIZE].try_into().unwrap());
+            let header = u32::from_be_bytes(read_array_at(bytes, 0, "busybee stream header")?);
             let total_len = (header & BUSYBEE_SIZE_MASK) as usize;
 
             if total_len < BUSYBEE_HEADER_SIZE {
@@ -913,7 +913,7 @@ fn decode_u64_be(bytes: &[u8], cursor: &mut usize) -> Result<u64> {
         bail!("buffer too short for a u64");
     }
 
-    let value = u64::from_be_bytes(bytes[*cursor..end].try_into().unwrap());
+    let value = u64::from_be_bytes(read_array_at(bytes, *cursor, "u64")?);
     *cursor = end;
     Ok(value)
 }
@@ -957,9 +957,9 @@ fn decode_socket_addr(bytes: &[u8], cursor: &mut usize) -> Result<SocketAddr> {
             if bytes.len() < end + 2 {
                 bail!("buffer too short for an ipv4 socket address");
             }
-            let address = Ipv4Addr::from(<[u8; 4]>::try_from(&bytes[*cursor..end]).unwrap());
+            let address = Ipv4Addr::from(read_array_at(bytes, *cursor, "ipv4 socket address")?);
             *cursor = end;
-            let port = u16::from_be_bytes(bytes[*cursor..*cursor + 2].try_into().unwrap());
+            let port = u16::from_be_bytes(read_array_at(bytes, *cursor, "ipv4 socket port")?);
             *cursor += 2;
             Ok(SocketAddr::new(IpAddr::V4(address), port))
         }
@@ -970,9 +970,9 @@ fn decode_socket_addr(bytes: &[u8], cursor: &mut usize) -> Result<SocketAddr> {
             if bytes.len() < end + 2 {
                 bail!("buffer too short for an ipv6 socket address");
             }
-            let address = Ipv6Addr::from(<[u8; 16]>::try_from(&bytes[*cursor..end]).unwrap());
+            let address = Ipv6Addr::from(read_array_at(bytes, *cursor, "ipv6 socket address")?);
             *cursor = end;
-            let port = u16::from_be_bytes(bytes[*cursor..*cursor + 2].try_into().unwrap());
+            let port = u16::from_be_bytes(read_array_at(bytes, *cursor, "ipv6 socket port")?);
             *cursor += 2;
             Ok(SocketAddr::new(IpAddr::V6(address), port))
         }
@@ -1162,21 +1162,24 @@ impl<'a> PackedSpaceDecoder<'a> {
     }
 
     fn read_u16(&mut self, label: &str) -> Result<u16> {
-        Ok(u16::from_be_bytes(
-            self.read_exact(2, label)?.try_into().unwrap(),
-        ))
+        Ok(u16::from_be_bytes(read_slice_array(
+            self.read_exact(2, label)?,
+            label,
+        )?))
     }
 
     fn read_u32(&mut self, label: &str) -> Result<u32> {
-        Ok(u32::from_be_bytes(
-            self.read_exact(4, label)?.try_into().unwrap(),
-        ))
+        Ok(u32::from_be_bytes(read_slice_array(
+            self.read_exact(4, label)?,
+            label,
+        )?))
     }
 
     fn read_u64(&mut self, label: &str) -> Result<u64> {
-        Ok(u64::from_be_bytes(
-            self.read_exact(8, label)?.try_into().unwrap(),
-        ))
+        Ok(u64::from_be_bytes(read_slice_array(
+            self.read_exact(8, label)?,
+            label,
+        )?))
     }
 
     fn read_slice(&mut self, label: &str) -> Result<&'a [u8]> {
@@ -1293,6 +1296,21 @@ fn decode_c_string(bytes: &[u8]) -> Result<&str> {
         bail!("expected nul-terminated string");
     };
     Ok(std::str::from_utf8(prefix)?)
+}
+
+fn read_slice_array<const N: usize>(bytes: &[u8], label: &str) -> Result<[u8; N]> {
+    bytes.try_into()
+        .map_err(|_| anyhow!("{label} did not contain exactly {N} bytes"))
+}
+
+fn read_array_at<const N: usize>(bytes: &[u8], offset: usize, label: &str) -> Result<[u8; N]> {
+    let end = offset
+        .checked_add(N)
+        .ok_or_else(|| anyhow!("{label} offset overflow"))?;
+    let slice = bytes
+        .get(offset..end)
+        .ok_or_else(|| anyhow!("{label} is truncated"))?;
+    read_slice_array(slice, label)
 }
 
 fn decode_return_code_at(bytes: &[u8], cursor: &mut usize) -> Result<ReplicantReturnCode> {

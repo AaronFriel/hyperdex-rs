@@ -54,6 +54,15 @@ fn busybee_frame_round_trip() {
 }
 
 #[test]
+fn busybee_frame_decode_rejects_truncated_header_without_panicking() {
+    let err = BusyBeeFrame::decode(&[0x00, 0x01, 0x02])
+        .unwrap_err()
+        .to_string();
+
+    assert!(err.contains("shorter than the header"));
+}
+
+#[test]
 fn varint_slice_round_trip() {
     let payload = b"hyperdex-admin";
     let encoded = encode_varint_slice(payload);
@@ -78,6 +87,33 @@ fn captured_bootstrap_request_matches_original_tool_bytes() {
         ]
     );
     assert_eq!(BusyBeeFrame::encode_stream(&frames).unwrap(), encoded);
+}
+
+#[test]
+fn bootstrap_response_decode_rejects_truncated_socket_address_without_panicking() {
+    let encoded = ReplicantBootstrapResponse {
+        server: ReplicantBootstrapServer {
+            id: 1,
+            address: "127.0.0.1:1982".parse().unwrap(),
+        },
+        configuration: ReplicantBootstrapConfiguration {
+            cluster_id: 1,
+            version: 1,
+            first_slot: 1,
+            servers: vec![ReplicantBootstrapServer {
+                id: 1,
+                address: "127.0.0.1:1982".parse().unwrap(),
+            }],
+        },
+    }
+    .encode();
+
+    let truncated = &encoded[..encoded.len() - 1];
+    let err = ReplicantBootstrapResponse::decode(truncated)
+        .unwrap_err()
+        .to_string();
+
+    assert!(err.contains("socket address") || err.contains("truncated"));
 }
 
 #[test]
