@@ -977,8 +977,8 @@
 - Kind: `outcome`
 - End commit: `99d3922`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/main.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/main.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - `99d3922` binds one public coordinator listener, accepts connections on
     that port, peeks the first bytes, and dispatches each connection to either
