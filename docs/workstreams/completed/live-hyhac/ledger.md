@@ -1329,7 +1329,7 @@
   `worktrees/live-hyhac-bootstrap`
 - Start commit: `4ccf113`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-bootstrap` on
+  - `worktrees/live-hyhac-bootstrap` on
     `live-hyhac-bootstrap`
 - Mutable surface:
   - `crates/server/src/lib.rs`
