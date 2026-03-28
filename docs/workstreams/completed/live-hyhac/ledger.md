@@ -78,7 +78,7 @@
 - Kind: `outcome`
 - End commit: `d2c133c`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+  - no code changes in `worktrees/dist-control-plane`
 - Evidence summary:
   - the retired worker reported no file changes
   - the retired worker identified insufficient verified wire detail for the
