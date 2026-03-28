@@ -1387,7 +1387,7 @@
   `worktrees/live-hyhac-data-plane`
 - Start commit: `c087f81`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on
+  - `worktrees/live-hyhac-data-plane` on
     `live-hyhac-data-plane`
 - Mutable surface:
   - `crates/legacy-protocol/**`
