@@ -13,8 +13,8 @@ must be kept current as work proceeds.
 
 This repository does not contain its own `PLANS.md` or `AUTOPLANS.md`. This
 document follows the fallback rules at
-`/home/friel/.codex/skills/autoplan/references/PLANS.md` and
-`/home/friel/.codex/skills/autoplan/references/AUTOPLANS.md`.
+`the installed `autoplan` skill fallback rules` and
+`the installed `autoplan` skill fallback rules`.
 
 ## Companion Files
 
