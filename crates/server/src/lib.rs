@@ -714,8 +714,17 @@ impl ClusterRuntime {
 
         for node_id in self.cluster_node_ids()? {
             let records = if node_id == self.local_node_id {
-                successful_replicas += 1;
-                self.data_plane.search(&space, &checks)?
+                match self.data_plane.search(&space, &checks) {
+                    Ok(records) => {
+                        successful_replicas += 1;
+                        records
+                    }
+                    Err(err) if should_skip_distributed_read_replica(&err) => {
+                        skipped_replicas.push(node_id);
+                        continue;
+                    }
+                    Err(err) => return Err(err),
+                }
             } else {
                 match self
                     .forward_data_request(

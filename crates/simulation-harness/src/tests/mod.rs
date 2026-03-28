@@ -677,6 +677,81 @@ fn turmoil_preserves_search_and_count_during_schema_convergence_gap() {
 }
 
 #[test]
+fn turmoil_search_and_count_work_from_node_missing_local_space_definition() {
+    let mut sim = turmoil::Builder::new().build();
+
+    sim.client("cluster", async move {
+        let (_, runtime1, runtime2) =
+            distributed_runtime_fixture_with_local_schema_only(profiles_schema(), 2).await;
+
+        let remote_key = (0..65536)
+            .map(|i| format!("remote-schema-{i}"))
+            .find(|key| runtime2.route_primary(key.as_bytes()).unwrap() == 2)
+            .expect("expected a key routed to node 2");
+
+        let put = HyperdexClientService::handle(
+            runtime2.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(remote_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(17),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(put, ClientResponse::Unit);
+
+        assert!(runtime1
+            .route_primary_for_space("profiles", remote_key.as_bytes())
+            .is_err());
+
+        let search = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Search {
+                space: "profiles".to_owned(),
+                checks: vec![Check {
+                    attribute: "profile_views".to_owned(),
+                    predicate: Predicate::GreaterThanOrEqual,
+                    value: Value::Int(10),
+                }],
+            },
+        )
+        .await
+        .unwrap();
+        let ClientResponse::SearchResult(records) = search else {
+            panic!("expected remote search results while local node lacks the space");
+        };
+        let keys = records
+            .iter()
+            .map(|record| record.key.to_vec())
+            .collect::<Vec<_>>();
+        assert_eq!(keys, vec![remote_key.as_bytes().to_vec()]);
+
+        let count = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Count {
+                space: "profiles".to_owned(),
+                checks: vec![Check {
+                    attribute: "profile_views".to_owned(),
+                    predicate: Predicate::GreaterThanOrEqual,
+                    value: Value::Int(10),
+                }],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(count, ClientResponse::Count(1));
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[test]
 fn turmoil_reverts_primary_put_when_replica_transport_fails() {
     let mut sim = turmoil::Builder::new().build();
 
