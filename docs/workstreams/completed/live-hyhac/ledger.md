@@ -2319,7 +2319,7 @@
 - Kind: `outcome`
 - End commit: `3c72516`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/legacy-frontend/src/lib.rs`
+  - `crates/legacy-frontend/src/lib.rs`
 - Evidence summary:
   - `3c72516` changes `LegacyFrontend::serve_forever_with` so each accepted
     client connection is handled in its own task instead of blocking accept
