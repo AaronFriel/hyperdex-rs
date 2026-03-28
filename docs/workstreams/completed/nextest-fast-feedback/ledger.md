@@ -11,7 +11,7 @@
 - Owner: next forked worker on `nextest-fast-feedback`
 - Start commit: `2b7d144`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/nextest-fast-feedback`
+  - `worktrees/nextest-fast-feedback`
   - `nextest-fast-feedback`
 - Mutable surface:
   - `.config/nextest.toml`
