@@ -27,6 +27,7 @@ jobs:
 
   prek:
     needs: prepare-prek-matrix
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

@@ -42,6 +42,7 @@ def parse_hooks() -> list[dict[str, object]]:
 def hook_record(hook_id: str) -> dict[str, object]:
     return {
         "id": hook_id,
+        "name": f"pre-commit ({hook_id})",
         "needs_rust": hook_id in {"rustfmt-check", "nextest-fast", "clippy"},
         "needs_rustfmt": hook_id == "rustfmt-check",
         "needs_clippy": hook_id == "clippy",
