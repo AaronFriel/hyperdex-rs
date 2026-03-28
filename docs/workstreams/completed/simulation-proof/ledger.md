@@ -91,7 +91,7 @@
   line with current distributed runtime behavior by fixing replica fallback or
   simulated transport handling inside the simulation-owned surface.
 - Owner: delegated worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/simulation-degraded-read-fix`
+  `worktrees/simulation-degraded-read-fix`
 - Start commit: `281b8cb`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/simulation-degraded-read-fix`
