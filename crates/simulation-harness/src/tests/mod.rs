@@ -18,7 +18,10 @@ use proptest::prelude::*;
 use server::{ClusterRuntime, TransportRuntime};
 use storage_core::{StorageEngine, WriteResult};
 use tokio::sync::Mutex;
-use transport_core::{ClusterTransport, InternodeRequest, InternodeResponse, RemoteNode};
+use transport_core::{
+    ClusterTransport, DataPlaneRequest, DataPlaneResponse, InternodeRequest, InternodeResponse,
+    RemoteNode, DATA_PLANE_METHOD,
+};
 
 static HEGEL_SERVER_COMMAND: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 static HEGEL_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -232,12 +235,83 @@ async fn distributed_runtime_fixture_with_local_schema_only(
         other => panic!("unsupported schema owner node {other}"),
     };
 
+    HyperdexAdminService::handle(schema_owner.as_ref(), AdminRequest::CreateSpaceDsl(schema))
+        .await
+        .unwrap();
+
+    (transport, runtime1, runtime2)
+}
+
+async fn distributed_runtime_fixture_with_diverged_cluster_views(
+    schema: String,
+) -> (Arc<SimTransport>, Arc<ClusterRuntime>, Arc<ClusterRuntime>) {
+    let config1 = ClusterConfig {
+        nodes: vec![
+            ClusterNode {
+                id: 1,
+                host: "node1".to_owned(),
+                control_port: 1001,
+                data_port: 2001,
+            },
+            ClusterNode {
+                id: 2,
+                host: "node2".to_owned(),
+                control_port: 1002,
+                data_port: 2002,
+            },
+        ],
+        replicas: 1,
+        internode_transport: TransportBackend::Grpc,
+        ..ClusterConfig::default()
+    };
+    let config2 = ClusterConfig {
+        nodes: vec![
+            ClusterNode {
+                id: 1,
+                host: "node1".to_owned(),
+                control_port: 1001,
+                data_port: 2001,
+            },
+            ClusterNode {
+                id: 2,
+                host: "node2".to_owned(),
+                control_port: 1002,
+                data_port: 2002,
+            },
+            ClusterNode {
+                id: 3,
+                host: "node3".to_owned(),
+                control_port: 1003,
+                data_port: 2003,
+            },
+        ],
+        replicas: 1,
+        internode_transport: TransportBackend::Grpc,
+        ..ClusterConfig::default()
+    };
+
+    let transport = Arc::new(SimTransport::default());
+
+    let mut runtime1 = ClusterRuntime::for_node(config1, 1).unwrap();
+    runtime1.install_cluster_transport(transport.clone(), TransportRuntime::Grpc);
+    let runtime1 = Arc::new(runtime1);
+
+    let mut runtime2 = ClusterRuntime::for_node(config2, 2).unwrap();
+    runtime2.install_cluster_transport(transport.clone(), TransportRuntime::Grpc);
+    let runtime2 = Arc::new(runtime2);
+
+    transport.register(1, runtime1.clone()).await;
+    transport.register(2, runtime2.clone()).await;
+
     HyperdexAdminService::handle(
-        schema_owner.as_ref(),
-        AdminRequest::CreateSpaceDsl(schema),
+        runtime1.as_ref(),
+        AdminRequest::CreateSpaceDsl(schema.clone()),
     )
     .await
     .unwrap();
+    HyperdexAdminService::handle(runtime2.as_ref(), AdminRequest::CreateSpaceDsl(schema))
+        .await
+        .unwrap();
 
     (transport, runtime1, runtime2)
 }
@@ -277,6 +351,21 @@ fn degraded_read_target(
             },
         )
         .expect("expected a key routed to either cluster node")
+}
+
+fn stale_placement_mutation_target(
+    runtime1: &Arc<ClusterRuntime>,
+    runtime2: &Arc<ClusterRuntime>,
+    prefix: &str,
+) -> (u64, u64, String) {
+    (0..65536)
+        .map(|i| format!("{prefix}-{i}"))
+        .find_map(|key| {
+            let primary1 = runtime1.route_primary(key.as_bytes()).ok()?;
+            let primary2 = runtime2.route_primary(key.as_bytes()).ok()?;
+            (primary1 == 2 && primary2 != 2).then_some((primary1, primary2, key))
+        })
+        .expect("expected a key whose primary diverges across cluster views")
 }
 
 fn ensure_hegel_server_command() -> String {
@@ -540,7 +629,9 @@ fn turmoil_preserves_search_and_count_during_schema_convergence_gap() {
         .unwrap();
         assert_eq!(put, ClientResponse::Unit);
 
-        assert!(runtime2.route_primary_for_space("profiles", local_key.as_bytes()).is_err());
+        assert!(runtime2
+            .route_primary_for_space("profiles", local_key.as_bytes())
+            .is_err());
 
         let search = HyperdexClientService::handle(
             runtime1.as_ref(),
@@ -612,7 +703,10 @@ fn turmoil_reverts_primary_put_when_replica_transport_fails() {
             },
         )
         .await;
-        assert!(put.is_err(), "expected replica transport failure to surface");
+        assert!(
+            put.is_err(),
+            "expected replica transport failure to surface"
+        );
 
         let local_record = HyperdexClientService::handle(
             runtime1.as_ref(),
@@ -682,7 +776,10 @@ fn turmoil_reverts_primary_delete_when_replica_transport_fails() {
             },
         )
         .await;
-        assert!(delete.is_err(), "expected replica transport failure to surface");
+        assert!(
+            delete.is_err(),
+            "expected replica transport failure to surface"
+        );
 
         let local_record = HyperdexClientService::handle(
             runtime1.as_ref(),
@@ -807,6 +904,58 @@ fn turmoil_reverts_primary_conditional_put_when_replica_transport_fails() {
             }
             other => panic!("unexpected recovered conditional-put record result: {other:?}"),
         }
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[test]
+fn turmoil_rejects_or_recovers_routed_mutation_under_stale_placement() {
+    let mut sim = turmoil::Builder::new().build();
+
+    sim.client("cluster", async move {
+        let (_, runtime1, runtime2) =
+            distributed_runtime_fixture_with_diverged_cluster_views(profiles_schema()).await;
+
+        let (runtime1_primary, runtime2_primary, stale_key) =
+            stale_placement_mutation_target(&runtime1, &runtime2, "stale-placement-put");
+        assert_eq!(runtime1_primary, 2);
+        assert_ne!(runtime2_primary, 2);
+
+        let put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(stale_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(19),
+                })],
+            },
+        )
+        .await;
+        assert!(
+            put.is_err(),
+            "expected stale-placement routed mutation to fail instead of silently succeeding"
+        );
+
+        let response = runtime2
+            .handle_internode_request(
+                InternodeRequest::encode(
+                    DATA_PLANE_METHOD,
+                    &DataPlaneRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(stale_key.as_bytes().to_vec()),
+                    },
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        let local_record = response.decode::<DataPlaneResponse>().unwrap();
+        assert_eq!(local_record, DataPlaneResponse::Record(None));
 
         Ok::<(), Box<dyn std::error::Error>>(())
     });

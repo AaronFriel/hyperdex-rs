@@ -337,6 +337,18 @@ impl ClusterRuntime {
         Ok(locate_key_in_space(&layout, &*self.placement_strategy, space, key)?.primary)
     }
 
+    fn ensure_local_primary_for_key(&self, space: &str, key: &[u8]) -> Result<()> {
+        let primary = self.route_primary_for_space(space, key)?;
+        if primary != self.local_node_id {
+            anyhow::bail!(
+                "stale placement rejected primary-only request for `{space}` on node {}; primary is {}",
+                self.local_node_id,
+                primary
+            );
+        }
+        Ok(())
+    }
+
     fn locate_key(&self, space_name: &str, key: &[u8]) -> Result<PlacementDecision> {
         let layout = self.catalog.layout()?;
         let Some(space) = self.catalog.get_space(space_name)? else {
@@ -735,7 +747,10 @@ impl ClusterRuntime {
                         space,
                         key,
                         mutations,
-                    } => self.apply_primary_put(space, key, mutations).await?,
+                    } => {
+                        self.ensure_local_primary_for_key(&space, &key)?;
+                        self.apply_primary_put(space, key, mutations).await?
+                    }
                     DataPlaneRequest::Get { space, key } => {
                         DataPlaneResponse::Record(self.data_plane.get(&space, &key)?)
                     }
@@ -743,6 +758,7 @@ impl ClusterRuntime {
                         DataPlaneResponse::SearchResult(self.data_plane.search(&space, &checks)?)
                     }
                     DataPlaneRequest::Delete { space, key } => {
+                        self.ensure_local_primary_for_key(&space, &key)?;
                         self.apply_primary_delete(space, key).await?
                     }
                     DataPlaneRequest::ConditionalPut {
@@ -751,6 +767,7 @@ impl ClusterRuntime {
                         checks,
                         mutations,
                     } => {
+                        self.ensure_local_primary_for_key(&space, &key)?;
                         self.apply_primary_conditional_put(space, key, checks, mutations)
                             .await?
                     }
