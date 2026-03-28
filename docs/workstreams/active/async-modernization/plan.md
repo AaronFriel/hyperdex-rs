@@ -53,25 +53,22 @@ edits.
   service traits and their server implementations in `ef0879f`.
 - [x] (2026-03-28 23:55Z) Removed `async_trait` from `consensus-core` and then
   from the transport boundary itself in `c2b2c10` and `5777625`.
-- [ ] (2026-03-29 00:20Z) Resolve the remaining `#[tonic::async_trait]` usage
-  in the gRPC service layer or prove that tonic-generated constraints make
-  those specific impls the right stopping point for now.
+- [x] (2026-03-29 10:10Z) Replaced tonic-generated async-trait service impls
+  with generated `BoxFuture` server traits and boxed `Send` futures in
+  `e9bb387`.
 
 ## Current Hypothesis
 
-The remaining async-trait usage is concentrated in tonic service impls, and
-the current blocker is now explicit: tonic-build 0.12.3 still generates
-`#[async_trait]` server traits for this boundary. That means the next useful
-step is not another local cleanup pass, but a bounded investigation into
-whether a tonic upgrade, codegen change, or manual gRPC service boundary can
-remove those final annotations.
+The main source-level cleanup is now complete. The remaining `async_trait`
+text is only inside the build-script rewrite patterns that convert tonic's
+generated server traits into `BoxFuture`-returning traits. That is grep noise,
+not live async-trait usage in the runtime or generated outputs.
 
 ## Next Bounded Step
 
-Investigate the next honest path past the tonic-generated blocker: either find
-a tonic/codegen configuration that stops generating `#[async_trait]` server
-traits, or prototype the smallest manual gRPC service boundary that would let
-this repository drop the remaining `#[tonic::async_trait]` impls.
+Decide whether the remaining build-script string literals are worth a final
+grep-purity cleanup, or move this workstream back out of the active board once
+root is satisfied with the generated-output and runtime state.
 
 ## Surprises & Discoveries
 
@@ -111,3 +108,5 @@ this repository drop the remaining `#[tonic::async_trait]` impls.
 - The next phase is narrower and more honest than the previous closeout:
   determine whether tonic service impls can also be modernized, or explicitly
   stop there with source-backed justification.
+- The redesign path succeeded: the generated server traits now return
+  `BoxFuture` and the runtime no longer uses `#[tonic::async_trait]`.

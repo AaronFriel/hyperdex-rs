@@ -147,3 +147,55 @@
   - either a practical `#[no_panic]` annotation or a concrete justification for
     leaving it off this boundary
   - one bounded commit ready for reconciliation
+
+### Entry `pnh-004` - Outcome
+
+- Timestamp: `2026-03-29 10:05Z`
+- Kind: `outcome`
+- End commit: `db696ce`
+- Artifact location:
+  - `crates/server/src/main.rs`
+  - `crates/server/src/lib.rs`
+- Evidence summary:
+  - Replaced startup `expect("validated socket address")` paths with
+    `parse_socket_address(...)` plus `anyhow` context.
+  - Replaced `expect("daemon mode has a node identity")` in the daemon path
+    with checked startup error handling.
+  - Removed `expect("daemon mode has a node")` from `daemon_cluster_config` by
+    deriving the daemon node directly from the matched `ProcessMode`.
+  - `cargo test -p server` and `cargo test --workspace` both passed after the
+    change.
+  - A temporary `#[no_panic]` attempt on `daemon_registration_node` failed at
+    link time and was intentionally removed from the final commit.
+- Conclusion: the public startup boundary now returns checked errors instead of
+  panicking on validated socket-address and daemon-identity assumptions.
+- Disposition: `advance`
+- Next move: move deeper into `server/src/lib.rs` for the next product-only
+  panic sites.
+
+### Entry `pnh-005` - Preregistration
+
+- Timestamp: `2026-03-29 10:05Z`
+- Kind: `preregister`
+- Hypothesis: `server/src/lib.rs` still has several meaningful product-only
+  panic sites in fixed-width legacy decode helpers and poisoned-lock access
+  that can be converted to checked behavior in one bounded pass.
+- Owner: forked worker on `panic-hardening`
+- Start commit: `db696ce`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/panic-hardening`
+  - `panic-hardening`
+- Mutable surface:
+  - `crates/server/src/lib.rs`
+  - tests only if needed for the chosen boundary
+- Validator:
+  - fastest useful check:
+    `cargo test -p server`
+  - strong checks:
+    - `cargo test --workspace`
+    - `rg -n "unwrap\\(|expect\\(|todo!|panic!|no_panic" crates/server/src/lib.rs`
+- Expected artifacts:
+  - one bounded `server/src/lib.rs` hardening pass
+  - either a practical `#[no_panic]` annotation or a concrete justification for
+    leaving it off the chosen helper
+  - one bounded commit ready for reconciliation

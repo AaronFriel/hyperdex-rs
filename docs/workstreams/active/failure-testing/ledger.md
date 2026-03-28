@@ -158,3 +158,50 @@
   - one deterministic stale-placement mutation proof
   - either a green proof-only commit or a runtime fix for a discovered bug
   - one bounded commit ready for reconciliation
+
+### Entry `flt-005` - Outcome
+
+- Timestamp: `2026-03-29 10:00Z`
+- Kind: `outcome`
+- End commit: `8da80c8`
+- Artifact location:
+  - `crates/simulation-harness/src/tests/mod.rs`
+  - `crates/server/src/lib.rs`
+- Evidence summary:
+  - Added `turmoil_rejects_or_recovers_routed_mutation_under_stale_placement`.
+  - The new proof exposed a real bug: primary-only internode `Put`, `Delete`,
+    and `ConditionalPut` requests were accepted even if the receiving node's
+    current placement view no longer considered it the primary for that key.
+  - `handle_internode_request` now rejects those primary-only operations when
+    local placement ownership does not match.
+- Conclusion: routed mutations now reject stale-placement primary writes
+  instead of applying them under diverged cluster views.
+- Disposition: `advance`
+- Next move: pick the next broken distributed assumption in the rejoin or
+  recovery path.
+
+### Entry `flt-006` - Preregistration
+
+- Timestamp: `2026-03-29 10:00Z`
+- Kind: `preregister`
+- Hypothesis: a node that rejoins after cluster-view drift or outage may still
+  expose stale reads or accept incorrect internode traffic during convergence,
+  and the deterministic harness can express that without a broad rewrite.
+- Owner: forked worker on `failure-testing`
+- Start commit: `8da80c8`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/failure-testing`
+  - `failure-testing`
+- Mutable surface:
+  - `crates/simulation-harness/**`
+  - `crates/server/**` only if the new proof exposes a runtime bug
+- Validator:
+  - fastest useful check:
+    `cargo test -p simulation-harness turmoil_preserves_correctness_when_stale_node_rejoins_cluster -- --nocapture`
+  - strong checks:
+    - `cargo test -p simulation-harness`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - one deterministic rejoin-or-recovery proof
+  - either a green proof-only commit or a runtime fix for a discovered bug
+  - one bounded commit ready for reconciliation

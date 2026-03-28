@@ -57,22 +57,23 @@ design.
 - [x] (2026-03-29 00:39Z) Added
   `turmoil_reverts_primary_conditional_put_when_replica_transport_fails` in
   `7f02478`.
-- [ ] Choose the next broken distributed assumption after the
-  `ConditionalPut` replica-loss proof.
+- [x] (2026-03-29 10:00Z) Added stale-placement mutation proof and fix in
+  `8da80c8`.
+- [ ] Choose the next broken distributed assumption after stale-placement
+  mutation rejection.
 
 ## Current Hypothesis
 
-The next highest-value step is no longer another simple rollback case. The
-rollback contract now covers write, delete, and conditional-write mutation
-paths, so the next proof should target a different distributed risk. Routed
-mutation under stale placement is the strongest next candidate because it can
-silently misroute writes if one runtime's cluster view lags behind another.
+The next highest-value step is now the rejoin or recovery path after temporary
+divergence. The runtime now has rollback coverage and stale-placement write
+guards, so the next proof should stress what happens when a stale node rejoins
+after cluster-view drift or partial outage.
 
 ## Next Bounded Step
 
-Add the shortest honest deterministic proof for routed mutation under stale
-placement, and touch runtime code only if the proof shows the runtime can
-silently misroute or misapply a write with diverged cluster views.
+Add the shortest honest deterministic proof for a stale-node rejoin or
+post-outage recovery scenario, and touch runtime code only if the proof shows
+the runtime can accept or expose incorrect state during convergence.
 
 ## Surprises & Discoveries
 
@@ -97,3 +98,6 @@ silently misroute or misapply a write with diverged cluster views.
     replication result
 - The fourth pass landed as proof-only evidence:
   - `ConditionalPut` already rolls back cleanly on replica transport failure
+- The fifth pass found and fixed a real distributed ownership bug:
+  - primary-only internode writes were accepted without verifying that the
+    receiving node still owned the key under its current placement view

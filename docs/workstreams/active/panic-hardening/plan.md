@@ -59,19 +59,19 @@ panic behavior to explicit contracts and then set the next ratchet.
   `hyperdex-admin-protocol` in `694545e` and `44f8c58`.
 - [x] (2026-03-29 00:53Z) Hardened legacy frontend identify decoding in
   `dd00c13`.
-- [ ] Choose the next public/runtime boundary after the legacy frontend pass.
+- [x] (2026-03-29 10:05Z) Hardened server startup panic paths in `db696ce`.
+- [ ] Choose the next public/runtime boundary after the startup pass.
 
 ## Current Hypothesis
 
-After the legacy frontend pass, the next target should be a different
-public/runtime boundary with more than one remaining panic site. The best next
-candidate is `server/src/main.rs`, which still has public entrypoint
-`expect(\"validated socket address\")` and daemon identity panic paths.
+After the startup pass, the next target should stay in `server`, but move into
+`server/src/lib.rs`. That file still has multiple product-only `expect` and
+`unwrap` sites in fixed-width legacy decode helpers and poisoned-lock access.
 
 ## Next Bounded Step
 
-Harden `server/src/main.rs` by removing the public entrypoint `expect` paths
-around validated socket addresses and daemon identity, and carry forward the
+Harden the next `server/src/lib.rs` boundary by removing the most meaningful
+fixed-width decode and poisoned-lock panic sites, and carry forward the
 concrete no-panic evidence from earlier passes instead of retrying the same
 annotation blindly.
 
@@ -100,3 +100,6 @@ annotation blindly.
 - The same pattern held on the legacy frontend identify helper: checked
   decoding was straightforward, but a narrow `#[no_panic]` attempt still
   failed at link time.
+- The startup pass showed the same theme on a larger entrypoint boundary:
+  checked startup errors were straightforward, but `#[no_panic]` still failed
+  on `daemon_registration_node`.
