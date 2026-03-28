@@ -94,7 +94,7 @@
   `worktrees/simulation-degraded-read-fix`
 - Start commit: `281b8cb`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/simulation-degraded-read-fix`
+  - `worktrees/simulation-degraded-read-fix`
     on `simulation-degraded-read-fix`
 - Mutable surface:
   - `crates/simulation-harness/**`
