@@ -250,7 +250,7 @@
   clean worktree will produce bounded harness evidence without polluting
   product files outside the harness-owned surface.
 - Owner: forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire`
+  `worktrees/clientgarbage-wire`
 - Start commit: `d12c23c`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on
