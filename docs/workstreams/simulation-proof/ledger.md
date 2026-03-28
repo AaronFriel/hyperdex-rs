@@ -82,3 +82,31 @@
 - Disposition: `advance`
 - Next move: hold until the live compatibility thread exposes the next proof
   gap worth capturing deterministically.
+
+### Entry `sim-003` - Preregistration
+
+- Timestamp: `2026-03-28 03:27Z`
+- Kind: `preregister`
+- Hypothesis: the deterministic degraded-read simulation can be brought back in
+  line with current distributed runtime behavior by fixing replica fallback or
+  simulated transport handling inside the simulation-owned surface.
+- Owner: delegated worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/simulation-degraded-read-fix`
+- Start commit: `281b8cb`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/simulation-degraded-read-fix`
+    on `simulation-degraded-read-fix`
+- Mutable surface:
+  - `crates/simulation-harness/**`
+  - `crates/server/**` only if the simulation failure exposes a real runtime
+    bug instead of a stale proof assumption
+- Validator:
+  - fastest useful check:
+    `cargo test -p simulation-harness turmoil_preserves_degraded_read_correctness_after_one_node_loss -- --nocapture`
+  - strong checks:
+    - `cargo test -p simulation-harness`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - a substantive fix for the degraded-read simulation failure
+  - green `simulation-harness`
+  - green workspace or an exact remaining blocker with proof

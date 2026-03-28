@@ -13,7 +13,8 @@ fallback rules at `/home/friel/.codex/skills/autoplan/references/PLANS.md`.
 This workstream keeps deterministic proof coverage strong enough that live
 cluster failures mean something real. Its job is not to replace the live
 cluster checks; its job is to make routing, replication, and failure behavior
-cheap to validate and hard to regress.
+cheap to validate and hard to regress, and to return the workspace to green
+when those proofs expose a real product gap.
 
 ## Goal
 
@@ -37,17 +38,16 @@ mutations, degraded reads, and schema-correct attribute use.
 
 ## Dependencies / Blockers
 
-- None for the currently in-flight numeric-mutation proof.
-- The next cleanup after that depends on deciding whether the single-node Hegel
-  sequence model should be made schema-correct in one bounded step or split.
+- None. The current blocker is inside this workstream’s owned surface.
 
 ## Plan Of Work
 
-First reconcile the already-tested routed numeric-mutation property that is
-currently in the root checkout and also exists as a worktree commit. Then use
-that landing point to narrow the remaining schema-permissive generated tests,
-starting with the single-node sequence model that still writes and reads the
-undeclared `name` attribute.
+Start from the confirmed red deterministic boundary:
+`turmoil_preserves_degraded_read_correctness_after_one_node_loss` now fails on
+integrated `main` after the new two-daemon public routing work. Fix that
+degraded-read simulation path first, keep the live public proofs green, and
+then rerun the broader workspace validator before reopening any speculative
+proof expansion.
 
 ## Progress
 
@@ -57,17 +57,21 @@ undeclared `name` attribute.
   property into `6d55620` (`Add Hegel routed numeric mutation coverage`).
 - [x] (2026-03-27 04:33Z) Tightened the remaining schema-permissive single-node
   Hegel sequence test in `5cc0cf8` (`Fix Hegel single-node schema usage`).
+- [ ] Fix the deterministic degraded-read simulation so `cargo test
+  --workspace` returns to green on current `main`.
 
 ## Current Hypothesis
 
-The current proof coverage is in a good holding state. The next useful proof
-addition should come from a concrete live compatibility gap rather than another
-speculative cleanup.
+The next useful proof step is no longer speculative. The deterministic
+degraded-read simulation is red on current `main`, while the live public
+Hyhac-facing proofs are green. That makes the simulation failure the next real
+product or proof bug to close.
 
 ## Next Bounded Step
 
-Wait for the next live compatibility or regression signal that needs a new
-deterministic proof before opening another bounded step here.
+Fix `turmoil_preserves_degraded_read_correctness_after_one_node_loss` without
+regressing the live public acceptance proofs, then rerun `cargo test
+--workspace`.
 
 ## Surprises & Discoveries
 
@@ -76,6 +80,12 @@ deterministic proof before opening another bounded step here.
   shared `/tmp` collisions before adding the property itself.
   Evidence: `ensure_hegel_server_command()` already uses
   `std::process::id()` in `crates/simulation-harness/src/lib.rs`.
+- Observation: after the new two-daemon public routing work landed, the next
+  red path is the deterministic degraded-read simulation rather than another
+  public compatibility gap.
+  Evidence: `cargo test -p simulation-harness turmoil_preserves_degraded_read_correctness_after_one_node_loss -- --nocapture`
+  now fails on integrated `main` with `get failed on all replicas for space
+  'profiles' after remote failure on replica 2`.
 
 ## Decision Log
 

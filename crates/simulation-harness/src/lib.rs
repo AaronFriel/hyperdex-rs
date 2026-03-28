@@ -128,13 +128,17 @@ mod tests {
         };
 
         let runtime = Arc::new(ClusterRuntime::for_node(config, 1).unwrap());
-        HyperdexAdminService::handle(runtime.as_ref(), AdminRequest::CreateSpaceDsl(profiles_schema()))
-            .await
-            .unwrap();
+        HyperdexAdminService::handle(
+            runtime.as_ref(),
+            AdminRequest::CreateSpaceDsl(profiles_schema()),
+        )
+        .await
+        .unwrap();
         runtime
     }
 
-    async fn distributed_runtime_fixture(
+    async fn distributed_runtime_fixture_with_schema(
+        schema: String,
     ) -> (Arc<SimTransport>, Arc<ClusterRuntime>, Arc<ClusterRuntime>) {
         let config = ClusterConfig {
             nodes: vec![
@@ -169,20 +173,19 @@ mod tests {
         transport.register(1, runtime1.clone()).await;
         transport.register(2, runtime2.clone()).await;
 
-        HyperdexAdminService::handle(
-            runtime1.as_ref(),
-            AdminRequest::CreateSpaceDsl(profiles_schema()),
-        )
+        HyperdexAdminService::handle(runtime1.as_ref(), AdminRequest::CreateSpaceDsl(schema.clone()))
         .await
         .unwrap();
-        HyperdexAdminService::handle(
-            runtime2.as_ref(),
-            AdminRequest::CreateSpaceDsl(profiles_schema()),
-        )
+        HyperdexAdminService::handle(runtime2.as_ref(), AdminRequest::CreateSpaceDsl(schema))
         .await
         .unwrap();
 
         (transport, runtime1, runtime2)
+    }
+
+    async fn distributed_runtime_fixture(
+    ) -> (Arc<SimTransport>, Arc<ClusterRuntime>, Arc<ClusterRuntime>) {
+        distributed_runtime_fixture_with_schema(profiles_schema()).await
     }
 
     async fn distributed_runtime_pair() -> (Arc<ClusterRuntime>, Arc<ClusterRuntime>) {
@@ -212,28 +215,29 @@ mod tests {
     ) -> (Arc<ClusterRuntime>, u64, String) {
         (0..65536)
             .map(|i| format!("{prefix}-{i}"))
-            .find_map(|key| match runtime1.route_primary(key.as_bytes()).unwrap() {
-                1 => Some((runtime2.clone(), 1, key)),
-                2 => Some((runtime1.clone(), 2, key)),
-                _ => None,
-            })
+            .find_map(
+                |key| match runtime1.route_primary(key.as_bytes()).unwrap() {
+                    1 => Some((runtime2.clone(), 1, key)),
+                    2 => Some((runtime1.clone(), 2, key)),
+                    _ => None,
+                },
+            )
             .expect("expected a key routed to either cluster node")
     }
 
     fn ensure_hegel_server_command() -> String {
         HEGEL_SERVER_COMMAND
             .get_or_init(|| {
-                let root = std::env::temp_dir()
-                    .join(format!("hyperdex-rs-hegel-core-0.2.3-{}", std::process::id()));
+                let root = std::env::temp_dir().join(format!(
+                    "hyperdex-rs-hegel-core-0.2.3-{}",
+                    std::process::id()
+                ));
                 let venv_dir = root.join("venv");
                 let hegel = venv_dir.join("bin/hegel");
                 let pyvenv_cfg = venv_dir.join("pyvenv.cfg");
 
                 if hegel.is_file() && pyvenv_cfg.is_file() {
-                    return hegel
-                        .to_str()
-                        .expect("hegel path must be utf-8")
-                        .to_owned();
+                    return hegel.to_str().expect("hegel path must be utf-8").to_owned();
                 }
 
                 if venv_dir.exists() && !pyvenv_cfg.is_file() {
@@ -259,10 +263,7 @@ mod tests {
                 assert!(status.success(), "uv pip install failed for {:?}", python);
 
                 assert!(hegel.is_file(), "missing hegel binary at {:?}", hegel);
-                hegel
-                    .to_str()
-                    .expect("hegel path must be utf-8")
-                    .to_owned()
+                hegel.to_str().expect("hegel path must be utf-8").to_owned()
             })
             .clone()
     }
@@ -299,6 +300,15 @@ mod tests {
          attributes\n\
             int profile_views\n\
          tolerate 0 failures\n"
+            .to_owned()
+    }
+
+    fn replicated_profiles_schema() -> String {
+        "space profiles\n\
+         key username\n\
+         attributes\n\
+            int profile_views\n\
+         tolerate 1 failures\n"
             .to_owned()
     }
 
@@ -351,51 +361,8 @@ mod tests {
         let mut sim = turmoil::Builder::new().build();
 
         sim.client("cluster", async move {
-            let config = ClusterConfig {
-                nodes: vec![
-                    ClusterNode {
-                        id: 1,
-                        host: "node1".to_owned(),
-                        control_port: 1001,
-                        data_port: 2001,
-                    },
-                    ClusterNode {
-                        id: 2,
-                        host: "node2".to_owned(),
-                        control_port: 1002,
-                        data_port: 2002,
-                    },
-                ],
-                replicas: 2,
-                internode_transport: TransportBackend::Grpc,
-                ..ClusterConfig::default()
-            };
-
-            let transport = Arc::new(SimTransport::default());
-
-            let mut runtime1 = ClusterRuntime::for_node(config.clone(), 1).unwrap();
-            runtime1.install_cluster_transport(transport.clone(), TransportRuntime::Grpc);
-            let runtime1 = Arc::new(runtime1);
-
-            let mut runtime2 = ClusterRuntime::for_node(config.clone(), 2).unwrap();
-            runtime2.install_cluster_transport(transport.clone(), TransportRuntime::Grpc);
-            let runtime2 = Arc::new(runtime2);
-
-            transport.register(1, runtime1.clone()).await;
-            transport.register(2, runtime2.clone()).await;
-
-            HyperdexAdminService::handle(
-                runtime1.as_ref(),
-                AdminRequest::CreateSpaceDsl(profiles_schema()),
-            )
-            .await
-            .unwrap();
-            HyperdexAdminService::handle(
-                runtime2.as_ref(),
-                AdminRequest::CreateSpaceDsl(profiles_schema()),
-            )
-            .await
-            .unwrap();
+            let (transport, runtime1, runtime2) =
+                distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
 
             let (survivor_runtime, unavailable_node, degraded_key) =
                 degraded_read_target(&runtime1, &runtime2, "sim-degraded");
@@ -496,51 +463,8 @@ mod tests {
         let runtime = madsim::runtime::Runtime::with_seed_and_config(7, madsim::Config::default());
 
         runtime.block_on(async move {
-            let config = ClusterConfig {
-                nodes: vec![
-                    ClusterNode {
-                        id: 1,
-                        host: "node1".to_owned(),
-                        control_port: 1001,
-                        data_port: 2001,
-                    },
-                    ClusterNode {
-                        id: 2,
-                        host: "node2".to_owned(),
-                        control_port: 1002,
-                        data_port: 2002,
-                    },
-                ],
-                replicas: 2,
-                internode_transport: TransportBackend::Grpc,
-                ..ClusterConfig::default()
-            };
-
-            let transport = Arc::new(SimTransport::default());
-
-            let mut runtime1 = ClusterRuntime::for_node(config.clone(), 1).unwrap();
-            runtime1.install_cluster_transport(transport.clone(), TransportRuntime::Grpc);
-            let runtime1 = Arc::new(runtime1);
-
-            let mut runtime2 = ClusterRuntime::for_node(config.clone(), 2).unwrap();
-            runtime2.install_cluster_transport(transport.clone(), TransportRuntime::Grpc);
-            let runtime2 = Arc::new(runtime2);
-
-            transport.register(1, runtime1.clone()).await;
-            transport.register(2, runtime2.clone()).await;
-
-            HyperdexAdminService::handle(
-                runtime1.as_ref(),
-                AdminRequest::CreateSpaceDsl(profiles_schema()),
-            )
-            .await
-            .unwrap();
-            HyperdexAdminService::handle(
-                runtime2.as_ref(),
-                AdminRequest::CreateSpaceDsl(profiles_schema()),
-            )
-            .await
-            .unwrap();
+            let (transport, runtime1, runtime2) =
+                distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
 
             let (survivor_runtime, unavailable_node, degraded_key) =
                 degraded_read_target(&runtime1, &runtime2, "madsim-degraded");
@@ -896,9 +820,13 @@ mod tests {
 
             let runtime = tokio::runtime::Runtime::new().unwrap();
             runtime.block_on(async move {
-                let (transport, runtime1, runtime2) = distributed_runtime_fixture().await;
-                let (survivor_runtime, unavailable_node, degraded_key) =
-                    degraded_read_target(&runtime1, &runtime2, &format!("hegel-degraded-{degraded_suffix}"));
+                let (transport, runtime1, runtime2) =
+                    distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
+                let (survivor_runtime, unavailable_node, degraded_key) = degraded_read_target(
+                    &runtime1,
+                    &runtime2,
+                    &format!("hegel-degraded-{degraded_suffix}"),
+                );
                 let degraded_value = i64::from(degraded_value_id);
                 let survivor_value = i64::from(survivor_value_id);
                 let survivor_key = format!("survivor-{degraded_suffix}");
@@ -1055,12 +983,9 @@ mod tests {
 
         hegel::Hegel::new(|tc: hegel::TestCase| {
             let key_suffix: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(4095));
-            let initial_value_id: u16 =
-                tc.draw(hegel::generators::integers::<u16>().max_value(99));
-            let updated_value_id: u16 =
-                tc.draw(hegel::generators::integers::<u16>().max_value(99));
-            let failed_value_id: u16 =
-                tc.draw(hegel::generators::integers::<u16>().max_value(99));
+            let initial_value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
+            let updated_value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
+            let failed_value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
 
             let runtime = tokio::runtime::Runtime::new().unwrap();
             runtime.block_on(async move {
@@ -1183,8 +1108,7 @@ mod tests {
 
         hegel::Hegel::new(|tc: hegel::TestCase| {
             let key_suffix: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(4095));
-            let initial_value_id: u16 =
-                tc.draw(hegel::generators::integers::<u16>().max_value(99));
+            let initial_value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
             let operand_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
 
             let runtime = tokio::runtime::Runtime::new().unwrap();
