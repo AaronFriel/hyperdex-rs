@@ -133,7 +133,7 @@ These workstreams are completed and moved under
 - [live-hyhac](docs/workstreams/completed/live-hyhac/plan.md):
   the public Hyhac-facing compatibility surface is green on both single-daemon
   and two-daemon live clusters, and the reusable verifier exists.
-- [simulation-proof](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/simulation-proof/plan.md):
+- [simulation-proof](docs/workstreams/completed/simulation-proof/plan.md):
   deterministic degraded-read proof drift is fixed and the simulation harness
   is back on a green baseline.
 - [multiprocess-harness](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/multiprocess-harness/plan.md):
