@@ -86,7 +86,7 @@ def count_history(root: Path, all_refs: bool) -> CountResult:
     objects = subprocess.check_output(
         ["git", "rev-list", "--objects", *rev_args], cwd=root, text=True
     ).splitlines()
-    paths_by_oid: dict[str, str] = {}
+    entries: list[tuple[str, str]] = []
     for line in objects:
         oid, *rest = line.split(" ", 1)
         if not rest:
@@ -94,25 +94,27 @@ def count_history(root: Path, all_refs: bool) -> CountResult:
         path = rest[0]
         if path.startswith(EXCLUDED_PREFIXES):
             continue
-        paths_by_oid.setdefault(oid, path)
+        entries.append((oid, path))
 
-    if not paths_by_oid:
+    if not entries:
         return CountResult()
 
     batch_check = subprocess.check_output(
         ["git", "cat-file", "--batch-check"],
         cwd=root,
-        input="".join(f"{oid}\n" for oid in paths_by_oid),
+        input="".join(f"{oid}\n" for oid, _ in entries),
         text=True,
     ).splitlines()
 
-    blob_ids = [
-        line.split(" ", 2)[0]
-        for line in batch_check
-        if len(line.split(" ", 2)) >= 2 and line.split(" ", 2)[1] == "blob"
-    ]
+    blob_kinds = {
+        parts[0]: parts[1]
+        for raw in batch_check
+        if len((parts := raw.split(" ", 2))) >= 2
+    }
+    unique_blob_ids = sorted({oid for oid, _ in entries if blob_kinds.get(oid) == "blob"})
 
     result = CountResult()
+    lines_by_oid: dict[str, list[str]] = {}
     proc = subprocess.Popen(
         ["git", "cat-file", "--batch"],
         cwd=root,
@@ -122,12 +124,12 @@ def count_history(root: Path, all_refs: bool) -> CountResult:
     )
     assert proc.stdin is not None
     assert proc.stdout is not None
-    for oid in blob_ids:
+    for oid in unique_blob_ids:
         proc.stdin.write(f"{oid}\n".encode())
     proc.stdin.flush()
     proc.stdin.close()
 
-    for oid in blob_ids:
+    for oid in unique_blob_ids:
         header = proc.stdout.readline().decode().strip()
         _, kind, size_text = header.split(" ", 2)
         if kind != "blob":
@@ -136,18 +138,23 @@ def count_history(root: Path, all_refs: bool) -> CountResult:
         data = proc.stdout.read(size)
         proc.stdout.read(1)
         if TARGET.encode() not in data:
+            lines_by_oid[oid] = []
             continue
-        path = paths_by_oid[oid]
-        for raw_line in data.splitlines():
-            if TARGET.encode() not in raw_line:
-                continue
-            line = raw_line.decode("utf-8", errors="replace")
-            bucket = classify(path, line)
-            add_match(result, bucket)
+        lines_by_oid[oid] = [
+            raw_line.decode("utf-8", errors="replace")
+            for raw_line in data.splitlines()
+            if TARGET.encode() in raw_line
+        ]
 
     stderr = proc.stderr.read().decode()
     if proc.wait() != 0:
         raise RuntimeError(stderr.strip() or "git cat-file --batch failed")
+
+    for oid, path in entries:
+        for line in lines_by_oid.get(oid, []):
+            bucket = classify(path, line)
+            add_match(result, bucket)
+
     return result
 
 
