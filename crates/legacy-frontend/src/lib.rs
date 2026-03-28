@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use anyhow::Result;
 use legacy_protocol::{
@@ -7,7 +8,7 @@ use legacy_protocol::{
     LEGACY_REQUEST_HEADER_SIZE,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
 fn maybe_capture_legacy_frontend_event(event: &str) {
     let Ok(path) = std::env::var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE") else {
@@ -95,30 +96,54 @@ impl LegacyFrontend {
 
     pub async fn serve_forever_with<H, F>(&self, handler: H) -> Result<()>
     where
-        H: Fn(RequestHeader, Vec<u8>) -> F,
-        F: std::future::Future<Output = Result<(ResponseHeader, Vec<u8>)>>,
+        H: Fn(RequestHeader, Vec<u8>) -> F + Send + Sync + 'static,
+        F: std::future::Future<Output = Result<(ResponseHeader, Vec<u8>)>> + Send + 'static,
     {
+        let handler = Arc::new(handler);
+
         loop {
             let (mut stream, _) = self.listener.accept().await?;
-            while let Some((header, body)) =
-                read_request_frame(&mut stream, self.local_server_id).await?
-            {
-                let (response, response_body) = handler(header, body).await?;
-                maybe_capture_legacy_frontend_event(&format!(
-                    "response mt={:?} target_vsi={} nonce={} body_len={} body_prefix={}",
-                    response.message_type,
-                    response.target_virtual_server,
-                    response.nonce,
-                    response_body.len(),
-                    capture_hex_prefix(&response_body, 16)
-                ));
-                stream
-                    .write_all(&encode_response_frame(response, &response_body))
-                    .await?;
-                stream.flush().await?;
-            }
+            let handler = handler.clone();
+            let local_server_id = self.local_server_id;
+            tokio::spawn(async move {
+                if let Err(err) =
+                    serve_connection_with(&mut stream, local_server_id, handler).await
+                {
+                    maybe_capture_legacy_frontend_event(&format!(
+                        "connection_error {err:#}"
+                    ));
+                }
+            });
         }
     }
+}
+
+async fn serve_connection_with<H, F>(
+    stream: &mut TcpStream,
+    local_server_id: u64,
+    handler: Arc<H>,
+) -> Result<()>
+where
+    H: Fn(RequestHeader, Vec<u8>) -> F + Send + Sync + 'static,
+    F: std::future::Future<Output = Result<(ResponseHeader, Vec<u8>)>> + Send + 'static,
+{
+    while let Some((header, body)) = read_request_frame(stream, local_server_id).await? {
+        let (response, response_body) = handler(header, body).await?;
+        maybe_capture_legacy_frontend_event(&format!(
+            "response mt={:?} target_vsi={} nonce={} body_len={} body_prefix={}",
+            response.message_type,
+            response.target_virtual_server,
+            response.nonce,
+            response_body.len(),
+            capture_hex_prefix(&response_body, 16)
+        ));
+        stream
+            .write_all(&encode_response_frame(response, &response_body))
+            .await?;
+        stream.flush().await?;
+    }
+
+    Ok(())
 }
 
 async fn read_request_frame(
@@ -453,6 +478,91 @@ mod tests {
         }
 
         drop(stream);
+        server.abort();
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn serve_forever_with_accepts_second_connection_while_first_stays_open() {
+        let frontend = LegacyFrontend::bind_with_server_id("127.0.0.1:0".parse().unwrap(), 7)
+            .await
+            .unwrap();
+        let address = frontend.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            frontend
+                .serve_forever_with(|header, body| async move {
+                    assert_eq!(header.message_type, LegacyMessageType::ReqCount);
+                    let (nonce, request_body) = decode_handler_nonce(&body);
+                    let request = decode_protocol_count_request(request_body).unwrap();
+                    assert!(request.is_empty());
+                    Ok((
+                        ResponseHeader {
+                            message_type: LegacyMessageType::RespCount,
+                            target_virtual_server: header.target_virtual_server,
+                            nonce,
+                        },
+                        legacy_protocol::encode_protocol_count_response(nonce).to_vec(),
+                    ))
+                })
+                .await
+                .unwrap()
+        });
+
+        let mut stream1 = tokio::net::TcpStream::connect(address).await.unwrap();
+        stream1
+            .write_all(&encode_identify_frame(0, 0))
+            .await
+            .unwrap();
+        stream1.flush().await.unwrap();
+        let _ = read_raw_frame(&mut stream1).await;
+        stream1
+            .write_all(&encode_request_frame(
+                RequestHeader {
+                    message_type: LegacyMessageType::ReqCount,
+                    flags: 0,
+                    version: 7,
+                    target_virtual_server: 11,
+                    nonce: 19,
+                },
+                &encode_protocol_count_request(&[]),
+            ))
+            .await
+            .unwrap();
+        stream1.flush().await.unwrap();
+        let response1 = read_raw_frame(&mut stream1).await;
+        let header1 = ResponseHeader::decode(&response1).unwrap();
+        assert_eq!(header1.nonce, 19);
+
+        let mut stream2 = tokio::net::TcpStream::connect(address).await.unwrap();
+        stream2
+            .write_all(&encode_request_frame(
+                RequestHeader {
+                    message_type: LegacyMessageType::ReqCount,
+                    flags: 0,
+                    version: 7,
+                    target_virtual_server: 11,
+                    nonce: 29,
+                },
+                &encode_protocol_count_request(&[]),
+            ))
+            .await
+            .unwrap();
+        stream2.flush().await.unwrap();
+
+        let response2 = tokio::time::timeout(
+            std::time::Duration::from_millis(250),
+            read_raw_frame(&mut stream2),
+        )
+        .await
+        .expect("second connection should be served while the first stays open");
+        let header2 = ResponseHeader::decode(&response2).unwrap();
+        let body2 = response2[legacy_protocol::LEGACY_RESPONSE_HEADER_SIZE..].to_vec();
+        assert_eq!(header2.nonce, 29);
+        assert_eq!(decode_protocol_count_response(&body2).unwrap(), 29);
+
+        drop(stream1);
+        drop(stream2);
         server.abort();
         let _ = server.await;
     }
