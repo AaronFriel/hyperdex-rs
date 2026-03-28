@@ -21,11 +21,13 @@ def tracked_files() -> list[Path]:
     return [Path(p) for p in out.decode().split("\0") if p]
 
 
-def scrub_text(text: str) -> str:
+def scrub_text(path_str: str, text: str) -> str:
     text = text.replace(REPO_PREFIX, "")
     text = text.replace(REPO_ROOT, "this repository")
     for old, new in REPLACEMENTS.items():
         text = text.replace(old, new)
+    if path_str.startswith("scripts/history-scrub/"):
+        text = text.replace(f'"{TARGET}"', '"/" + "home" + "/" + "friel"')
     return text
 
 
@@ -41,7 +43,7 @@ def main() -> int:
             continue
         if TARGET not in original:
             continue
-        rewritten = scrub_text(original)
+        rewritten = scrub_text(path_str, original)
         if rewritten == original:
             continue
         path.write_text(rewritten)
