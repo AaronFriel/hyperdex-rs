@@ -2384,7 +2384,7 @@
 - Kind: `outcome`
 - End commit: `b23458c`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - `b23458c` fills legacy default values for missing attributes when encoding
     sparse records back through the legacy `get` path
