@@ -162,7 +162,7 @@
   - `/home/friel/c/aaronfriel/HyperDex/admin/hyperspace_builder.cc`
   - `/home/friel/c/aaronfriel/HyperDex/admin/partition.cc`
   - `/home/friel/c/aaronfriel/HyperDex/common/hyperspace.cc`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - the original `profiles` layout is a one-dimensional primary subspace on
     attribute `0`
