@@ -5,6 +5,9 @@ alongside the current active workstreams. It is intentionally separate from the
 active root AutoPlan board so the repository can preserve useful ideas without
 pretending they are all in flight at once.
 
+For grouping and dependency order, see
+[capability-ladder.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/capability-ladder.md).
+
 ## User-Prioritized Directions
 
 These are the explicit next-phase directions requested for `hyperdex-rs`.
@@ -70,12 +73,15 @@ future areas of interest.
   operation took the path it did.
 - Keep tracing useful for debugging live failures, not just for demos.
 
-### Graph Or Vector Layers Above Spaces
+### Graph And Vector Layers Above Spaces
 
-- Explore whether typed spaces can support graph-shaped access patterns or
-  vector-assisted search as an upper layer.
-- Keep this above the current key-value and search substrate rather than
-  turning it into a near-term core requirement.
+- Explore graph-shaped access patterns and graph-aware abstractions as a layer
+  over the shared substrate.
+- Explore vector-assisted search and ANN indexing, with HNSW as an obvious
+  early candidate and room for alternate ANN designs when the tradeoffs are
+  materially different.
+- Keep both above the current key-value and search substrate rather than
+  turning them into near-term core requirements.
 
 ## Positioning
 
