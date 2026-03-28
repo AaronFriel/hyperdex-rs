@@ -2312,3 +2312,29 @@
   - a reduced truthful repro for the remaining later Hyhac failure, if needed
   - either a live-baseline improvement or one precise blocker tied to current
     code and observed output
+
+### Entry `hyh-048` - Outcome
+
+- Timestamp: `2026-03-28 00:48Z`
+- Kind: `outcome`
+- End commit: `3c72516`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/legacy-frontend/src/lib.rs`
+- Evidence summary:
+  - `3c72516` changes `LegacyFrontend::serve_forever_with` so each accepted
+    client connection is handled in its own task instead of blocking accept
+    until one long-lived client disconnects
+  - `cargo test -p legacy-frontend serve_forever_with_accepts_second_connection_while_first_stays_open -- --nocapture`
+    passed on integrated `main`
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture`
+    passed on integrated `main`
+  - `cargo test -p server` passed on integrated `main`
+  - the honest full-schema Hyhac large-object probe now completes both pooled
+    and shared writes successfully
+- Conclusion: the first post-success large-object blocker is cleared. The next
+  live-hyhac step is no longer to fix that boundary, but to identify the next
+  failing Hyhac operation beyond it.
+- Disposition: `advance`
+- Next move: find the next truthful failing Hyhac operation after the now-
+  passing full-schema large-object boundary, then launch the next product-owned
+  fix pass from that observed failure.

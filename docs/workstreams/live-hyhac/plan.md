@@ -67,26 +67,26 @@ or protocol behavior that causes it, and rerun the live check before returning.
 - [x] (2026-03-28 00:17Z) Replaced that invalid check with a full-schema
   baseline that creates the real 19-attribute `profiles` space, waits until
   stable, proves native C success, and proves one successful Hyhac round-trip.
-- [ ] Fix the remaining later Hyhac failure after the first successful
-  round-trip on the full-schema baseline.
-  Current owner: `019d31bc-e8da-7af3-b40a-bfa04fd8ec4b` (`Gauss`) on
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-roundtrip-fix`.
+- [x] (2026-03-28 00:48Z) Landed the concurrent-connection fix in
+  `legacy-frontend`, and the full-schema large-object baseline now passes on
+  integrated `main`.
+- [ ] Identify the next truthful failing Hyhac operation after the now-passing
+  large-object boundary and launch the next product-owned fix pass from there.
 
 ## Current Hypothesis
 
 The remaining live mismatch is later than bootstrap, later than schema
-creation, and later than the first daemon round-trip. The shortest honest
-public validator now proves that `hyperdex-rs` can serve one full large-object
-round-trip to Hyhac on the real `profiles` schema. The next failing operation
-after that first success is the one that should drive the next product change.
+creation, later than the first daemon round-trip, and later than the
+large-object post-success stall that `3c72516` removed. The next product change
+should now be driven by the next failing Hyhac operation beyond that cleared
+boundary.
 
 ## Next Bounded Step
 
-Use the full-schema probe as the main validator. Reduce the failure to the
-first later operation that diverges after a proven successful round-trip, patch
-the responsible product code, and rerun the honest live check plus
-`cargo test -p server` before returning control. This step is active now on the
-fresh `live-hyhac-roundtrip-fix` worktree.
+Keep the full-schema large-object probe green as a regression check. Use a
+broader truthful Hyhac probe to identify the next failing operation beyond that
+boundary, then launch the next product-owned fix pass from that observed
+failure.
 
 ## Surprises & Discoveries
 
@@ -97,6 +97,11 @@ fresh `live-hyhac-roundtrip-fix` worktree.
   bootstrap and coordinator-path failures.
   Evidence: `589ce4f` proves native C success and one successful Hyhac
   `put` plus `loop` before the next operation hangs.
+- Observation: that later large-object hang was caused by connection handling
+  in the legacy frontend rather than by daemon storage or coordinator setup.
+  Evidence: after `3c72516`, the focused `legacy-frontend` regression passes
+  and the full-schema Hyhac large-object probe completes both pooled and shared
+  writes successfully on integrated `main`.
 - Observation: the remaining work now belongs primarily in product code, not
   in more coordinator-protocol archaeology.
   Evidence: the active live failure appears after the system already accepts
@@ -118,6 +123,6 @@ fresh `live-hyhac-roundtrip-fix` worktree.
 
 - The admin/bootstrap rewrite is no longer the active story in this
   workstream. The repository now has a real live baseline where schema
-  creation, stability waits, native C writes, and one Hyhac round-trip all
-  succeed. The remaining work is to clear the next later client-visible
-  divergence on that honest baseline.
+  creation, stability waits, native C writes, and the full-schema Hyhac
+  large-object subset all succeed. The remaining work is to find and clear the
+  next later client-visible divergence on that honest baseline.

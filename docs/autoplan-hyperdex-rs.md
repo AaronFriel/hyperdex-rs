@@ -111,7 +111,7 @@ split, sequencing, or validators need to change.
 
 | Workstream | Status | Owner | Dependencies / Blockers | Plan | Ledger | Worktree / Branch | Fastest Useful Check | Next Step | Latest Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `live-hyhac` | active | `019d31bc-e8da-7af3-b40a-bfa04fd8ec4b` (`Gauss`) | The corrected full-schema baseline is on `main`, native C succeeds, and Hyhac completes one successful round-trip before the next operation stalls. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-roundtrip-fix` on `live-hyhac-roundtrip-fix` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Let the product worker reduce and fix the later post-success failure, then reconcile the first substantive result. | `advance` |
+| `live-hyhac` | active | root | The honest full-schema large-object baseline now passes on `main`, so the next task is to identify the next failing Hyhac operation after that cleared boundary. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-roundtrip-fix` on `live-hyhac-roundtrip-fix` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Find the next truthful failing Hyhac operation, then launch the next product-owned fix pass from that observed boundary. | `advance` |
 | `multiprocess-harness` | active | `019d31c1-1662-75d3-83bf-8b2c03e809d7` (`Bohr`) | No current blocker. This workstream is active only to shorten the honest full-schema probe if that materially improves product iteration speed. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro` on `post-success-repro` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Let the harness worker either produce a smaller truthful post-success repro or prove the current one should stand. | `retry` |
 | `simulation-proof` | parked | root | Not on the critical path while live compatibility still fails earlier. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Leave parked until a live failure needs new deterministic coverage. | `advance` |
 | `coordinator-config-evidence` | parked | root | Not on the critical path. The next active question is later than the coordinator follow/bootstrap path. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Leave parked until the product pass needs another exact source comparison. | `advance` |
@@ -132,23 +132,25 @@ split, sequencing, or validators need to change.
 - [x] (2026-03-28 00:17Z) Replaced that invalid check with a full-schema
   baseline that creates the real 19-attribute `profiles` space, waits until
   stable, proves native C success, and proves one successful Hyhac round-trip.
-- [ ] Reduce and fix the remaining later Hyhac failure after the first
-  successful large-object round-trip.
+- [x] (2026-03-28 00:48Z) Landed the concurrent-connection fix in the legacy
+  frontend and cleared the full-schema large-object post-success blocker on
+  integrated `main`.
+- [ ] Find the next truthful failing Hyhac operation beyond the now-passing
+  full-schema large-object boundary.
 
 ## Current Root Focus
 
-Drive the remaining live compatibility failure on the corrected full-schema
-baseline and bias the next iterations toward material code in `crates/**`.
-The active problem is no longer bootstrap, schema creation, or the first daemon
-round-trip. The active problem is the first later operation that diverges after
-Hyhac has already demonstrated one successful round-trip against a live Rust
-cluster.
+Drive the live compatibility path past the now-cleared large-object boundary
+and keep the next iterations biased toward material code in `crates/**`. The
+active problem is no longer bootstrap, schema creation, the first daemon
+round-trip, or the large-object post-success stall. The active problem is the
+next failing Hyhac operation after that cleared boundary.
 
 ## Next Root Move
 
-Wait on the active product and harness workers with a long timeout, reconcile
-the first substantive result, and rerun the honest live check on integrated
-`main`.
+Use the active harness worker or a direct truthful probe to identify the next
+failing Hyhac operation after the large-object boundary, then launch the next
+product-owned fix pass and rerun the honest live checks on integrated `main`.
 
 ## Surprises & Discoveries
 
@@ -163,6 +165,13 @@ the first substantive result, and rerun the honest live check on integrated
   Evidence: the full-schema probe on `main` creates `profiles`, waits until
   stable, proves native C success, and proves one successful Hyhac round-trip
   before the next operation hangs.
+- Observation: the first post-success large-object blocker was caused by the
+  legacy frontend serializing long-lived clients instead of serving them
+  concurrently.
+  Evidence: `3c72516` makes `LegacyFrontend::serve_forever_with` spawn one task
+  per accepted connection, the focused `legacy-frontend` regression passes, and
+  the honest full-schema Hyhac large-object probe now completes both pooled and
+  shared writes successfully.
 - Observation: the recent imbalance was real: too much activity was being
   expressed in ledgers and harness growth rather than in product code.
   Evidence: the recent compact diff summary was dominated by `docs/**` and one
