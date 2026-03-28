@@ -102,3 +102,55 @@
   - either a code change that removes the remaining tonic async-trait usage
   - or a source-backed blocker showing why tonic's generated service boundary
     still requires it
+
+### Entry `asm-003` - Outcome
+
+- Timestamp: `2026-03-29 01:05Z`
+- Kind: `outcome`
+- End commit: `7e79838`
+- Artifact location:
+  - `docs/workstreams/active/async-modernization/plan.md`
+  - `target/debug/build/transport-grpc-85a685a876548cf5/out/hyperdex.v1.rs`
+  - `/home/friel/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-build-0.12.3/src/server.rs`
+- Evidence summary:
+  - The remaining uses are only `#[tonic::async_trait]` in
+    `crates/transport-grpc/src/lib.rs` and `crates/server/src/main.rs`.
+  - The generated gRPC server traits still carry `#[async_trait]` in
+    `target/debug/build/*/out/hyperdex.v1.rs`.
+  - tonic-build 0.12.3 emits `#[async_trait] pub trait #server_trait` from its
+    server codegen path, so the remaining repo-local annotations match a
+    generated contract rather than missed cleanup in our own trait surfaces.
+- Conclusion: the current async pass ended in a precise tonic-generated
+  blocker, not another missing local rewrite.
+- Disposition: `reframe`
+- Next move: investigate whether tonic/codegen changes or a manual gRPC service
+  boundary can remove the final annotations.
+
+### Entry `asm-004` - Preregistration
+
+- Timestamp: `2026-03-29 01:05Z`
+- Kind: `preregister`
+- Hypothesis: the remaining tonic-generated `#[async_trait]` dependency can
+  only be removed by changing code generation or replacing the generated
+  service boundary, and one bounded pass can determine whether either path is
+  practical without destabilizing the repository.
+- Owner: forked worker on `async-modernization`
+- Start commit: `7e79838`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/async-modernization`
+  - `async-modernization`
+- Mutable surface:
+  - `crates/transport-grpc/**`
+  - `crates/server/src/main.rs`
+  - `proto/**`
+  - crate manifests or build scripts as needed
+- Validator:
+  - fastest useful check:
+    `rg -n "\\#\\[tonic::async_trait\\]|\\#\\[async_trait\\]|async_trait" crates/transport-grpc crates/server/src/main.rs target/debug/build/transport-grpc-*/out/hyperdex.v1.rs`
+  - strong checks:
+    - `cargo test -p transport-grpc`
+    - `cargo test -p server`
+- Expected artifacts:
+  - either a code or build change that removes the remaining tonic async-trait
+    usage
+  - or a precise blocker that names the smallest redesign required to do it

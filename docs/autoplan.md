@@ -59,12 +59,11 @@ region-aware georeplication.
 
 Keep the green HyperDex replacement baseline honest while resuming three active
 product workstreams in parallel: eliminate the remaining `#[tonic::async_trait]`
-usage if feasible, add a new adversarial distributed proof tied to an actual
-risk, and harden another public/runtime boundary against panic paths.
+usage if feasible, keep adding adversarial distributed proofs tied to actual
+runtime risks, and harden the next public/runtime boundary against panic paths.
 
 ## Next Root Move
 
-Rearm the watchdog, preregister the next async-modernization pass around the
-remaining tonic service impls, and launch `async-modernization`,
-`failure-testing`, and `panic-hardening` as parallel owned forks with focused
-validators.
+Close the finished workers from the current round, keep the watchdog armed,
+and launch the next async, failure-testing, and panic-hardening passes with
+the now-updated priorities.

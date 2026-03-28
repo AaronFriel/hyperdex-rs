@@ -64,15 +64,16 @@ panic behavior to explicit contracts and then set the next ratchet.
 ## Current Hypothesis
 
 After the legacy frontend pass, the next target should be a different
-public/runtime boundary with more than one remaining panic site. The single
-fixed-width identify decode panic in `legacy-frontend` is now gone.
+public/runtime boundary with more than one remaining panic site. The best next
+candidate is `server/src/main.rs`, which still has public entrypoint
+`expect(\"validated socket address\")` and daemon identity panic paths.
 
 ## Next Bounded Step
 
-Choose the next public/runtime boundary after `legacy-frontend`, remove the
-most meaningful unchecked panic sites there, and carry forward the concrete
-no-panic evidence from this pass instead of retrying the same annotation
-blindly.
+Harden `server/src/main.rs` by removing the public entrypoint `expect` paths
+around validated socket addresses and daemon identity, and carry forward the
+concrete no-panic evidence from earlier passes instead of retrying the same
+annotation blindly.
 
 ## Surprises & Discoveries
 

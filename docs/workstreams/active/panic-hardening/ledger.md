@@ -119,3 +119,31 @@
 - Disposition: `advance`
 - Next move: choose the next public/runtime boundary with multiple remaining
   panic sites instead of retrying the same helper-level annotation.
+
+### Entry `pnh-004` - Preregistration
+
+- Timestamp: `2026-03-29 01:05Z`
+- Kind: `preregister`
+- Hypothesis: `server/src/main.rs` still has public entrypoint panic paths
+  around validated socket addresses and daemon identity that can be converted
+  to checked startup errors without broad churn.
+- Owner: forked worker on `panic-hardening`
+- Start commit: `7e79838`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/panic-hardening`
+  - `panic-hardening`
+- Mutable surface:
+  - `crates/server/src/main.rs`
+  - `crates/server/src/lib.rs` only if startup helpers need a checked result
+  - manifests or lint config as needed
+- Validator:
+  - fastest useful check:
+    `cargo test -p server`
+  - strong checks:
+    - `cargo test --workspace`
+    - `rg -n "unwrap\\(|expect\\(|todo!|panic!|no_panic" crates/server/src/main.rs crates/server/src/lib.rs`
+- Expected artifacts:
+  - one bounded startup hardening pass over `server/src/main.rs`
+  - either a practical `#[no_panic]` annotation or a concrete justification for
+    leaving it off this boundary
+  - one bounded commit ready for reconciliation

@@ -59,18 +59,19 @@ edits.
 
 ## Current Hypothesis
 
-The remaining async-trait usage is concentrated in tonic service impls. That
-may still be removable if the gRPC service layer is reshaped around native
-async traits or helper adapters, but if tonic's generated service contract
-forces those impls to remain, the workstream should produce a source-backed
-justification instead of pretending the cleanup is finished.
+The remaining async-trait usage is concentrated in tonic service impls, and
+the current blocker is now explicit: tonic-build 0.12.3 still generates
+`#[async_trait]` server traits for this boundary. That means the next useful
+step is not another local cleanup pass, but a bounded investigation into
+whether a tonic upgrade, codegen change, or manual gRPC service boundary can
+remove those final annotations.
 
 ## Next Bounded Step
 
-Inspect the remaining tonic service impl boundary in `transport-grpc` and the
-server binary entrypoint, remove the remaining `#[tonic::async_trait]` uses if
-that can be done without a large transport rewrite, or return a precise
-source-backed blocker that explains why tonic still requires them.
+Investigate the next honest path past the tonic-generated blocker: either find
+a tonic/codegen configuration that stops generating `#[async_trait]` server
+traits, or prototype the smallest manual gRPC service boundary that would let
+this repository drop the remaining `#[tonic::async_trait]` impls.
 
 ## Surprises & Discoveries
 

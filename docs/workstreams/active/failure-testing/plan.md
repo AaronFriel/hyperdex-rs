@@ -64,15 +64,15 @@ design.
 
 The next highest-value step is no longer another simple rollback case. The
 rollback contract now covers write, delete, and conditional-write mutation
-paths, so the next proof should target a different distributed risk such as
-routing staleness, replica divergence after recovery, or another partial
-availability edge.
+paths, so the next proof should target a different distributed risk. Routed
+mutation under stale placement is the strongest next candidate because it can
+silently misroute writes if one runtime's cluster view lags behind another.
 
 ## Next Bounded Step
 
-Choose the next distributed assumption beyond the rollback family, add the
-shortest honest deterministic proof for it, and touch runtime code only if the
-proof exposes a real bug.
+Add the shortest honest deterministic proof for routed mutation under stale
+placement, and touch runtime code only if the proof shows the runtime can
+silently misroute or misapply a write with diverged cluster views.
 
 ## Surprises & Discoveries
 

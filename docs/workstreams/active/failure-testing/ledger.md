@@ -131,3 +131,30 @@
 - Disposition: `advance`
 - Next move: pick the next distributed assumption outside the existing
   rollback family.
+
+### Entry `flt-005` - Preregistration
+
+- Timestamp: `2026-03-29 01:05Z`
+- Kind: `preregister`
+- Hypothesis: a stale placement view on one runtime may still allow a routed
+  mutation to target the wrong primary or apply under the wrong ownership
+  assumptions, and the current deterministic harness can express that without a
+  large rewrite.
+- Owner: forked worker on `failure-testing`
+- Start commit: `7e79838`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/failure-testing`
+  - `failure-testing`
+- Mutable surface:
+  - `crates/simulation-harness/**`
+  - `crates/server/**` only if the new proof exposes a runtime bug
+- Validator:
+  - fastest useful check:
+    `cargo test -p simulation-harness turmoil_rejects_or_recovers_routed_mutation_under_stale_placement -- --nocapture`
+  - strong checks:
+    - `cargo test -p simulation-harness`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - one deterministic stale-placement mutation proof
+  - either a green proof-only commit or a runtime fix for a discovered bug
+  - one bounded commit ready for reconciliation
