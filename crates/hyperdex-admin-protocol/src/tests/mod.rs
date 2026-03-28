@@ -342,7 +342,9 @@ fn packed_space_decoder_rejects_index_attribute_out_of_range() {
         .unwrap_err()
         .to_string();
 
-    assert!(err.contains("index references attribute index 99, but only 6 attributes were decoded"));
+    assert!(
+        err.contains("index references attribute index 99, but only 6 attributes were decoded")
+    );
 }
 
 #[test]

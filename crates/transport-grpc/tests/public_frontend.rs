@@ -5,20 +5,20 @@ use cluster_config::{ClusterConfig, ClusterNode, TransportBackend};
 use data_model::{Attribute as ModelAttribute, Check, Mutation, Predicate, Value as ModelValue};
 use hyperdex_admin_protocol::{AdminRequest, HyperdexAdminService};
 use hyperdex_client_protocol::{ClientRequest, ClientResponse, HyperdexClientService};
-use legacy_frontend::{request_once as legacy_request_once, LegacyFrontend};
+use legacy_frontend::{LegacyFrontend, request_once as legacy_request_once};
 use legacy_protocol::{
     AtomicRequest, AtomicResponse, GetRequest as LegacyGetRequest,
-    GetResponse as LegacyGetResponse, GetValue as LegacyGetValue, LegacyFuncall, LegacyFuncallName,
-    LegacyMessageType, LegacyReturnCode, RequestHeader, LEGACY_ATOMIC_FLAG_WRITE,
+    GetResponse as LegacyGetResponse, GetValue as LegacyGetValue, LEGACY_ATOMIC_FLAG_WRITE,
+    LegacyFuncall, LegacyFuncallName, LegacyMessageType, LegacyReturnCode, RequestHeader,
 };
 use server::bootstrap_runtime;
-use server::{handle_legacy_request, ClusterRuntime, TransportRuntime};
+use server::{ClusterRuntime, TransportRuntime, handle_legacy_request};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio::time::sleep;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
-use transport_core::{DataPlaneRequest, DataPlaneResponse, InternodeRequest, DATA_PLANE_METHOD};
+use transport_core::{DATA_PLANE_METHOD, DataPlaneRequest, DataPlaneResponse, InternodeRequest};
 use transport_grpc::hyperdex::v1::hyperdex_admin_client::HyperdexAdminClient;
 use transport_grpc::hyperdex::v1::hyperdex_admin_server::HyperdexAdminServer;
 use transport_grpc::hyperdex::v1::hyperdex_client_client::HyperdexClientClient;
@@ -404,10 +404,12 @@ async fn legacy_atomic_public_path_forwards_to_remote_primary_runtime() {
     assert_eq!(get_header.message_type, LegacyMessageType::RespGet);
     let response = LegacyGetResponse::decode_body(&get_body).unwrap();
     assert_eq!(response.status, LegacyReturnCode::Success);
-    assert!(response
-        .attributes
-        .iter()
-        .any(|attr| { attr.name == "profile_views" && attr.value == LegacyGetValue::Int(3) }));
+    assert!(
+        response
+            .attributes
+            .iter()
+            .any(|attr| { attr.name == "profile_views" && attr.value == LegacyGetValue::Int(3) })
+    );
 
     legacy_server1.await.unwrap();
     legacy_server2.await.unwrap();

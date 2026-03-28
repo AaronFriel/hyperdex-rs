@@ -1,7 +1,7 @@
 use anyhow::Result;
 use bytes::Bytes;
 use data_model::{Check, Mutation, Record};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::future::Future;
 use std::pin::Pin;
 

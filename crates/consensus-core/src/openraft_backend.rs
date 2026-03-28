@@ -3,7 +3,8 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
+use openraft::Raft;
 use openraft::errors::{RPCError, ReplicationClosed, StreamingError, Unreachable};
 use openraft::network::{
     Backoff, NetBackoff, NetSnapshot, NetStreamAppend, NetTransferLeader, NetVote, RPCOption,
@@ -14,7 +15,6 @@ use openraft::raft::{
     VoteResponse,
 };
 use openraft::type_config::alias::{SnapshotOf, VoteOf};
-use openraft::Raft;
 use openraft_rt::watch::WatchReceiver;
 
 use crate::ReplicatedStateMachine;

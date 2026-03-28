@@ -165,11 +165,7 @@ fn build_hyperspace_ring(nodes: &[NodeId], tokens_per_node: usize) -> Vec<HyperT
 
 fn hyperspace_ring_start(ring: &[HyperToken], key_pos: u64) -> usize {
     let idx = ring.partition_point(|token| token.pos < key_pos);
-    if idx == ring.len() {
-        0
-    } else {
-        idx
-    }
+    if idx == ring.len() { 0 } else { idx }
 }
 
 fn hyperspace_key_pos(key: &[u8]) -> u64 {

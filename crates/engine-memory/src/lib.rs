@@ -101,7 +101,8 @@ impl StorageEngine for MemoryEngine {
             .ok_or_else(|| StorageError::UnknownSpace(space.to_owned()))?;
         let doomed: Vec<Vec<u8>> = records
             .iter()
-            .filter_map(|(key, record)| record_matches(record, checks).then(|| key.clone()))
+            .filter(|&(_, record)| record_matches(record, checks))
+            .map(|(key, _)| key.clone())
             .collect();
         let count = doomed.len() as u64;
 

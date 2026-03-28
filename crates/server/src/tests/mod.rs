@@ -12,12 +12,12 @@ use hyperdex_admin_protocol::{
 };
 use hyperdex_client_protocol::HyperdexClientService;
 use legacy_protocol::{
+    FUNC_NUM_ADD, FUNC_SET, HYPERDATATYPE_INT64, HYPERDATATYPE_STRING,
+    HYPERPREDICATE_GREATER_EQUAL, LegacyMessageType, LegacyReturnCode, ProtocolAttributeCheck,
+    ProtocolFuncall, ProtocolKeyChange, ProtocolSearchStart, RequestHeader,
     decode_protocol_atomic_response, decode_protocol_count_response, decode_protocol_get_response,
     decode_protocol_search_item, encode_protocol_atomic_request, encode_protocol_count_request,
     encode_protocol_get_request, encode_protocol_search_continue, encode_protocol_search_start,
-    LegacyMessageType, LegacyReturnCode, ProtocolAttributeCheck, ProtocolFuncall,
-    ProtocolKeyChange, ProtocolSearchStart, RequestHeader, FUNC_NUM_ADD, FUNC_SET,
-    HYPERDATATYPE_INT64, HYPERDATATYPE_STRING, HYPERPREDICATE_GREATER_EQUAL,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -604,7 +604,12 @@ async fn apply_config_view_removes_departed_nodes_from_routing_layout() {
 
     let stale_key = (0..65536)
         .map(|i| format!("rejoin-routing-{i}"))
-        .find(|key| runtime.route_primary_for_space("profiles", key.as_bytes()).unwrap() == 3)
+        .find(|key| {
+            runtime
+                .route_primary_for_space("profiles", key.as_bytes())
+                .unwrap()
+                == 3
+        })
         .expect("expected a key routed to departed node 3 before convergence");
 
     runtime
@@ -794,11 +799,13 @@ fn legacy_bootstrap_response_matches_replicant_sender_identity_contract() {
 
     let sender_id = LEGACY_COORDINATOR_SERVER_ID;
     assert_eq!(sender_id, response.server.id);
-    assert!(response
-        .configuration
-        .servers
-        .iter()
-        .any(|server| server.id == response.server.id));
+    assert!(
+        response
+            .configuration
+            .servers
+            .iter()
+            .any(|server| server.id == response.server.id)
+    );
 }
 
 #[tokio::test]
@@ -1583,8 +1590,9 @@ fn legacy_config_encoder_preserves_profiles_attribute_names_and_types() {
         version: 1,
         stable_through: 1,
         cluster: ClusterConfig::default(),
-        spaces: vec![parse_hyperdex_space(
-            "space profiles\n\
+        spaces: vec![
+            parse_hyperdex_space(
+                "space profiles\n\
              key username\n\
              attributes\n\
                 string first,\n\
@@ -1607,8 +1615,9 @@ fn legacy_config_encoder_preserves_profiles_attribute_names_and_types() {
                 map(float, string) for_a_reason,\n\
                 map(float, float) for_float_keyed_map\n\
              tolerate 0 failures\n",
-        )
-        .unwrap()],
+            )
+            .unwrap(),
+        ],
     };
 
     let encoded = default_legacy_config_encoder(&view).unwrap();
@@ -1715,15 +1724,17 @@ fn legacy_config_uses_shared_nonzero_ids() {
         version: 1,
         stable_through: 1,
         cluster: ClusterConfig::default(),
-        spaces: vec![parse_hyperdex_space(
-            "space profiles\n\
+        spaces: vec![
+            parse_hyperdex_space(
+                "space profiles\n\
              key username\n\
              attributes\n\
                 string first,\n\
                 int profile_views\n\
              tolerate 0 failures\n",
-        )
-        .unwrap()],
+            )
+            .unwrap(),
+        ],
     };
 
     let encoded = default_legacy_config_encoder(&view).unwrap();
@@ -1809,15 +1820,17 @@ fn legacy_config_distributes_key_regions_across_two_servers() {
             replicas: 1,
             ..ClusterConfig::default()
         },
-        spaces: vec![parse_hyperdex_space(
-            "space profiles\n\
+        spaces: vec![
+            parse_hyperdex_space(
+                "space profiles\n\
              key username\n\
              attributes\n\
                 string first,\n\
                 int profile_views\n\
              tolerate 0 failures\n",
-        )
-        .unwrap()],
+            )
+            .unwrap(),
+        ],
     };
 
     let encoded = default_legacy_config_encoder(&view).unwrap();
@@ -1884,12 +1897,16 @@ fn legacy_config_distributes_key_regions_across_two_servers() {
 
     assert_eq!(regions_len, 64);
     assert_eq!(first_replica_server_ids.len(), 64);
-    assert!(first_replica_server_ids[..32]
-        .iter()
-        .all(|server_id| *server_id == 1));
-    assert!(first_replica_server_ids[32..]
-        .iter()
-        .all(|server_id| *server_id == 2));
+    assert!(
+        first_replica_server_ids[..32]
+            .iter()
+            .all(|server_id| *server_id == 1)
+    );
+    assert!(
+        first_replica_server_ids[32..]
+            .iter()
+            .all(|server_id| *server_id == 2)
+    );
 }
 
 #[test]

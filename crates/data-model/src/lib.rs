@@ -360,7 +360,7 @@ fn parse_value_kind(input: &str) -> Result<ValueKind, DataModelError> {
             _ => {
                 return Err(DataModelError::InvalidSchema(format!(
                     "unknown timestamp unit: {inner}"
-                )))
+                )));
             }
         };
         return Ok(ValueKind::Timestamp(unit));

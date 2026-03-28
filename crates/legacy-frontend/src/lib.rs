@@ -5,9 +5,9 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use legacy_protocol::{
-    config_mismatch_response, encode_identify_frame, encode_request_frame, encode_response_frame,
-    RequestHeader, ResponseHeader, BUSYBEE_HEADER_IDENTIFY, BUSYBEE_HEADER_SIZE,
-    LEGACY_REQUEST_HEADER_SIZE, MAX_BUSYBEE_FRAME_SIZE,
+    BUSYBEE_HEADER_IDENTIFY, BUSYBEE_HEADER_SIZE, LEGACY_REQUEST_HEADER_SIZE,
+    MAX_BUSYBEE_FRAME_SIZE, RequestHeader, ResponseHeader, config_mismatch_response,
+    encode_identify_frame, encode_request_frame, encode_response_frame,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};

@@ -1,6 +1,6 @@
 #![deny(clippy::expect_used, clippy::unwrap_used)]
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use cluster_config::{ClusterConfig, ClusterNode};
 use data_model::{SchemaFormat, Space, SpaceName, SpaceOptions, Subspace, ValueKind};
 use serde::{Deserialize, Serialize};

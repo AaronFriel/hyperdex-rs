@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use bytes::Bytes;
 use cluster_config::{ClusterConfig, ClusterNode, TransportBackend};
 use control_plane::{Catalog, InMemoryCatalog};
@@ -19,8 +19,8 @@ use server::{ClusterRuntime, TransportRuntime};
 use storage_core::{StorageEngine, WriteResult};
 use tokio::sync::Mutex;
 use transport_core::{
-    ClusterTransport, DataPlaneRequest, DataPlaneResponse, InternodeRequest, InternodeResponse,
-    RemoteNode, DATA_PLANE_METHOD,
+    ClusterTransport, DATA_PLANE_METHOD, DataPlaneRequest, DataPlaneResponse, InternodeRequest,
+    InternodeResponse, RemoteNode,
 };
 
 static HEGEL_SERVER_COMMAND: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -187,8 +187,8 @@ async fn distributed_runtime_fixture_with_schema(
     (transport, runtime1, runtime2)
 }
 
-async fn distributed_runtime_fixture(
-) -> (Arc<SimTransport>, Arc<ClusterRuntime>, Arc<ClusterRuntime>) {
+async fn distributed_runtime_fixture()
+-> (Arc<SimTransport>, Arc<ClusterRuntime>, Arc<ClusterRuntime>) {
     distributed_runtime_fixture_with_schema(profiles_schema()).await
 }
 
@@ -420,7 +420,9 @@ fn stale_local_primary_target_for_authoritative_node(
             (primary1 == runtime1.local_node_id() && primary2 == authoritative_primary)
                 .then_some((primary1, primary2, key))
         })
-        .expect("expected a key whose stale local primary diverges to the requested authoritative node")
+        .expect(
+            "expected a key whose stale local primary diverges to the requested authoritative node",
+        )
 }
 
 fn ensure_hegel_server_command() -> String {
@@ -751,9 +753,11 @@ fn turmoil_preserves_search_and_count_during_schema_convergence_gap() {
         .unwrap();
         assert_eq!(put, ClientResponse::Unit);
 
-        assert!(runtime2
-            .route_primary_for_space("profiles", local_key.as_bytes())
-            .is_err());
+        assert!(
+            runtime2
+                .route_primary_for_space("profiles", local_key.as_bytes())
+                .is_err()
+        );
 
         let search = HyperdexClientService::handle(
             runtime1.as_ref(),
@@ -826,9 +830,11 @@ fn turmoil_search_and_count_work_from_node_missing_local_space_definition() {
         .unwrap();
         assert_eq!(put, ClientResponse::Unit);
 
-        assert!(runtime1
-            .route_primary_for_space("profiles", remote_key.as_bytes())
-            .is_err());
+        assert!(
+            runtime1
+                .route_primary_for_space("profiles", remote_key.as_bytes())
+                .is_err()
+        );
 
         let search = HyperdexClientService::handle(
             runtime1.as_ref(),
@@ -1327,7 +1333,8 @@ fn turmoil_preserves_correctness_when_stale_node_rejoins_cluster() {
             "expected routed mutation to fail while node 2 still has stale placement"
         );
 
-        let mut recovered_runtime = ClusterRuntime::for_node(converged_two_node_config(), 2).unwrap();
+        let mut recovered_runtime =
+            ClusterRuntime::for_node(converged_two_node_config(), 2).unwrap();
         recovered_runtime.install_cluster_transport(transport.clone(), TransportRuntime::Grpc);
         let recovered_runtime = Arc::new(recovered_runtime);
         HyperdexAdminService::handle(

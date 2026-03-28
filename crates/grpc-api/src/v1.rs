@@ -84,10 +84,10 @@ pub mod hyperdex_admin_client {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct HyperdexAdminClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -126,14 +126,13 @@ pub mod hyperdex_admin_client {
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
             T: tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<
-                    <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
+                    http::Request<tonic::body::BoxBody>,
+                    Response = http::Response<
+                        <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
+                    >,
                 >,
-            >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + std::marker::Send + std::marker::Sync,
         {
             HyperdexAdminClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -171,22 +170,14 @@ pub mod hyperdex_admin_client {
         pub async fn create_space(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateSpaceRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::CreateSpaceResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+        ) -> std::result::Result<tonic::Response<super::CreateSpaceResponse>, tonic::Status>
+        {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(format!("Service was not ready: {}", e.into()))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/hyperdex.v1.HyperdexAdmin/CreateSpace",
-            );
+            let path =
+                http::uri::PathAndQuery::from_static("/hyperdex.v1.HyperdexAdmin/CreateSpace");
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("hyperdex.v1.HyperdexAdmin", "CreateSpace"));
@@ -201,10 +192,10 @@ pub mod hyperdex_client_client {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct HyperdexClientClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -243,14 +234,13 @@ pub mod hyperdex_client_client {
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
             T: tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<
-                    <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
+                    http::Request<tonic::body::BoxBody>,
+                    Response = http::Response<
+                        <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
+                    >,
                 >,
-            >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + std::marker::Send + std::marker::Sync,
         {
             HyperdexClientClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -289,18 +279,11 @@ pub mod hyperdex_client_client {
             &mut self,
             request: impl tonic::IntoRequest<super::PutRequest>,
         ) -> std::result::Result<tonic::Response<super::PutResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(format!("Service was not ready: {}", e.into()))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/hyperdex.v1.HyperdexClient/Put",
-            );
+            let path = http::uri::PathAndQuery::from_static("/hyperdex.v1.HyperdexClient/Put");
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("hyperdex.v1.HyperdexClient", "Put"));
@@ -310,18 +293,11 @@ pub mod hyperdex_client_client {
             &mut self,
             request: impl tonic::IntoRequest<super::GetRequest>,
         ) -> std::result::Result<tonic::Response<super::GetResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(format!("Service was not ready: {}", e.into()))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/hyperdex.v1.HyperdexClient/Get",
-            );
+            let path = http::uri::PathAndQuery::from_static("/hyperdex.v1.HyperdexClient/Get");
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("hyperdex.v1.HyperdexClient", "Get"));
@@ -336,10 +312,10 @@ pub mod internode_transport_client {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct InternodeTransportClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -378,14 +354,13 @@ pub mod internode_transport_client {
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
             T: tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<
-                    <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
+                    http::Request<tonic::body::BoxBody>,
+                    Response = http::Response<
+                        <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
+                    >,
                 >,
-            >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + std::marker::Send + std::marker::Sync,
         {
             InternodeTransportClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -423,22 +398,13 @@ pub mod internode_transport_client {
         pub async fn send(
             &mut self,
             request: impl tonic::IntoRequest<super::InternodeRpcRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::InternodeRpcResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+        ) -> std::result::Result<tonic::Response<super::InternodeRpcResponse>, tonic::Status>
+        {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(format!("Service was not ready: {}", e.into()))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/hyperdex.v1.InternodeTransport/Send",
-            );
+            let path = http::uri::PathAndQuery::from_static("/hyperdex.v1.InternodeTransport/Send");
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("hyperdex.v1.InternodeTransport", "Send"));
@@ -453,7 +419,7 @@ pub mod hyperdex_admin_server {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
     use tonic::codegen::*;
     /// Generated trait containing gRPC methods that should be implemented for use with HyperdexAdminServer.
@@ -484,10 +450,7 @@ pub mod hyperdex_admin_server {
                 max_encoding_message_size: None,
             }
         }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -542,15 +505,11 @@ pub mod hyperdex_admin_server {
                 "/hyperdex.v1.HyperdexAdmin/CreateSpace" => {
                     #[allow(non_camel_case_types)]
                     struct CreateSpaceSvc<T: HyperdexAdmin>(pub Arc<T>);
-                    impl<
-                        T: HyperdexAdmin,
-                    > tonic::server::UnaryService<super::CreateSpaceRequest>
-                    for CreateSpaceSvc<T> {
+                    impl<T: HyperdexAdmin> tonic::server::UnaryService<super::CreateSpaceRequest>
+                        for CreateSpaceSvc<T>
+                    {
                         type Response = super::CreateSpaceResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::CreateSpaceRequest>,
@@ -584,23 +543,19 @@ pub mod hyperdex_admin_server {
                     };
                     Box::pin(fut)
                 }
-                _ => {
-                    Box::pin(async move {
-                        let mut response = http::Response::new(empty_body());
-                        let headers = response.headers_mut();
-                        headers
-                            .insert(
-                                tonic::Status::GRPC_STATUS,
-                                (tonic::Code::Unimplemented as i32).into(),
-                            );
-                        headers
-                            .insert(
-                                http::header::CONTENT_TYPE,
-                                tonic::metadata::GRPC_CONTENT_TYPE,
-                            );
-                        Ok(response)
-                    })
-                }
+                _ => Box::pin(async move {
+                    let mut response = http::Response::new(empty_body());
+                    let headers = response.headers_mut();
+                    headers.insert(
+                        tonic::Status::GRPC_STATUS,
+                        (tonic::Code::Unimplemented as i32).into(),
+                    );
+                    headers.insert(
+                        http::header::CONTENT_TYPE,
+                        tonic::metadata::GRPC_CONTENT_TYPE,
+                    );
+                    Ok(response)
+                }),
             }
         }
     }
@@ -629,7 +584,7 @@ pub mod hyperdex_client_server {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
     use tonic::codegen::*;
     /// Generated trait containing gRPC methods that should be implemented for use with HyperdexClientServer.
@@ -664,10 +619,7 @@ pub mod hyperdex_client_server {
                 max_encoding_message_size: None,
             }
         }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -722,22 +674,16 @@ pub mod hyperdex_client_server {
                 "/hyperdex.v1.HyperdexClient/Put" => {
                     #[allow(non_camel_case_types)]
                     struct PutSvc<T: HyperdexClient>(pub Arc<T>);
-                    impl<
-                        T: HyperdexClient,
-                    > tonic::server::UnaryService<super::PutRequest> for PutSvc<T> {
+                    impl<T: HyperdexClient> tonic::server::UnaryService<super::PutRequest> for PutSvc<T> {
                         type Response = super::PutResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::PutRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as HyperdexClient>::put(&inner, request).await
-                            };
+                            let fut =
+                                async move { <T as HyperdexClient>::put(&inner, request).await };
                             Box::pin(fut)
                         }
                     }
@@ -766,22 +712,16 @@ pub mod hyperdex_client_server {
                 "/hyperdex.v1.HyperdexClient/Get" => {
                     #[allow(non_camel_case_types)]
                     struct GetSvc<T: HyperdexClient>(pub Arc<T>);
-                    impl<
-                        T: HyperdexClient,
-                    > tonic::server::UnaryService<super::GetRequest> for GetSvc<T> {
+                    impl<T: HyperdexClient> tonic::server::UnaryService<super::GetRequest> for GetSvc<T> {
                         type Response = super::GetResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::GetRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as HyperdexClient>::get(&inner, request).await
-                            };
+                            let fut =
+                                async move { <T as HyperdexClient>::get(&inner, request).await };
                             Box::pin(fut)
                         }
                     }
@@ -807,23 +747,19 @@ pub mod hyperdex_client_server {
                     };
                     Box::pin(fut)
                 }
-                _ => {
-                    Box::pin(async move {
-                        let mut response = http::Response::new(empty_body());
-                        let headers = response.headers_mut();
-                        headers
-                            .insert(
-                                tonic::Status::GRPC_STATUS,
-                                (tonic::Code::Unimplemented as i32).into(),
-                            );
-                        headers
-                            .insert(
-                                http::header::CONTENT_TYPE,
-                                tonic::metadata::GRPC_CONTENT_TYPE,
-                            );
-                        Ok(response)
-                    })
-                }
+                _ => Box::pin(async move {
+                    let mut response = http::Response::new(empty_body());
+                    let headers = response.headers_mut();
+                    headers.insert(
+                        tonic::Status::GRPC_STATUS,
+                        (tonic::Code::Unimplemented as i32).into(),
+                    );
+                    headers.insert(
+                        http::header::CONTENT_TYPE,
+                        tonic::metadata::GRPC_CONTENT_TYPE,
+                    );
+                    Ok(response)
+                }),
             }
         }
     }
@@ -852,7 +788,7 @@ pub mod internode_transport_server {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
     use tonic::codegen::*;
     /// Generated trait containing gRPC methods that should be implemented for use with InternodeTransportServer.
@@ -883,10 +819,7 @@ pub mod internode_transport_server {
                 max_encoding_message_size: None,
             }
         }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -941,15 +874,11 @@ pub mod internode_transport_server {
                 "/hyperdex.v1.InternodeTransport/Send" => {
                     #[allow(non_camel_case_types)]
                     struct SendSvc<T: InternodeTransport>(pub Arc<T>);
-                    impl<
-                        T: InternodeTransport,
-                    > tonic::server::UnaryService<super::InternodeRpcRequest>
-                    for SendSvc<T> {
+                    impl<T: InternodeTransport>
+                        tonic::server::UnaryService<super::InternodeRpcRequest> for SendSvc<T>
+                    {
                         type Response = super::InternodeRpcResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::InternodeRpcRequest>,
@@ -983,23 +912,19 @@ pub mod internode_transport_server {
                     };
                     Box::pin(fut)
                 }
-                _ => {
-                    Box::pin(async move {
-                        let mut response = http::Response::new(empty_body());
-                        let headers = response.headers_mut();
-                        headers
-                            .insert(
-                                tonic::Status::GRPC_STATUS,
-                                (tonic::Code::Unimplemented as i32).into(),
-                            );
-                        headers
-                            .insert(
-                                http::header::CONTENT_TYPE,
-                                tonic::metadata::GRPC_CONTENT_TYPE,
-                            );
-                        Ok(response)
-                    })
-                }
+                _ => Box::pin(async move {
+                    let mut response = http::Response::new(empty_body());
+                    let headers = response.headers_mut();
+                    headers.insert(
+                        tonic::Status::GRPC_STATUS,
+                        (tonic::Code::Unimplemented as i32).into(),
+                    );
+                    headers.insert(
+                        http::header::CONTENT_TYPE,
+                        tonic::metadata::GRPC_CONTENT_TYPE,
+                    );
+                    Ok(response)
+                }),
             }
         }
     }

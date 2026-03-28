@@ -33,13 +33,14 @@ fn conditional_put_respects_checks() {
         .unwrap();
 
     assert_eq!(result, WriteResult::ConditionFailed);
-    assert!(engine
-        .get("profiles", b"ada")
-        .unwrap()
-        .unwrap()
-        .attributes
-        .get("name")
-        .is_none());
+    assert!(
+        !engine
+            .get("profiles", b"ada")
+            .unwrap()
+            .unwrap()
+            .attributes
+            .contains_key("name")
+    );
 }
 
 #[test]

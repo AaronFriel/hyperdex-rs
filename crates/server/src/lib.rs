@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use bytes::Bytes;
 use cityhasher::hash as cityhash64;
 use cluster_config::{
@@ -12,38 +12,38 @@ use cluster_config::{
 };
 use control_plane::{Catalog, InMemoryCatalog};
 use data_model::{
-    parse_hyperdex_space, Attribute, AttributeDefinition, Check, Mutation, NumericOp, Predicate,
-    Record, Space, Value, ValueKind,
+    Attribute, AttributeDefinition, Check, Mutation, NumericOp, Predicate, Record, Space, Value,
+    ValueKind, parse_hyperdex_space,
 };
 use data_plane::DataPlane;
 use engine_memory::MemoryEngine;
 use engine_rocks::RocksEngine;
 use hyperdex_admin_protocol::{
-    decode_packed_hyperdex_space, AdminRequest, AdminResponse, BusyBeeFrame, ConfigView,
-    CoordinatorAdminRequest, CoordinatorReturnCode, HyperdexAdminService, LegacyAdminRequest,
-    LegacyAdminReturnCode, ReplicantAdminRequestMessage, ReplicantBootstrapConfiguration,
-    ReplicantBootstrapResponse, ReplicantBootstrapServer, ReplicantCallCompletion,
-    ReplicantConditionCompletion, ReplicantNetworkMsgtype, ReplicantReturnCode,
-    ReplicantRobustParams,
+    AdminRequest, AdminResponse, BusyBeeFrame, ConfigView, CoordinatorAdminRequest,
+    CoordinatorReturnCode, HyperdexAdminService, LegacyAdminRequest, LegacyAdminReturnCode,
+    ReplicantAdminRequestMessage, ReplicantBootstrapConfiguration, ReplicantBootstrapResponse,
+    ReplicantBootstrapServer, ReplicantCallCompletion, ReplicantConditionCompletion,
+    ReplicantNetworkMsgtype, ReplicantReturnCode, ReplicantRobustParams,
+    decode_packed_hyperdex_space,
 };
 use hyperdex_client_protocol::{ClientRequest, ClientResponse, HyperdexClientService};
 use legacy_protocol::{
-    config_mismatch_response, decode_protocol_atomic_request, decode_protocol_count_request,
-    decode_protocol_get_request, decode_protocol_search_continue, decode_protocol_search_start,
-    encode_protocol_atomic_response, encode_protocol_count_response, encode_protocol_get_response,
-    encode_protocol_search_done, encode_protocol_search_item, AtomicRequest, CountRequest,
-    GetAttribute, GetRequest, GetResponse, GetValue, LegacyCheck, LegacyFuncall, LegacyFuncallName,
-    LegacyMessageType, LegacyPredicate, LegacyReturnCode, ProtocolAttributeCheck, ProtocolFuncall,
-    ProtocolGetResponse, ProtocolKeyChange, ProtocolSearchItem, RequestHeader, ResponseHeader,
-    SearchDoneResponse, SearchItemResponse, SearchStartRequest, FUNC_LIST_LPUSH, FUNC_LIST_RPUSH,
-    FUNC_MAP_ADD, FUNC_MAP_REMOVE, FUNC_NUM_ADD, FUNC_NUM_AND, FUNC_NUM_DIV, FUNC_NUM_MAX,
-    FUNC_NUM_MIN, FUNC_NUM_MOD, FUNC_NUM_MUL, FUNC_NUM_OR, FUNC_NUM_SUB, FUNC_NUM_XOR, FUNC_SET,
-    FUNC_SET_ADD, FUNC_SET_INTERSECT, FUNC_SET_REMOVE, FUNC_SET_UNION, FUNC_STRING_APPEND,
-    FUNC_STRING_LTRIM, FUNC_STRING_PREPEND, FUNC_STRING_RTRIM, HYPERDATATYPE_FLOAT,
-    HYPERDATATYPE_INT64, HYPERDATATYPE_LIST_GENERIC, HYPERDATATYPE_MAP_GENERIC,
-    HYPERDATATYPE_SET_GENERIC, HYPERDATATYPE_STRING, HYPERPREDICATE_EQUALS,
-    HYPERPREDICATE_GREATER_EQUAL, HYPERPREDICATE_GREATER_THAN, HYPERPREDICATE_LESS_EQUAL,
-    HYPERPREDICATE_LESS_THAN,
+    AtomicRequest, CountRequest, FUNC_LIST_LPUSH, FUNC_LIST_RPUSH, FUNC_MAP_ADD, FUNC_MAP_REMOVE,
+    FUNC_NUM_ADD, FUNC_NUM_AND, FUNC_NUM_DIV, FUNC_NUM_MAX, FUNC_NUM_MIN, FUNC_NUM_MOD,
+    FUNC_NUM_MUL, FUNC_NUM_OR, FUNC_NUM_SUB, FUNC_NUM_XOR, FUNC_SET, FUNC_SET_ADD,
+    FUNC_SET_INTERSECT, FUNC_SET_REMOVE, FUNC_SET_UNION, FUNC_STRING_APPEND, FUNC_STRING_LTRIM,
+    FUNC_STRING_PREPEND, FUNC_STRING_RTRIM, GetAttribute, GetRequest, GetResponse, GetValue,
+    HYPERDATATYPE_FLOAT, HYPERDATATYPE_INT64, HYPERDATATYPE_LIST_GENERIC,
+    HYPERDATATYPE_MAP_GENERIC, HYPERDATATYPE_SET_GENERIC, HYPERDATATYPE_STRING,
+    HYPERPREDICATE_EQUALS, HYPERPREDICATE_GREATER_EQUAL, HYPERPREDICATE_GREATER_THAN,
+    HYPERPREDICATE_LESS_EQUAL, HYPERPREDICATE_LESS_THAN, LegacyCheck, LegacyFuncall,
+    LegacyFuncallName, LegacyMessageType, LegacyPredicate, LegacyReturnCode,
+    ProtocolAttributeCheck, ProtocolFuncall, ProtocolGetResponse, ProtocolKeyChange,
+    ProtocolSearchItem, RequestHeader, ResponseHeader, SearchDoneResponse, SearchItemResponse,
+    SearchStartRequest, config_mismatch_response, decode_protocol_atomic_request,
+    decode_protocol_count_request, decode_protocol_get_request, decode_protocol_search_continue,
+    decode_protocol_search_start, encode_protocol_atomic_response, encode_protocol_count_response,
+    encode_protocol_get_response, encode_protocol_search_done, encode_protocol_search_item,
 };
 use placement_core::{
     HyperSpacePlacement, PlacementDecision, PlacementStrategy, RendezvousPlacement,
@@ -53,8 +53,8 @@ use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use transport_core::{
-    ClusterTransport, DataPlaneRequest, DataPlaneResponse, InProcessTransport, InternodeRequest,
-    InternodeResponse, RemoteNode, DATA_PLANE_METHOD,
+    ClusterTransport, DATA_PLANE_METHOD, DataPlaneRequest, DataPlaneResponse, InProcessTransport,
+    InternodeRequest, InternodeResponse, RemoteNode,
 };
 
 pub const COORDINATOR_CONTROL_HEADER_SIZE: usize = 2 + 4;
@@ -2471,20 +2471,22 @@ pub async fn handle_legacy_request(
             } else if !request.erase {
                 let response = if legacy_atomic_can_use_runtime_mutations(&space, &request.funcalls)
                 {
-                    let mutations =
-                        match legacy_mutations_from_protocol_funcalls(&space, &request.funcalls) {
-                            Ok(mutations) => mutations,
-                            Err(err) => {
-                                tracing::warn!(
+                    let mutations = match legacy_mutations_from_protocol_funcalls(
+                        &space,
+                        &request.funcalls,
+                    ) {
+                        Ok(mutations) => mutations,
+                        Err(err) => {
+                            tracing::warn!(
                                 "rejecting legacy atomic funcalls with bad dimension spec: {err:#}"
                             );
-                                return Ok(legacy_atomic_response(
-                                    header.target_virtual_server,
-                                    nonce,
-                                    LegacyReturnCode::BadDimensionSpec,
-                                ));
-                            }
-                        };
+                            return Ok(legacy_atomic_response(
+                                header.target_virtual_server,
+                                nonce,
+                                LegacyReturnCode::BadDimensionSpec,
+                            ));
+                        }
+                    };
                     if checks.is_empty() {
                         HyperdexClientService::handle(
                             runtime,
@@ -2800,7 +2802,7 @@ fn legacy_named_funcall_to_protocol(
             other => {
                 return Err(anyhow!(
                     "legacy list push requires a list attribute, found {other:?}"
-                ))
+                ));
             }
         },
         LegacyFuncallName::ListRPush => match attribute_kind {
@@ -2810,7 +2812,7 @@ fn legacy_named_funcall_to_protocol(
             other => {
                 return Err(anyhow!(
                     "legacy list push requires a list attribute, found {other:?}"
-                ))
+                ));
             }
         },
         LegacyFuncallName::SetAdd => match attribute_kind {
@@ -2818,7 +2820,7 @@ fn legacy_named_funcall_to_protocol(
             other => {
                 return Err(anyhow!(
                     "legacy set add requires a set attribute, found {other:?}"
-                ))
+                ));
             }
         },
         LegacyFuncallName::SetRemove => match attribute_kind {
@@ -2828,7 +2830,7 @@ fn legacy_named_funcall_to_protocol(
             other => {
                 return Err(anyhow!(
                     "legacy set remove requires a set attribute, found {other:?}"
-                ))
+                ));
             }
         },
         LegacyFuncallName::SetIntersect => (FUNC_SET_INTERSECT, Some(attribute_kind), None, None),
@@ -2843,7 +2845,7 @@ fn legacy_named_funcall_to_protocol(
             other => {
                 return Err(anyhow!(
                     "legacy map add requires a map attribute, found {other:?}"
-                ))
+                ));
             }
         },
         LegacyFuncallName::MapRemove => match attribute_kind {
@@ -2856,7 +2858,7 @@ fn legacy_named_funcall_to_protocol(
             other => {
                 return Err(anyhow!(
                     "legacy map remove requires a map attribute, found {other:?}"
-                ))
+                ));
             }
         },
     };
@@ -2878,7 +2880,7 @@ fn legacy_named_funcall_to_protocol(
             return Err(anyhow!(
                 "legacy funcall {:?} is missing its second argument",
                 funcall.name
-            ))
+            ));
         }
         (None, _) => (Vec::new(), 0),
     };

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use cluster_config::ClusterNode;
 use data_model::{NodeId, Space, SpaceName};
 use parking_lot::RwLock;
@@ -101,12 +101,16 @@ mod tests {
     fn registering_multiple_daemons_updates_layout_nodes() {
         let catalog = InMemoryCatalog::new(vec![node(3, "10.0.0.3", 1982, 2012)], 2);
 
-        assert!(catalog
-            .register_daemon(node(1, "10.0.0.1", 2982, 3012))
-            .unwrap());
-        assert!(catalog
-            .register_daemon(node(7, "10.0.0.7", 3982, 4012))
-            .unwrap());
+        assert!(
+            catalog
+                .register_daemon(node(1, "10.0.0.1", 2982, 3012))
+                .unwrap()
+        );
+        assert!(
+            catalog
+                .register_daemon(node(7, "10.0.0.7", 3982, 4012))
+                .unwrap()
+        );
 
         assert_eq!(
             catalog.layout().unwrap(),
@@ -121,12 +125,16 @@ mod tests {
     fn registering_existing_daemon_replaces_its_advertised_ports_once() {
         let catalog = InMemoryCatalog::new(vec![node(9, "10.0.0.9", 1982, 2012)], 1);
 
-        assert!(catalog
-            .register_daemon(node(9, "10.0.0.9", 3982, 4012))
-            .unwrap());
-        assert!(!catalog
-            .register_daemon(node(9, "10.0.0.9", 3982, 4012))
-            .unwrap());
+        assert!(
+            catalog
+                .register_daemon(node(9, "10.0.0.9", 3982, 4012))
+                .unwrap()
+        );
+        assert!(
+            !catalog
+                .register_daemon(node(9, "10.0.0.9", 3982, 4012))
+                .unwrap()
+        );
 
         assert_eq!(
             catalog.layout().unwrap(),

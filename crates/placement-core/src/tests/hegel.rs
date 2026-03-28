@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashSet};
 use std::sync::{Mutex, OnceLock};
 
-use ::hegel::{generators, Hegel, Settings, TestCase};
+use ::hegel::{Hegel, Settings, TestCase, generators};
 
 use super::*;
 
@@ -88,7 +88,12 @@ fn assert_decision_invariants(
     let node_set: HashSet<_> = layout.nodes.iter().copied().collect();
     let replica_set: HashSet<_> = decision.replicas.iter().copied().collect();
     assert_eq!(replica_set.len(), decision.replicas.len());
-    assert!(decision.replicas.iter().all(|replica| node_set.contains(replica)));
+    assert!(
+        decision
+            .replicas
+            .iter()
+            .all(|replica| node_set.contains(replica))
+    );
 }
 
 #[test]
@@ -132,7 +137,8 @@ fn hegel_placement_strategies_preserve_replica_invariants_and_input_order_indepe
         assert_eq!(rendezvous_a.primary, rendezvous_b.primary);
         assert_eq!(rendezvous_a.replicas, rendezvous_b.replicas);
 
-        let hyperspace = HyperSpacePlacement::with_tokens_per_node(usize::from(tokens_per_node) + 1);
+        let hyperspace =
+            HyperSpacePlacement::with_tokens_per_node(usize::from(tokens_per_node) + 1);
         let hyperspace_a = hyperspace.locate(&key_bytes, &layout).unwrap();
         let hyperspace_b = hyperspace.locate(&key_bytes, &rotated_layout).unwrap();
         let expected_partitions = layout.nodes.len() * (usize::from(tokens_per_node) + 1);
