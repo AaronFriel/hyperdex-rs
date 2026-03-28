@@ -1558,7 +1558,7 @@
 - Kind: `outcome`
 - End commit: `1d6093c`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - `1d6093c` replaces singleton primary-region bounds with the original
     HyperDex partition intervals in the legacy config encoder
