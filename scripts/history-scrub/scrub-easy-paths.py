@@ -11,6 +11,10 @@ REPO_PREFIX = f"{HOME_PREFIX}/c/aaronfriel/hyperdex-rs/"
 REPO_ROOT = REPO_PREFIX[:-1]
 REPLACEMENTS = (
     (f"{HOME_PREFIX}/.cargo", "$CARGO_HOME"),
+    (
+        f"{HOME_PREFIX}/.codex/skills/execplan/references/PLANS.md",
+        "the installed `execplan` skill fallback rules",
+    ),
     (f"{HOME_PREFIX}/c/aaronfriel/HyperDex", "HyperDex"),
     (f"{HOME_PREFIX}/HyperDex", "HyperDex"),
     (f"{HOME_PREFIX}/c/aaronfriel/hyhac", "hyhac"),
@@ -24,6 +28,7 @@ REPLACEMENTS = (
         f"{HOME_PREFIX}/.codex/skills/autoplan/references/AUTOPLANS.md",
         "the installed `autoplan` skill fallback rules",
     ),
+    (f"{HOME_PREFIX}/.codex/", "$CODEX_HOME/"),
 )
 EXCLUDED_PREFIXES = ("docs/research/",)
 
