@@ -86,3 +86,147 @@ fn turmoil_rejects_stale_local_conditional_put_across_peer_outage_and_recovery()
 
     sim.run().unwrap();
 }
+
+#[test]
+fn turmoil_recovers_mixed_conditional_put_after_replica_outage_without_partial_visibility() {
+    let mut sim = turmoil::Builder::new().build();
+
+    sim.client("cluster", async move {
+        let (transport, runtime1, runtime2) =
+            distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
+
+        let failing_key = (0..65536)
+            .map(|i| format!("replica-failure-mixed-conditional-put-{i}"))
+            .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 1)
+            .expect("expected a key routed to node 1");
+
+        let initial_put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(failing_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(19),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(initial_put, ClientResponse::Unit);
+
+        transport.set_unavailable(2, true).await;
+
+        let failed_conditional_put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::ConditionalPut {
+                space: "profiles".to_owned(),
+                key: Bytes::from(failing_key.as_bytes().to_vec()),
+                checks: vec![Check {
+                    attribute: "profile_views".to_owned(),
+                    predicate: Predicate::Equal,
+                    value: Value::Int(19),
+                }],
+                mutations: vec![
+                    Mutation::Set(Attribute {
+                        name: "profile_views".to_owned(),
+                        value: Value::Int(30),
+                    }),
+                    Mutation::Numeric {
+                        attribute: "profile_views".to_owned(),
+                        op: data_model::NumericOp::Add,
+                        operand: 5,
+                    },
+                ],
+            },
+        )
+        .await;
+        assert!(
+            failed_conditional_put.is_err(),
+            "expected replica outage to abort mixed conditional put"
+        );
+
+        let local_record = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(failing_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        match local_record {
+            ClientResponse::Record(Some(record)) => {
+                assert_eq!(record.key, Bytes::from(failing_key.as_bytes().to_vec()));
+                assert_eq!(
+                    record.attributes.get("profile_views"),
+                    Some(&Value::Int(19))
+                );
+            }
+            other => panic!("unexpected local mixed conditional-put record result: {other:?}"),
+        }
+
+        let expected_during_outage = BTreeMap::from([(failing_key.clone(), 19_i64)]);
+        assert_search_and_count_match_model(runtime1.as_ref(), 19, &expected_during_outage).await;
+        assert_search_and_count_match_model(runtime1.as_ref(), 20, &BTreeMap::new()).await;
+
+        transport.set_unavailable(2, false).await;
+
+        let retried_conditional_put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::ConditionalPut {
+                space: "profiles".to_owned(),
+                key: Bytes::from(failing_key.as_bytes().to_vec()),
+                checks: vec![Check {
+                    attribute: "profile_views".to_owned(),
+                    predicate: Predicate::Equal,
+                    value: Value::Int(19),
+                }],
+                mutations: vec![
+                    Mutation::Set(Attribute {
+                        name: "profile_views".to_owned(),
+                        value: Value::Int(30),
+                    }),
+                    Mutation::Numeric {
+                        attribute: "profile_views".to_owned(),
+                        op: data_model::NumericOp::Add,
+                        operand: 5,
+                    },
+                ],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(retried_conditional_put, ClientResponse::Unit);
+
+        for runtime in [&runtime1, &runtime2] {
+            let recovered_record = HyperdexClientService::handle(
+                runtime.as_ref(),
+                ClientRequest::Get {
+                    space: "profiles".to_owned(),
+                    key: Bytes::from(failing_key.as_bytes().to_vec()),
+                },
+            )
+            .await
+            .unwrap();
+            match recovered_record {
+                ClientResponse::Record(Some(record)) => {
+                    assert_eq!(record.key, Bytes::from(failing_key.as_bytes().to_vec()));
+                    assert_eq!(
+                        record.attributes.get("profile_views"),
+                        Some(&Value::Int(35))
+                    );
+                }
+                other => panic!("unexpected recovered mixed conditional-put record: {other:?}"),
+            }
+        }
+
+        let expected_after_recovery = BTreeMap::from([(failing_key.clone(), 35_i64)]);
+        assert_search_and_count_match_model(runtime1.as_ref(), 30, &expected_after_recovery).await;
+        assert_search_and_count_match_model(runtime2.as_ref(), 30, &expected_after_recovery).await;
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.run().unwrap();
+}
