@@ -406,6 +406,23 @@ fn stale_local_primary_target(
         .expect("expected a key whose local primary ownership diverges")
 }
 
+fn stale_local_primary_target_for_authoritative_node(
+    runtime1: &Arc<ClusterRuntime>,
+    runtime2: &Arc<ClusterRuntime>,
+    prefix: &str,
+    authoritative_primary: u64,
+) -> (u64, u64, String) {
+    (0..65536)
+        .map(|i| format!("{prefix}-{i}"))
+        .find_map(|key| {
+            let primary1 = runtime1.route_primary(key.as_bytes()).ok()?;
+            let primary2 = runtime2.route_primary(key.as_bytes()).ok()?;
+            (primary1 == runtime1.local_node_id() && primary2 == authoritative_primary)
+                .then_some((primary1, primary2, key))
+        })
+        .expect("expected a key whose stale local primary diverges to the requested authoritative node")
+}
+
 fn ensure_hegel_server_command() -> String {
     HEGEL_SERVER_COMMAND
         .get_or_init(|| {
@@ -466,7 +483,7 @@ impl ClusterTransport for SimTransport {
                 .await
                 .get(&node.id)
                 .cloned()
-                .ok_or_else(|| anyhow!("missing simulated node {}", node.id))?;
+                .ok_or_else(|| anyhow!("connection refused for simulated node {}", node.id))?;
             runtime.handle_internode_request(request).await
         })
     }
@@ -1789,6 +1806,82 @@ fn turmoil_rejects_stale_local_mutation_across_peer_outage_and_recovery() {
         .await
         .unwrap();
         assert_eq!(remote_record, ClientResponse::Record(None));
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[test]
+fn turmoil_rejects_stale_local_delete_across_peer_outage_and_recovery() {
+    let mut sim = turmoil::Builder::new().build();
+
+    sim.client("cluster", async move {
+        let (transport, runtime1, runtime2) =
+            distributed_runtime_fixture_with_diverged_cluster_views(profiles_schema()).await;
+
+        let (runtime1_primary, runtime2_primary, stale_key) =
+            stale_local_primary_target_for_authoritative_node(
+                &runtime1,
+                &runtime2,
+                "stale-local-primary-delete",
+                runtime2.local_node_id(),
+            );
+        assert_eq!(runtime1_primary, runtime1.local_node_id());
+        assert_eq!(runtime2_primary, runtime2.local_node_id());
+
+        let initial_put = HyperdexClientService::handle(
+            runtime2.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(stale_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(113),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(initial_put, ClientResponse::Unit);
+
+        transport.set_unavailable(runtime2.local_node_id(), true).await;
+
+        let delete = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Delete {
+                space: "profiles".to_owned(),
+                key: Bytes::from(stale_key.as_bytes().to_vec()),
+            },
+        )
+        .await;
+        assert!(
+            delete.is_err(),
+            "expected stale local primary delete to fail while the authoritative peer is temporarily unavailable"
+        );
+
+        transport.set_unavailable(runtime2.local_node_id(), false).await;
+
+        let remote_record = HyperdexClientService::handle(
+            runtime2.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(stale_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        match remote_record {
+            ClientResponse::Record(Some(record)) => {
+                assert_eq!(record.key, Bytes::from(stale_key.as_bytes().to_vec()));
+                assert_eq!(
+                    record.attributes.get("profile_views"),
+                    Some(&Value::Int(113))
+                );
+            }
+            other => panic!("unexpected authoritative record after stale delete attempt: {other:?}"),
+        }
 
         Ok::<(), Box<dyn std::error::Error>>(())
     });

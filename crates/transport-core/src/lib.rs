@@ -55,6 +55,7 @@ pub enum DataPlaneRequest {
         space: String,
         key: Bytes,
         expected_primary: u64,
+        expected_cluster_size: u64,
     },
     ReplicatedPut {
         space: String,

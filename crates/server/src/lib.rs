@@ -601,6 +601,7 @@ impl ClusterRuntime {
         space: &str,
         key: &bytes::Bytes,
     ) -> Result<()> {
+        let expected_cluster_size = self.cluster_node_ids()?.len() as u64;
         let mut confirmed_by_peer = false;
         let mut skipped_unavailable_peer = false;
 
@@ -616,6 +617,7 @@ impl ClusterRuntime {
                         space: space.to_owned(),
                         key: key.clone(),
                         expected_primary: self.local_node_id,
+                        expected_cluster_size,
                     },
                 )
                 .await
@@ -974,8 +976,12 @@ impl ClusterRuntime {
                         space,
                         key,
                         expected_primary,
+                        expected_cluster_size,
                     } => {
-                        if self.route_primary_for_space(&space, &key)? == expected_primary {
+                        let local_cluster_size = self.cluster_node_ids()?.len() as u64;
+                        if local_cluster_size < expected_cluster_size
+                            || self.route_primary_for_space(&space, &key)? == expected_primary
+                        {
                             DataPlaneResponse::Unit
                         } else {
                             DataPlaneResponse::ConditionFailed
