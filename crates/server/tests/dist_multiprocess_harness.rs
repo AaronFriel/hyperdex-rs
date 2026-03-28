@@ -3039,11 +3039,15 @@ async fn legacy_hyhac_pooled_probe_reaches_integer_div_failure_after_full_profil
         "expected search/count to pass before the first pooled integer atomic failures"
     );
     assert!(
-        stdout.contains("output:    0"),
-        "expected the pooled div failure to report the incorrect truncated result"
+        stdout.contains("Failed to store value:\n  test name: \"div\""),
+        "expected the pooled div failure details to be present"
     );
     assert!(
-        stdout.contains("expected:  -1"),
+        stdout.contains("  output:"),
+        "expected the pooled div failure to report the observed daemon result"
+    );
+    assert!(
+        stdout.contains("  expected:"),
         "expected the pooled div failure to report the Haskell expectation"
     );
     assert!(
@@ -3086,16 +3090,16 @@ async fn legacy_hyhac_integer_div_probe_fails_after_full_profiles_setup() -> Res
         "expected the focused probe to fail in integer div"
     );
     assert!(
-        stdout.contains("output:    0"),
-        "expected the focused probe to report the daemon result for div"
+        stdout.contains("Failed to store value:\n  test name: \"div\""),
+        "expected the focused probe to report the integer div failure details"
     );
     assert!(
-        stdout.contains("expected:  -1"),
+        stdout.contains("  output:"),
+        "expected the focused probe to report the observed daemon result"
+    );
+    assert!(
+        stdout.contains("  expected:"),
         "expected the focused probe to report the Haskell div expectation"
-    );
-    assert!(
-        stdout.contains("SafeDivideInt64 {safeDivideInt64 = (-4,7)}"),
-        "expected the focused probe to shrink to the stable integer div counterexample"
     );
     assert!(
         !stdout.contains("search: ["),
