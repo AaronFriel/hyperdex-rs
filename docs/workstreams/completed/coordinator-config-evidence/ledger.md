@@ -433,9 +433,9 @@
   - `/home/friel/c/aaronfriel/HyperDex/client/keyop_info.cc`
   - `/home/friel/c/aaronfriel/HyperDex/common/key_change.cc`
   - `/home/friel/c/aaronfriel/HyperDex/common/funcall.cc`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/legacy-frontend/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/legacy-protocol/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/legacy-frontend/src/lib.rs`
+  - `crates/legacy-protocol/src/lib.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - original HyperDex lowers `put` to `FUNC_SET` funcalls before send
   - original daemon reads `nonce >> key_change` after the accepted header
