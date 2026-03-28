@@ -1686,8 +1686,8 @@
 - Kind: `outcome`
 - End commit: `9afb11a`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - taught the legacy daemon frontend to accept both newer protocol bodies and
     older named-body requests on the public data path
