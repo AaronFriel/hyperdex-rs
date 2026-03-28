@@ -1064,7 +1064,7 @@
 - Kind: `outcome`
 - End commit: `0d8d566`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - `0d8d566` replaces the JSON `config` follow payload with packed
     `hyperdex::configuration` bytes in `default_legacy_config_encoder`
