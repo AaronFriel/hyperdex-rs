@@ -470,7 +470,7 @@
   fresh-context worker with a self-contained prompt and the same clean
   worktree.
 - Owner: next fresh-context worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro`
+  `worktrees/post-success-repro`
 - Start commit: `df25106`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro` on
