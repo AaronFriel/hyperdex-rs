@@ -353,7 +353,7 @@
 - Kind: `outcome`
 - End commit: `f2da7e5`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-codec`
+  - no code changes in `worktrees/admin-codec`
 - Evidence summary:
   - the dedicated admin-codec worker was interrupted after the worktree stayed
     clean at `801d20f`
