@@ -2629,7 +2629,7 @@
   `worktrees/live-hyhac-two-daemon`
 - Start commit: `8db4d81`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-two-daemon` on
+  - `worktrees/live-hyhac-two-daemon` on
     `live-hyhac-two-daemon`
 - Mutable surface:
   - `crates/server/tests/**`
