@@ -593,8 +593,8 @@
 - Artifact location:
   - `/home/friel/HyperDex/Replicant/client/client.cc`
   - `/home/friel/HyperDex/Replicant/daemon/daemon.cc`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/hyperdex-admin-protocol/src/lib.rs`
   - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - the new harness result on `main` shows the failing path sends and receives
