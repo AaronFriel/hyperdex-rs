@@ -392,7 +392,7 @@
 - Owner: dedicated worker in `worktrees/admin-codec`
 - Start commit: `f2da7e5`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-codec`
+  - `worktrees/admin-codec`
 - Mutable surface:
   - `crates/hyperdex-admin-protocol/**`
 - Validator:
