@@ -2,6 +2,8 @@
 
 use super::*;
 
+mod hegel_properties;
+
 #[test]
 fn request_header_round_trips() {
     let header = RequestHeader {
