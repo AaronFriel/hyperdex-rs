@@ -201,7 +201,7 @@
   `worktrees/clientgarbage-probe`
 - Start commit: `0b2379d`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-probe` on
+  - `worktrees/clientgarbage-probe` on
     `clientgarbage-probe`
 - Mutable surface:
   - `Cargo.toml`
