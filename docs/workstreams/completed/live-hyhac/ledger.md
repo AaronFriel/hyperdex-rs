@@ -2485,7 +2485,7 @@
   in `worktrees/map-atomic-numeric`
 - Start commit: `83e6003`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-numeric` on
+  - `worktrees/map-atomic-numeric` on
     `map-atomic-numeric`
 - Mutable surface:
   - `crates/server/**`
