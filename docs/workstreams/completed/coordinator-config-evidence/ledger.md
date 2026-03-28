@@ -643,8 +643,8 @@
 - Kind: `outcome`
 - End commit: `19fc81f`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/hyperdex-admin-protocol/src/lib.rs`
   - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - the sender-id plumbing fix landed on `main`
