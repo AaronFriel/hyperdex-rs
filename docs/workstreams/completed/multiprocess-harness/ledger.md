@@ -49,7 +49,7 @@
 - Hypothesis: replacing ephemeral port reuse and log-text waits with
   protocol-based readiness checks will keep the multiprocess harness stable
   without further broad serialization.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness`
+- Owner: dedicated worker in `worktrees/dist-multiprocess-harness`
 - Start commit: `98def36`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness`
