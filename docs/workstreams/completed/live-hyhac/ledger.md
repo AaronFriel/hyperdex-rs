@@ -2058,7 +2058,7 @@
 - Owner: delegated worker `019d318e-8775-74a0-864e-a67fdd23eb49` (`Fermat`)
 - Start commit: `eb6d093`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
+  - `worktrees/live-hyhac-post-follow`
     on `live-hyhac-post-follow`
 - Mutable surface:
   - `crates/server/**`
