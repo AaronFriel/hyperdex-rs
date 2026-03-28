@@ -127,3 +127,29 @@
   - one new Hegel-backed distributed property
   - a green targeted validator
   - one bounded commit ready for reconciliation
+
+### Entry `hgl-004` - Preregistration
+
+- Timestamp: `2026-03-28 19:24Z`
+- Kind: `preregister`
+- Hypothesis: `engine-memory` is the next high-value crate-local Hegel target,
+  because it can support a generated state model for conditional writes,
+  deletes, `delete_matching`, search, and count without needing full runtime
+  orchestration.
+- Owner: forked worker on `hegel-properties`
+- Start commit: `0d395b6`
+- Worktree / branch:
+  - `worktrees/hegel-properties-active`
+  - `hegel-properties-active`
+- Mutable surface:
+  - `crates/engine-memory/**`
+  - `crates/engine-memory/src/tests/**`
+- Validator:
+  - fastest useful check:
+    `cargo test -p engine-memory hegel_memory_engine_preserves_conditional_and_delete_matching_model -- --nocapture`
+  - strong checks:
+    - `cargo test -p engine-memory`
+- Expected artifacts:
+  - one new Hegel-backed storage-state property
+  - a green targeted validator
+  - one bounded commit ready for reconciliation

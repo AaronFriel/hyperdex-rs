@@ -107,3 +107,30 @@
   - one new deterministic recovery proof
   - a product fix if the proof exposes a bug
   - one bounded commit ready for reconciliation
+
+### Entry `dsm-003` - Preregistration
+
+- Timestamp: `2026-03-28 19:24Z`
+- Kind: `preregister`
+- Hypothesis: the next useful distributed-simulation result is a recovery proof
+  outside the current stale-rejoin family, ideally a failover or handoff
+  sequence where operation order must still hold after node loss and return.
+- Owner: forked worker on `distributed-simulation`
+- Start commit: `0d395b6`
+- Worktree / branch:
+  - `worktrees/distributed-simulation-active`
+  - `distributed-simulation-active`
+- Mutable surface:
+  - `crates/simulation-harness/**`
+  - `crates/server/**`
+  - `crates/transport-core/**` only if the proof exposes a transport bug
+- Validator:
+  - fastest useful check:
+    one targeted Turmoil or Madsim recovery test for the chosen scenario
+  - strong checks:
+    - `cargo test -p simulation-harness`
+    - `cargo test -p server`
+- Expected artifacts:
+  - one new deterministic recovery proof outside the current stale-rejoin pair
+  - a product fix if the proof exposes a bug
+  - one bounded commit ready for reconciliation

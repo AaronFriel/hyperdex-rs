@@ -12,3 +12,6 @@ bytes.workspace = true
 data-model = { path = "../data-model" }
 parking_lot.workspace = true
 storage-core = { path = "../storage-core" }
+
+[dev-dependencies]
+hegel = { package = "hegeltest", version = "0.2.6" }

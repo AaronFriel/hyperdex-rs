@@ -387,3 +387,31 @@
   - one new ownership-convergence proof outside the `Put` path
   - a runtime fix if the proof exposes a bug
   - one bounded commit ready for reconciliation
+
+### Entry `flt-011` - Preregistration
+
+- Timestamp: `2026-03-28 19:24Z`
+- Kind: `preregister`
+- Hypothesis: stale local-primary `ConditionalPut` remains the next nearby
+  ownership-convergence risk after the merged `Put` and `Delete` fixes, and it
+  can be proved or disproved with a focused deterministic test module from a
+  clean worktree.
+- Owner: forked worker on `failure-testing`
+- Start commit: `0d395b6`
+- Worktree / branch:
+  - `worktrees/failure-testing-active`
+  - `failure-testing-active`
+- Mutable surface:
+  - `crates/simulation-harness/**`
+  - `crates/server/**` only if the proof exposes a bug
+  - `crates/transport-core/**` only if validation needs a protocol-level fix
+- Validator:
+  - fastest useful check:
+    `cargo test -p simulation-harness turmoil_rejects_stale_local_conditional_put_across_peer_outage_and_recovery -- --nocapture`
+  - strong checks:
+    - `cargo test -p simulation-harness`
+    - `cargo test -p server`
+- Expected artifacts:
+  - one deterministic ownership-convergence proof for `ConditionalPut`
+  - a runtime fix if the proof exposes a bug
+  - one bounded commit ready for reconciliation

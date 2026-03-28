@@ -42,6 +42,8 @@ Each workstream directory contains:
 - [simulation-proof](docs/workstreams/completed/simulation-proof/plan.md)
 - [multiprocess-harness](docs/workstreams/completed/multiprocess-harness/plan.md)
 - [coordinator-config-evidence](docs/workstreams/completed/coordinator-config-evidence/plan.md)
+- [simulation-applicability](docs/workstreams/completed/simulation-applicability/plan.md)
+- [recovery-ordering](docs/workstreams/completed/recovery-ordering/plan.md)
 - [validation-ci](docs/workstreams/completed/validation-ci/plan.md)
 - [async-modernization](docs/workstreams/completed/async-modernization/plan.md)
 - [panic-hardening](docs/workstreams/completed/panic-hardening/plan.md)
