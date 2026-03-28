@@ -269,7 +269,7 @@
 - Hypothesis: implementing the verified BusyBee-framed, Replicant-compatible
   coordinator admin behavior in one bounded worker will unblock the legacy
   admin tools.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+- Owner: dedicated worker in `worktrees/dist-control-plane`
 - Start commit: `801d20f`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
