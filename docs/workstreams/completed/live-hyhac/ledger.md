@@ -1326,7 +1326,7 @@
   expose the next exact wire mismatch with stronger evidence than another
   narrow substep.
 - Owner: forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-bootstrap`
+  `worktrees/live-hyhac-bootstrap`
 - Start commit: `4ccf113`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-bootstrap` on
