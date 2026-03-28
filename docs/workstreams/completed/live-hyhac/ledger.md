@@ -1750,8 +1750,8 @@
 - End commit: `live-hyhac-large-object` worktree after `57a23a0`, `5a8eac4`, and the
   session-owned sender-id edits
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object/crates/server/tests/dist_multiprocess_harness.rs`
+  - `worktrees/live-hyhac-large-object/crates/server/src/lib.rs`
+  - `worktrees/live-hyhac-large-object/crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - the coordinator admin session now owns one sender id and reuses it across
     BusyBee identify, bootstrap `server.id`, and the bootstrap config server
