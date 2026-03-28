@@ -11,7 +11,7 @@
 - Start commit: `2e6490e`
 - Worktree / branch:
   - root checkout dirty state
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on
+  - `worktrees/sim-coverage` on
     `sim-coverage-numeric`
 - Mutable surface:
   - `crates/simulation-harness/src/lib.rs`
