@@ -1621,10 +1621,10 @@
 - Kind: `outcome`
 - End commit: `475f4eb`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/main.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/legacy-frontend/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/legacy-protocol/src/lib.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/server/src/main.rs`
+  - `crates/legacy-frontend/src/lib.rs`
+  - `crates/legacy-protocol/src/lib.rs`
 - Evidence summary:
   - added upstream-style post-decode atomic validation with explicit
     `RespAtomic/BadDimensionSpec` replies
