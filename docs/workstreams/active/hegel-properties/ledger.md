@@ -186,3 +186,31 @@
 - Disposition: `advance`
 - Next move: choose the next Hegel target in another protocol, query, or
   storage boundary.
+
+### Entry `hgl-005` - Outcome
+
+- Timestamp: `2026-03-28 23:47Z`
+- Kind: `outcome`
+- Start commit: `16bb315`
+- Artifact location:
+  - `crates/control-plane/Cargo.toml`
+  - `crates/control-plane/src/lib.rs`
+  - `crates/control-plane/src/tests/mod.rs`
+  - `crates/control-plane/src/tests/hegel_properties.rs`
+- Evidence summary:
+  - Added `hegel_in_memory_catalog_preserves_space_and_daemon_state_model`.
+  - The new property generates mixed `create_space`, `drop_space`,
+    `register_daemon`, and `replace_daemons` sequences against
+    `InMemoryCatalog`.
+  - After every generated step it checks `list_spaces`, `get_space`, and
+    `layout` against one explicit model, so the crate now proves catalog and
+    daemon membership state together instead of only two example-based tests.
+  - Root validation passed with:
+    - `cargo test -p control-plane hegel_in_memory_catalog_preserves_space_and_daemon_state_model -- --nocapture`
+    - `cargo test -p control-plane`
+- Conclusion: Hegel now covers a real crate-local correctness boundary in
+  `control-plane`, not only runtime, placement, storage, and protocol
+  surfaces.
+- Disposition: `advance`
+- Next move: target `transport-core` or another uncovered storage/query
+  boundary.

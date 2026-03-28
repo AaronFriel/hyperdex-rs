@@ -12,3 +12,6 @@ cluster-config = { path = "../cluster-config" }
 data-model = { path = "../data-model" }
 parking_lot.workspace = true
 placement-core = { path = "../placement-core" }
+
+[dev-dependencies]
+hegel = { package = "hegeltest", version = "0.3.4" }

@@ -64,9 +64,12 @@ operation-sequence behavior that would be tedious to cover by hand.
 - [x] (2026-03-28 23:36Z) Landed
   `hegel_admin_requests_round_trip_and_preserve_supported_coordinator_mapping`
   in `hyperdex-admin-protocol`.
+- [x] (2026-03-28 23:47Z) Landed
+  `hegel_in_memory_catalog_preserves_space_and_daemon_state_model` in
+  `control-plane`.
 - [ ] Add the next Hegel property in another high-value correctness boundary
   beyond runtime, placement, `engine-memory`, `data-model`,
-  `legacy-protocol`, and `hyperdex-admin-protocol`.
+  `legacy-protocol`, `hyperdex-admin-protocol`, and `control-plane`.
 
 ## Current Hypothesis
 
@@ -80,8 +83,8 @@ simulation.
 
 Add the next Hegel property in a different correctness boundary from the
 already-landed runtime, placement, `engine-memory`, `data-model`,
-`legacy-protocol`, and `hyperdex-admin-protocol` properties, ideally
-transport, control-plane, or another storage/query boundary.
+`legacy-protocol`, `hyperdex-admin-protocol`, and `control-plane`
+properties, ideally `transport-core` or another storage/query boundary.
 
 ## Surprises & Discoveries
 
@@ -95,6 +98,9 @@ transport, control-plane, or another storage/query boundary.
   spread across runtime, placement, and storage layers.
 - `hyperdex-admin-protocol` now has a generated request-semantics property, so
   Hegel is also covering a protocol compatibility boundary.
+- `control-plane` now has a generated catalog-state property, so Hegel also
+  covers space and daemon membership transitions without needing a full
+  runtime.
 
 ## Decision Log
 
@@ -117,3 +123,6 @@ transport, control-plane, or another storage/query boundary.
 - `hegel_admin_requests_round_trip_and_preserve_supported_coordinator_mapping`
   pushed Hegel into `hyperdex-admin-protocol` with a generated wire
   encode/decode plus coordinator-mapping invariant.
+- `hegel_in_memory_catalog_preserves_space_and_daemon_state_model` pushed
+  Hegel into `control-plane` with a generated model for space catalog and
+  daemon layout transitions.
