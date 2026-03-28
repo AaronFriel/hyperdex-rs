@@ -1981,7 +1981,7 @@
 - Kind: `outcome`
 - End commit: `eb6d093`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - `eb6d093` adds a tighter differential probe that captures the immediate
     `hyperdex_client_put` handle and status from both Hyhac and a native C
