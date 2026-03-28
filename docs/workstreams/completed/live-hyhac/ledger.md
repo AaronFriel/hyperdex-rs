@@ -2513,7 +2513,7 @@
   atomic path to apply map string prepend/append and other string-map updates
   instead of rejecting them with `ClientServererror`.
 - Owner: delegated worker `019d31f4-8e23-7b81-8879-c089630de0dc` (`Franklin`)
-  in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-string`
+  in `worktrees/map-atomic-string`
 - Start commit: `83e6003`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-string` on
