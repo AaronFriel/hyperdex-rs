@@ -609,8 +609,8 @@
 - Artifact location:
   - no code changes in `worktrees/admin-server`
   - read-only review against
-    `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/main.rs`
-    and `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+    `crates/server/src/main.rs`
+    and `crates/server/src/lib.rs`
 - Evidence summary:
   - the forked implementation worker still produced no diff
   - the reviewer established that the coordinator currently exposes only the
