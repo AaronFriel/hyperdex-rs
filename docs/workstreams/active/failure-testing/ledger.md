@@ -281,7 +281,7 @@
 - Kind: `outcome`
 - End commit: `3ad0c32`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/failure-testing`
+  - `worktrees/failure-testing`
   - `crates/transport-core/src/lib.rs`
   - `crates/server/src/lib.rs`
   - `crates/simulation-harness/src/tests/mod.rs`
