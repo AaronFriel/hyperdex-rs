@@ -462,6 +462,34 @@ impl ClusterRuntime {
         Ok(())
     }
 
+    fn restore_local_record(
+        &self,
+        space: &str,
+        key: &bytes::Bytes,
+        previous: Option<Record>,
+    ) -> Result<()> {
+        match previous {
+            Some(record) => {
+                self.data_plane.delete(space, key)?;
+                let mutations = record
+                    .attributes
+                    .into_iter()
+                    .map(|(name, value)| Mutation::Set(Attribute { name, value }))
+                    .collect::<Vec<_>>();
+                match self.data_plane.put(space, key.clone(), &mutations)? {
+                    WriteResult::Written | WriteResult::Missing => Ok(()),
+                    WriteResult::ConditionFailed => {
+                        anyhow::bail!("local rollback conditional failure for space `{space}`")
+                    }
+                }
+            }
+            None => {
+                self.data_plane.delete(space, key)?;
+                Ok(())
+            }
+        }
+    }
+
     async fn replicate_delete_to_secondaries(&self, space: &str, key: &bytes::Bytes) -> Result<()> {
         let decision = self.locate_key(space, key)?;
         for replica in decision.replicas {
@@ -497,10 +525,14 @@ impl ClusterRuntime {
         mutations: Vec<Mutation>,
     ) -> Result<DataPlaneResponse> {
         let mutations = self.materialize_key_mutation(&space, &key, mutations)?;
+        let previous = self.data_plane.get(&space, &key)?;
         match self.data_plane.put(&space, key.clone(), &mutations)? {
             WriteResult::Written | WriteResult::Missing => {
-                self.replicate_put_to_secondaries(&space, &key, &mutations)
-                    .await?;
+                if let Err(err) = self.replicate_put_to_secondaries(&space, &key, &mutations).await
+                {
+                    self.restore_local_record(&space, &key, previous)?;
+                    return Err(err);
+                }
                 Ok(DataPlaneResponse::Unit)
             }
             WriteResult::ConditionFailed => Ok(DataPlaneResponse::ConditionFailed),
@@ -624,13 +656,17 @@ impl ClusterRuntime {
         mutations: Vec<Mutation>,
     ) -> Result<DataPlaneResponse> {
         let mutations = self.materialize_key_mutation(&space, &key, mutations)?;
+        let previous = self.data_plane.get(&space, &key)?;
         match self
             .data_plane
             .conditional_put(&space, key.clone(), &checks, &mutations)?
         {
             WriteResult::Written | WriteResult::Missing => {
-                self.replicate_put_to_secondaries(&space, &key, &mutations)
-                    .await?;
+                if let Err(err) = self.replicate_put_to_secondaries(&space, &key, &mutations).await
+                {
+                    self.restore_local_record(&space, &key, previous)?;
+                    return Err(err);
+                }
                 Ok(DataPlaneResponse::Unit)
             }
             WriteResult::ConditionFailed => Ok(DataPlaneResponse::ConditionFailed),

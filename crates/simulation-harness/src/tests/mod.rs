@@ -583,6 +583,65 @@ fn turmoil_preserves_search_and_count_during_schema_convergence_gap() {
     sim.run().unwrap();
 }
 
+#[test]
+fn turmoil_reverts_primary_put_when_replica_transport_fails() {
+    let mut sim = turmoil::Builder::new().build();
+
+    sim.client("cluster", async move {
+        let (transport, runtime1, runtime2) =
+            distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
+
+        let failing_key = (0..65536)
+            .map(|i| format!("replica-failure-put-{i}"))
+            .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 1)
+            .expect("expected a key routed to node 1");
+
+        transport.set_unavailable(2, true).await;
+
+        let put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(failing_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(23),
+                })],
+            },
+        )
+        .await;
+        assert!(put.is_err(), "expected replica transport failure to surface");
+
+        let local_record = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(failing_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(local_record, ClientResponse::Record(None));
+
+        transport.set_unavailable(2, false).await;
+
+        let recovered_record = HyperdexClientService::handle(
+            runtime2.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(failing_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(recovered_record, ClientResponse::Record(None));
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.run().unwrap();
+}
+
 #[cfg(madsim)]
 #[test]
 fn madsim_preserves_degraded_read_correctness_after_one_node_loss() {
