@@ -6,7 +6,7 @@ This file explains the current `docs/workstreams/` layout.
 
 - [active](docs/workstreams/active)
   contains the workstreams that the root AutoPlan is actively driving now.
-- [backlog](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog)
+- [backlog](docs/workstreams/backlog)
   contains workstreams that are defined clearly enough to promote next, but are
   not active right now.
 - [completed](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed)
