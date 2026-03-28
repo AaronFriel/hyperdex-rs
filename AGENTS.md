@@ -17,6 +17,8 @@ This repository exists to deliver a real Rust replacement for HyperDex. Plans, l
 ## AutoPlan discipline
 
 - Use AutoPlan as a control system, not as a diary.
+- This repository uses a root AutoPlan at `docs/autoplan.md`, a root loop ledger at `docs/ledger.md`, and per-workstream `plan.md` / `ledger.md` files under `docs/workstreams/`.
+- Ready workstreams should keep moving in parallel unless the root AutoPlan explicitly records a pause, blockage, or reprioritization.
 - Keep the root AutoPlan, root loop ledger, and workstream files current, but do not create routine doc-only commits just to narrate motion.
 - Record retries only when the retry meaningfully changes scope, ownership, validator, or hypothesis.
 - If a workstream produces repeated no-diff or no-evidence outcomes, change the assignment or close it. Do not keep recording the same failure shape.
