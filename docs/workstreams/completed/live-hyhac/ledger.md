@@ -1415,7 +1415,7 @@
 - Kind: `outcome`
 - End commit: `8871797`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane`
+  - `worktrees/live-hyhac-data-plane`
 - Evidence summary:
   - `cargo test -p legacy-frontend -- --nocapture` passed in the worktree
   - `cargo test -p server legacy_ -- --nocapture` passed for the direct
