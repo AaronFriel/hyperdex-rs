@@ -111,8 +111,8 @@ split, sequencing, or validators need to change.
 
 | Workstream | Status | Owner | Dependencies / Blockers | Plan | Ledger | Worktree / Branch | Fastest Useful Check | Next Step | Latest Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `live-hyhac` | active | root | The corrected full-schema baseline is on `main`, native C succeeds, and Hyhac completes one successful round-trip before the next operation stalls. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow` on `live-hyhac-post-follow` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Launch one product-owned fix pass and reconcile it against the honest live check. | `advance` |
-| `multiprocess-harness` | ready | root | No current blocker. This workstream should reactivate only if the current live probe is too broad for fast product iteration. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on `clientgarbage-wire` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Reactivate only if a smaller or more trustworthy public repro is needed. | `advance` |
+| `live-hyhac` | active | `019d31bc-e8da-7af3-b40a-bfa04fd8ec4b` (`Gauss`) | The corrected full-schema baseline is on `main`, native C succeeds, and Hyhac completes one successful round-trip before the next operation stalls. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-roundtrip-fix` on `live-hyhac-roundtrip-fix` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Let the product worker reduce and fix the later post-success failure, then reconcile the first substantive result. | `advance` |
+| `multiprocess-harness` | active | `019d31bc-eb2a-7f40-b735-2f35a49b2c12` (`Russell`) | No current blocker. This workstream is active only to shorten the honest full-schema probe if that materially improves product iteration speed. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro` on `post-success-repro` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Let the harness worker either produce a smaller truthful post-success repro or prove the current one should stand. | `advance` |
 | `simulation-proof` | parked | root | Not on the critical path while live compatibility still fails earlier. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Leave parked until a live failure needs new deterministic coverage. | `advance` |
 | `coordinator-config-evidence` | parked | root | Not on the critical path. The next active question is later than the coordinator follow/bootstrap path. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Leave parked until the product pass needs another exact source comparison. | `advance` |
 
@@ -146,10 +146,9 @@ cluster.
 
 ## Next Root Move
 
-Launch one fork that owns the end-to-end product fix for the remaining later
-Hyhac failure, and one fork that owns the smallest trustworthy repro reduction
-needed to keep that product pass moving quickly. Reconcile only substantive
-results back into `main`, then rerun the honest live check.
+Wait on the active product and harness workers with a long timeout, reconcile
+the first substantive result, and rerun the honest live check on integrated
+`main`.
 
 ## Surprises & Discoveries
 

@@ -69,6 +69,8 @@ or protocol behavior that causes it, and rerun the live check before returning.
   stable, proves native C success, and proves one successful Hyhac round-trip.
 - [ ] Fix the remaining later Hyhac failure after the first successful
   round-trip on the full-schema baseline.
+  Current owner: `019d31bc-e8da-7af3-b40a-bfa04fd8ec4b` (`Gauss`) on
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-roundtrip-fix`.
 
 ## Current Hypothesis
 
@@ -83,7 +85,8 @@ after that first success is the one that should drive the next product change.
 Use the full-schema probe as the main validator. Reduce the failure to the
 first later operation that diverges after a proven successful round-trip, patch
 the responsible product code, and rerun the honest live check plus
-`cargo test -p server` before returning control.
+`cargo test -p server` before returning control. This step is active now on the
+fresh `live-hyhac-roundtrip-fix` worktree.
 
 ## Surprises & Discoveries
 

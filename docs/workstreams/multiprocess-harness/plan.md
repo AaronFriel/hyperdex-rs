@@ -57,21 +57,23 @@ active product pass.
 - [x] (2026-03-27 21:42Z) Proved the cleaned-baseline fast failure was still
   looping in coordinator bootstrap traffic, which was enough evidence to hand
   control back to product work.
-- [ ] Stay parked until the active product step needs another repro reduction
-  or harness-side proof.
+- [ ] Produce a smaller truthful post-success repro or prove the current
+  full-schema probe is already the right loop.
+  Current owner: `019d31bc-eb2a-7f40-b735-2f35a49b2c12` (`Russell`) on
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro`.
 
 ## Current Hypothesis
 
-This workstream has already done the next useful harness job for the current
-state of the repository. The honest live baseline now exists, and the next
-critical progress should come from product code unless that baseline proves too
-slow or too broad for efficient iteration.
+The honest live baseline now exists, and this workstream is active only to test
+whether that baseline can be shortened without becoming dishonest. If it cannot
+produce a materially smaller truthful repro, it should say so cleanly and park
+again.
 
 ## Next Bounded Step
 
-Hold. If reactivated, the next bounded step must produce a smaller truthful
-repro for the active live failure or a stronger process-level validator for the
-same product change.
+Produce a smaller truthful post-success repro for the active live failure, or
+prove that the current full-schema probe is already the smallest trustworthy
+loop worth keeping.
 
 ## Surprises & Discoveries
 
@@ -85,10 +87,10 @@ same product change.
 
 ## Decision Log
 
-- Decision: keep this workstream ready but not active.
-  Rationale: the current live blocker is better attacked through product code
-  on the honest full-schema baseline, and more harness work is not justified
-  yet.
+- Decision: reactivate this workstream for one bounded repro-reduction pass.
+  Rationale: the active product step benefits from a smaller truthful loop if
+  one exists, but the harness worker must prove that value instead of assuming
+  it.
   Date/Author: 2026-03-28 / root
 
 ## Outcomes & Retrospective
