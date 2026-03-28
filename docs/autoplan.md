@@ -40,6 +40,7 @@ georeplication.
 1. [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/failure-testing/plan.md)
 2. [distributed-simulation](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/distributed-simulation/plan.md)
 3. [hegel-properties](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/hegel-properties/plan.md)
+4. [history-scrub](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/history-scrub/plan.md)
 
 ### Backlog
 
@@ -61,11 +62,16 @@ Keep the green HyperDex replacement baseline honest while making proof work
 more deliberate: keep failure-oriented bug-finding active, treat Turmoil and
 Madsim as the distributed-failure and recovery tool family, and give Hegel its
 own property-testing track with broader state-space coverage than a single test
-or a single crate.
+or a single crate. In parallel, remove machine-specific `/home/friel` paths
+from the repository and prepare a repeatable history rewrite so the repository
+can be pushed safely.
 
 ## Next Root Move
 
 Keep reconciling real code from the three active tracks: push failure-testing
 past the stale-primary delete fix, extend distributed recovery beyond the two
 stale-rejoin proofs now on `main`, and continue spreading Hegel properties into
-other correctness boundaries such as placement, protocol, or storage.
+other correctness boundaries such as placement, protocol, or storage. At the
+same time, create and drive a dedicated history-scrub workstream that builds a
+repeatable rewrite/count toolchain, fixes the easy repository-relative path
+cases, and leaves external-local dependency paths in an explicit later bucket.

@@ -66,6 +66,11 @@ This repository exists to deliver a real Rust replacement for HyperDex. Plans, l
 - Be direct about whether a pass landed material code, only moved planning state, or found a blocker.
 - Do not present planner maintenance as engineering progress.
 
+## Paths
+
+- When writing new paths in repository files, prefer repository-root-relative paths over machine-specific absolute paths.
+- If an absolute path is temporarily unavoidable for an external local dependency, isolate it behind a helper, test fixture, or clearly named bucket so it can be removed later.
+
 ## Worktrees
 
 - Track local worktree inventory in `docs/.worktrees.md`.
