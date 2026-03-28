@@ -28,6 +28,19 @@ fn legacy_request_body(nonce: u64, body: Vec<u8>) -> Vec<u8> {
     request
 }
 
+#[test]
+fn legacy_decode_request_nonce_rejects_truncated_nonce() {
+    let err = legacy_decode_request_nonce(&[1, 2, 3]).expect_err("truncated nonce should fail");
+    assert!(err.to_string().contains("missing nonce"));
+}
+
+#[test]
+fn legacy_decode_container_value_rejects_truncated_string_length() {
+    let err = legacy_decode_container_value(&ValueKind::Bytes, &[1, 2, 3])
+        .expect_err("truncated container length should fail");
+    assert!(err.to_string().contains("truncated"));
+}
+
 fn dsl_space_add_decoder(bytes: &[u8]) -> Result<Space> {
     Ok(parse_hyperdex_space(std::str::from_utf8(bytes)?)?)
 }

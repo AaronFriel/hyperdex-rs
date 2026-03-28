@@ -1857,8 +1857,9 @@ async fn handle_coordinator_admin_frame(
         if frame.payload.len() != 2 * std::mem::size_of::<u64>() {
             anyhow::bail!("legacy admin identify frame must contain exactly two u64 values");
         }
-        let peer_local_id = u64::from_be_bytes(frame.payload[..8].try_into().unwrap());
-        let peer_remote_id = u64::from_be_bytes(frame.payload[8..16].try_into().unwrap());
+        let peer_local_id = decode_be_u64_exact(&frame.payload[..8], "legacy admin identify local id")?;
+        let peer_remote_id =
+            decode_be_u64_exact(&frame.payload[8..16], "legacy admin identify remote id")?;
         if session.observe_identify(peer_local_id, peer_remote_id)? {
             session.queue_identify_response(peer_local_id);
         }
@@ -2853,11 +2854,10 @@ fn legacy_decode_request_nonce(bytes: &[u8]) -> Result<(u64, &[u8])> {
         anyhow::bail!("legacy request body is missing nonce");
     }
 
-    let nonce = u64::from_be_bytes(
-        bytes[..std::mem::size_of::<u64>()]
-            .try_into()
-            .expect("fixed-width slice"),
-    );
+    let nonce = decode_be_u64_exact(
+        &bytes[..std::mem::size_of::<u64>()],
+        "legacy request nonce",
+    )?;
     Ok((nonce, &bytes[std::mem::size_of::<u64>()..]))
 }
 
@@ -3810,7 +3810,7 @@ fn legacy_decode_container_value(kind: &ValueKind, bytes: &[u8]) -> Result<(Valu
                 anyhow::bail!("legacy container string element is truncated");
             }
             let len =
-                u32::from_le_bytes(bytes[..4].try_into().expect("fixed-width slice")) as usize;
+                decode_le_u32_exact(&bytes[..4], "legacy container string length")? as usize;
             if bytes.len() < 4 + len {
                 anyhow::bail!("legacy container string element is truncated");
             }
@@ -3984,18 +3984,42 @@ fn legacy_decode_i64(bytes: &[u8]) -> Result<i64> {
     if bytes.len() < 8 {
         anyhow::bail!("legacy int payload is truncated");
     }
-    Ok(i64::from_le_bytes(
-        bytes[..8].try_into().expect("fixed-width slice"),
-    ))
+    decode_le_i64_exact(&bytes[..8], "legacy int payload")
 }
 
 fn legacy_decode_f64(bytes: &[u8]) -> Result<f64> {
     if bytes.len() < 8 {
         anyhow::bail!("legacy float payload is truncated");
     }
-    Ok(f64::from_le_bytes(
-        bytes[..8].try_into().expect("fixed-width slice"),
-    ))
+    decode_le_f64_exact(&bytes[..8], "legacy float payload")
+}
+
+fn decode_be_u64_exact(bytes: &[u8], label: &str) -> Result<u64> {
+    let raw = bytes
+        .try_into()
+        .map_err(|_| anyhow!("{label} is not exactly {} bytes", std::mem::size_of::<u64>()))?;
+    Ok(u64::from_be_bytes(raw))
+}
+
+fn decode_le_u32_exact(bytes: &[u8], label: &str) -> Result<u32> {
+    let raw = bytes
+        .try_into()
+        .map_err(|_| anyhow!("{label} is not exactly {} bytes", std::mem::size_of::<u32>()))?;
+    Ok(u32::from_le_bytes(raw))
+}
+
+fn decode_le_i64_exact(bytes: &[u8], label: &str) -> Result<i64> {
+    let raw = bytes
+        .try_into()
+        .map_err(|_| anyhow!("{label} is not exactly {} bytes", std::mem::size_of::<i64>()))?;
+    Ok(i64::from_le_bytes(raw))
+}
+
+fn decode_le_f64_exact(bytes: &[u8], label: &str) -> Result<f64> {
+    let raw = bytes
+        .try_into()
+        .map_err(|_| anyhow!("{label} is not exactly {} bytes", std::mem::size_of::<f64>()))?;
+    Ok(f64::from_le_bytes(raw))
 }
 
 pub async fn handle_coordinator_admin_request(
