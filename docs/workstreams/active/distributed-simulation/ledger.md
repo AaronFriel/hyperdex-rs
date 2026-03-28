@@ -134,3 +134,32 @@
   - one new deterministic recovery proof outside the current stale-rejoin pair
   - a product fix if the proof exposes a bug
   - one bounded commit ready for reconciliation
+
+### Entry `dsm-003` - Outcome
+
+- Timestamp: `2026-03-28 19:34Z`
+- Kind: `outcome`
+- End commit: `d3c7aee`
+- Artifact location:
+  - `crates/simulation-harness/src/tests/distributed_simulation.rs`
+  - `crates/simulation-harness/src/tests/mod.rs`
+- Evidence summary:
+  - Added
+    `turmoil_recovery_preserves_delete_group_retry_then_put_visibility_after_replica_outage`.
+  - The new proof covers a different recovery family from the current
+    stale-rejoin proofs:
+    - one replica becomes unavailable
+    - a `DeleteGroup` fails and rolls back during outage
+    - the replica returns
+    - `DeleteGroup` is retried successfully
+    - a later `Put` rewrites the deleted key
+    - both runtimes observe the recovered state in order
+  - Validation passed with:
+    - `cargo test -p simulation-harness turmoil_recovery_preserves_delete_group_retry_then_put_visibility_after_replica_outage -- --nocapture`
+    - `cargo test -p simulation-harness`
+- Conclusion: the distributed-simulation track now covers outage/recovery
+  ordering around `DeleteGroup` retry and later rewrite, not only stale-view
+  rejoin behavior.
+- Disposition: `advance`
+- Next move: choose another recovery family, preferably one that uses Madsim or
+  a different operation class from `DeleteGroup`.

@@ -388,7 +388,6 @@
   - a runtime fix if the proof exposes a bug
   - one bounded commit ready for reconciliation
 
-<<<<<<< HEAD
 ### Entry `flt-011` - Preregistration
 
 - Timestamp: `2026-03-28 19:24Z`

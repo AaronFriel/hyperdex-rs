@@ -1,4 +1,5 @@
 mod failure_testing;
+mod distributed_simulation;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
