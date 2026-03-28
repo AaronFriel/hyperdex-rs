@@ -1384,7 +1384,7 @@
   working `get`, `count`, and richer client operations, or at least return the
   next exact wire mismatch from that path.
 - Owner: forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane`
+  `worktrees/live-hyhac-data-plane`
 - Start commit: `c087f81`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on
