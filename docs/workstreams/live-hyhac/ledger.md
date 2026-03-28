@@ -2617,3 +2617,60 @@
 - Next move: broaden that public proof toward a more distributed live
   acceptance path or a reusable verifier without regressing the current green
   surface.
+
+### Entry `hyh-054` - Preregistration
+
+- Timestamp: `2026-03-28 03:18Z`
+- Kind: `preregister`
+- Hypothesis: one substantial pass in the multiprocess harness can move the
+  live public proof beyond the split single-daemon cluster by proving the same
+  Hyhac-facing surface against a real two-daemon cluster.
+- Owner: delegated worker on
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-two-daemon`
+- Start commit: `8db4d81`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-two-daemon` on
+    `live-hyhac-two-daemon`
+- Mutable surface:
+  - `crates/server/tests/**`
+  - `crates/server/**` only if the live two-daemon proof exposes a real public
+    compatibility bug
+- Validator:
+  - fastest useful check:
+    `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_split_acceptance_suite_passes_live_cluster -- --nocapture`
+  - strong checks:
+    - a new focused two-daemon live Hyhac acceptance test
+    - `cargo test -p server`
+- Expected artifacts:
+  - a substantive harness or product change that proves or clears the next
+    live two-daemon public acceptance gap
+  - either a green two-daemon Hyhac-facing proof or an exact next failing
+    public boundary
+
+### Entry `hyh-055` - Preregistration
+
+- Timestamp: `2026-03-28 03:18Z`
+- Kind: `preregister`
+- Hypothesis: one substantial pass can package the current live Hyhac proof
+  into a reusable repository-local verifier so the acceptance path is runnable
+  without remembering cargo-test filters or ad hoc shell commands.
+- Owner: delegated worker on
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-acceptance-script`
+- Start commit: `8db4d81`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-acceptance-script` on
+    `live-acceptance-script`
+- Mutable surface:
+  - `scripts/**`
+  - `crates/server/tests/**` only if the script needs a tighter fast check to
+    stay truthful
+- Validator:
+  - fastest useful check:
+    the script itself on a bounded acceptance mode
+  - strong checks:
+    - the full script on the current green live acceptance path
+    - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_split_acceptance_suite_passes_live_cluster -- --nocapture`
+- Expected artifacts:
+  - a reusable verifier under `scripts/**`
+  - a documented command surface in the script usage itself
+  - proof that the script reproduces the current green live acceptance result
