@@ -2466,7 +2466,11 @@ async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Resu
         })
         .take(3)
         .collect::<Vec<_>>();
-    assert_eq!(degraded_keys.len(), 3, "expected three keys routed to node 1");
+    assert_eq!(
+        degraded_keys.len(),
+        3,
+        "expected three keys routed to node 1"
+    );
 
     for (nonce, key, views) in [
         (100_u64, degraded_keys[0].as_str(), 7_i64),
@@ -3200,8 +3204,7 @@ async fn legacy_hyhac_integer_div_probe_turns_green_after_full_profiles_setup() 
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_pooled_probe_turns_green_after_map_atomic_compatibility() -> Result<()>
-{
+async fn legacy_hyhac_pooled_probe_turns_green_after_map_atomic_compatibility() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
     let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
@@ -3295,7 +3298,8 @@ async fn legacy_hyhac_pooled_probe_turns_green_after_map_atomic_compatibility() 
         "expected the pooled probe to keep the string-float numeric map section green"
     );
     assert!(
-        stdout[map_section_idx..].contains("          int-string:\n            union: [OK, passed 100 tests]"),
+        stdout[map_section_idx..]
+            .contains("          int-string:\n            union: [OK, passed 100 tests]"),
         "expected the pooled probe to reach the string-valued map section"
     );
     assert!(
@@ -3808,8 +3812,7 @@ async fn legacy_hyhac_map_string_string_prepend_probe_turns_green_after_full_pro
 #[tokio::test]
 #[serial]
 async fn legacy_hyhac_map_int_string_prepend_probe_turns_green_after_numeric_map_boundary(
-) -> Result<()>
-{
+) -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
     let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =

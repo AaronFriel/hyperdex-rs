@@ -46,7 +46,7 @@ This repository exists to deliver a real Rust replacement for HyperDex. Plans, l
 
 ## Test module layout
 
-- When a Rust source file exceeds 500 lines and has `mod tests`, move that test module into `src/tests/mod.rs` beside the parent file and leave `#[cfg(test)] mod tests;` in the parent source file.
+- When a Rust source file exceeds 250 lines and has `mod tests`, move that test module into `src/tests/mod.rs` beside the parent file and leave `#[cfg(test)] mod tests;` in the parent source file.
 
 ## Harnesses and proof code
 
