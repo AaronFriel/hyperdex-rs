@@ -62,7 +62,7 @@ Keep the green HyperDex replacement baseline honest while making proof work
 more deliberate: keep failure-oriented bug-finding active, treat Turmoil and
 Madsim as the distributed-failure and recovery tool family, and give Hegel its
 own property-testing track with broader state-space coverage than a single test
-or a single crate. In parallel, remove machine-specific `/home/friel` paths
+or a single crate. In parallel, remove machine-specific home-directory paths
 from the repository and prepare a repeatable history rewrite so the repository
 can be pushed safely.
 
