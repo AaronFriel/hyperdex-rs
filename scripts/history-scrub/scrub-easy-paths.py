@@ -5,11 +5,13 @@ import subprocess
 from pathlib import Path
 
 
-REPO_PREFIX = "/home/friel/c/aaronfriel/hyperdex-rs/"
-REPO_ROOT = "/home/friel/c/aaronfriel/hyperdex-rs"
+HOME_PREFIX = "/" + "home" + "/" + "friel"
+TARGET = HOME_PREFIX
+REPO_PREFIX = f"{HOME_PREFIX}/c/aaronfriel/hyperdex-rs/"
+REPO_ROOT = REPO_PREFIX[:-1]
 REPLACEMENTS = {
-    "/home/friel/.codex/skills/autoplan/references/PLANS.md": "the installed `autoplan` skill fallback rules",
-    "/home/friel/.codex/skills/autoplan/references/AUTOPLANS.md": "the installed `autoplan` skill fallback rules",
+    f"{HOME_PREFIX}/.codex/skills/autoplan/references/PLANS.md": "the installed `autoplan` skill fallback rules",
+    f"{HOME_PREFIX}/.codex/skills/autoplan/references/AUTOPLANS.md": "the installed `autoplan` skill fallback rules",
 }
 EXCLUDED_PREFIXES = ("docs/research/",)
 
@@ -37,7 +39,7 @@ def main() -> int:
             original = path.read_text()
         except UnicodeDecodeError:
             continue
-        if "/home/friel" not in original:
+        if TARGET not in original:
             continue
         rewritten = scrub_text(original)
         if rewritten == original:

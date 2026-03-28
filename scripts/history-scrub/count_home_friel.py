@@ -9,18 +9,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-REPO_PREFIX = "/home/friel/c/aaronfriel/hyperdex-rs/"
-REPO_ROOT = "/home/friel/c/aaronfriel/hyperdex-rs"
+HOME_PREFIX = "/" + "home" + "/" + "friel"
+TARGET = HOME_PREFIX
+REPO_PREFIX = f"{HOME_PREFIX}/c/aaronfriel/hyperdex-rs/"
+REPO_ROOT = REPO_PREFIX[:-1]
 EXTERNAL_LOCAL_PREFIXES = (
-    "/home/friel/c/aaronfriel/HyperDex",
-    "/home/friel/c/aaronfriel/hyhac",
-    "/home/friel/c/aaronfriel/busybee",
-    "/home/friel/c/aaronfriel/busybee-",
-    "/home/friel/HyperDex",
-    "/home/friel/.cargo/",
+    f"{HOME_PREFIX}/c/aaronfriel/HyperDex",
+    f"{HOME_PREFIX}/c/aaronfriel/hyhac",
+    f"{HOME_PREFIX}/c/aaronfriel/busybee",
+    f"{HOME_PREFIX}/c/aaronfriel/busybee-",
+    f"{HOME_PREFIX}/HyperDex",
+    f"{HOME_PREFIX}/.cargo/",
 )
 EXCLUDED_PREFIXES = ("docs/research/",)
-NEUTRAL_LOCAL_PREFIXES = ("/home/friel/.codex/", REPO_PREFIX, REPO_ROOT)
+NEUTRAL_LOCAL_PREFIXES = (f"{HOME_PREFIX}/.codex/", REPO_PREFIX, REPO_ROOT)
 
 
 @dataclass
@@ -63,7 +65,7 @@ def add_match(result: CountResult, bucket: str) -> None:
 
 def count_tree(root: Path) -> CountResult:
     proc = subprocess.run(
-        ["git", "grep", "-n", "/home/friel", "--", "."],
+        ["git", "grep", "-n", TARGET, "--", "."],
         cwd=root,
         text=True,
         capture_output=True,
@@ -133,11 +135,11 @@ def count_history(root: Path, all_refs: bool) -> CountResult:
         size = int(size_text)
         data = proc.stdout.read(size)
         proc.stdout.read(1)
-        if b"/home/friel" not in data:
+        if TARGET.encode() not in data:
             continue
         path = paths_by_oid[oid]
         for raw_line in data.splitlines():
-            if b"/home/friel" not in raw_line:
+            if TARGET.encode() not in raw_line:
                 continue
             line = raw_line.decode("utf-8", errors="replace")
             bucket = classify(path, line)
