@@ -682,7 +682,7 @@
 - Hypothesis: a worker focused on the coordinator BusyBee/Replicant service
   core in `crates/server/src/lib.rs` can land the transport/session machinery
   once the end-to-end framing is no longer bundled with startup wiring.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Owner: dedicated worker in `worktrees/admin-server`
 - Start commit: `175ed25`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
