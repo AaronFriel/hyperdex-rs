@@ -491,5 +491,58 @@
     - `cargo test --workspace`
 - Expected artifacts:
   - a smaller truthful post-success probe, or a clean proof that the current
-    honest probe is already the smallest worthwhile loop
+  honest probe is already the smallest worthwhile loop
+  - no product-code drift outside the harness-owned surface
+
+### Entry `mph-010` - Outcome
+
+- Timestamp: `2026-03-28 01:02Z`
+- Kind: `outcome`
+- End commit: `94b13c5`
+- Artifact location:
+  - no reconciled harness code result
+  - interrupted worker state replaced by a new broader truthful boundary
+- Evidence summary:
+  - the fresh-context worker was interrupted after the product fix changed the
+    baseline
+  - the old assignment was no longer the right question once the full-schema
+    large-object path passed on integrated `main`
+  - a direct live full-schema pooled run then showed the next honest failure:
+    `roundtrip` fails first with `ClientReconfigure`
+- Conclusion: the harness workstream should stop trying to shorten the cleared
+  large-object path and should instead target the new full-schema pooled
+  `ClientReconfigure` boundary.
+- Disposition: `reframe`
+- Next move: preregister one new harness pass against the first full-schema
+  pooled `ClientReconfigure` failure.
+
+### Entry `mph-011` - Preregistration
+
+- Timestamp: `2026-03-28 01:02Z`
+- Kind: `preregister`
+- Hypothesis: a harness-owned pass can reduce the honest full-schema pooled
+  `ClientReconfigure` failure to a smaller truthful repro without drifting into
+  product implementation.
+- Owner: next delegated worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/full-schema-roundtrip-repro`
+- Start commit: `94b13c5`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/full-schema-roundtrip-repro`
+    on `full-schema-roundtrip-repro`
+- Mutable surface:
+  - `Cargo.toml`
+  - `crates/server/Cargo.toml`
+  - `crates/server/tests/**`
+  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+    is strictly necessary for the repro
+- Validator:
+  - fastest useful check:
+    the new focused truthful full-schema pooled repro if landed
+  - strong checks:
+    - `cargo test -p server --test dist_multiprocess_harness -- --nocapture`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - a focused truthful repro for the first post-large-object pooled
+    `ClientReconfigure` failure, or a clean proof that the broader full-schema
+    pooled loop is already the right one
   - no product-code drift outside the harness-owned surface

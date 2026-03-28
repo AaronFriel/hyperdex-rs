@@ -111,8 +111,8 @@ split, sequencing, or validators need to change.
 
 | Workstream | Status | Owner | Dependencies / Blockers | Plan | Ledger | Worktree / Branch | Fastest Useful Check | Next Step | Latest Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `live-hyhac` | active | root | The honest full-schema large-object baseline now passes on `main`, so the next task is to identify the next failing Hyhac operation after that cleared boundary. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-roundtrip-fix` on `live-hyhac-roundtrip-fix` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Find the next truthful failing Hyhac operation, then launch the next product-owned fix pass from that observed boundary. | `advance` |
-| `multiprocess-harness` | active | `019d31c1-1662-75d3-83bf-8b2c03e809d7` (`Bohr`) | No current blocker. This workstream is active only to shorten the honest full-schema probe if that materially improves product iteration speed. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro` on `post-success-repro` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Let the harness worker either produce a smaller truthful post-success repro or prove the current one should stand. | `retry` |
+| `live-hyhac` | active | root | The honest full-schema large-object boundary now passes. The next truthful failure is full-schema `*pooled*`, where `roundtrip` is the first later failure and returns `ClientReconfigure`. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-get-reconfigure` on `live-hyhac-get-reconfigure` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Launch the next product-owned fix pass on the first full-schema `ClientReconfigure` failure after large-object success. | `advance` |
+| `multiprocess-harness` | active | root | No current blocker. This workstream is active only to isolate the full-schema `roundtrip` failure into the smallest truthful post-large-object repro that still preserves real setup. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/full-schema-roundtrip-repro` on `full-schema-roundtrip-repro` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Add a focused truthful repro for the first post-large-object `ClientReconfigure` failure, or prove the broader full-schema loop should stand. | `reframe` |
 | `simulation-proof` | parked | root | Not on the critical path while live compatibility still fails earlier. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Leave parked until a live failure needs new deterministic coverage. | `advance` |
 | `coordinator-config-evidence` | parked | root | Not on the critical path. The next active question is later than the coordinator follow/bootstrap path. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Leave parked until the product pass needs another exact source comparison. | `advance` |
 
@@ -135,8 +135,12 @@ split, sequencing, or validators need to change.
 - [x] (2026-03-28 00:48Z) Landed the concurrent-connection fix in the legacy
   frontend and cleared the full-schema large-object post-success blocker on
   integrated `main`.
-- [ ] Find the next truthful failing Hyhac operation beyond the now-passing
-  full-schema large-object boundary.
+- [x] (2026-03-28 01:02Z) Ran the broader full-schema pooled Hyhac surface on a
+  live Rust cluster and found the next truthful failure: `roundtrip` is the
+  first later pooled failure and returns `ClientReconfigure` after the
+  large-object path already succeeds.
+- [ ] Land the next product fix for the full-schema post-large-object
+  `ClientReconfigure` path and keep the large-object boundary green.
 
 ## Current Root Focus
 
@@ -144,13 +148,15 @@ Drive the live compatibility path past the now-cleared large-object boundary
 and keep the next iterations biased toward material code in `crates/**`. The
 active problem is no longer bootstrap, schema creation, the first daemon
 round-trip, or the large-object post-success stall. The active problem is the
-next failing Hyhac operation after that cleared boundary.
+first later full-schema pooled failure: `roundtrip` and many subsequent pooled
+operations return `ClientReconfigure`.
 
 ## Next Root Move
 
-Use the active harness worker or a direct truthful probe to identify the next
-failing Hyhac operation after the large-object boundary, then launch the next
-product-owned fix pass and rerun the honest live checks on integrated `main`.
+Launch one product-owned fix pass for the first full-schema `ClientReconfigure`
+failure and one supporting harness pass to isolate that boundary into a smaller
+truthful repro if possible, then rerun the honest live checks on integrated
+`main`.
 
 ## Surprises & Discoveries
 
@@ -172,6 +178,11 @@ product-owned fix pass and rerun the honest live checks on integrated `main`.
   per accepted connection, the focused `legacy-frontend` regression passes, and
   the honest full-schema Hyhac large-object probe now completes both pooled and
   shared writes successfully.
+- Observation: the next honest live failure is no longer speculative.
+  Evidence: a live full-schema `*pooled*` run after `profiles` creation and
+  `wait_until_stable` shows `Can store a large object: [OK]`, then fails first
+  at `roundtrip` with `ClientReconfigure`, and later pooled operations fail
+  with the same return code.
 - Observation: the recent imbalance was real: too much activity was being
   expressed in ledgers and harness growth rather than in product code.
   Evidence: the recent compact diff summary was dominated by `docs/**` and one

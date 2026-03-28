@@ -50,9 +50,9 @@ until the suite passes.
 Keep one honest live validator on `main`, shorten it only when that directly
 improves engineering cycle time, and drive the remaining mismatch through real
 product changes in `crates/**`. The current step starts from the full-schema
-baseline that already proves one successful Hyhac round-trip. The next product
-pass should isolate the first later operation that diverges, patch the server
-or protocol behavior that causes it, and rerun the live check before returning.
+baseline that already proves the large-object write path for both pooled and
+shared clients. The next product pass should clear the first later pooled
+`ClientReconfigure` failure and rerun the live check before returning.
 
 ## Progress
 
@@ -70,23 +70,26 @@ or protocol behavior that causes it, and rerun the live check before returning.
 - [x] (2026-03-28 00:48Z) Landed the concurrent-connection fix in
   `legacy-frontend`, and the full-schema large-object baseline now passes on
   integrated `main`.
-- [ ] Identify the next truthful failing Hyhac operation after the now-passing
-  large-object boundary and launch the next product-owned fix pass from there.
+- [x] (2026-03-28 01:02Z) Ran the broader full-schema pooled Hyhac surface and
+  found the next honest failure: `roundtrip` is the first later pooled failure
+  and returns `ClientReconfigure`.
+- [ ] Land the next product fix for the full-schema post-large-object pooled
+  `ClientReconfigure` path and move the live baseline forward again.
 
 ## Current Hypothesis
 
 The remaining live mismatch is later than bootstrap, later than schema
 creation, later than the first daemon round-trip, and later than the
-large-object post-success stall that `3c72516` removed. The next product change
-should now be driven by the next failing Hyhac operation beyond that cleared
-boundary.
+large-object post-success stall that `3c72516` removed. On the honest
+full-schema baseline, the next failure is pooled `roundtrip`, and the visible
+symptom is `ClientReconfigure` on the readback path after a successful write.
 
 ## Next Bounded Step
 
-Keep the full-schema large-object probe green as a regression check. Use a
-broader truthful Hyhac probe to identify the next failing operation beyond that
-boundary, then launch the next product-owned fix pass from that observed
-failure.
+Keep the full-schema large-object probe green as a regression check. Launch the
+next product-owned pass on the first pooled `ClientReconfigure` failure after
+that boundary, and let the supporting harness workstream isolate that failure
+further only if it can do so without losing truthful setup.
 
 ## Surprises & Discoveries
 
@@ -102,6 +105,11 @@ failure.
   Evidence: after `3c72516`, the focused `legacy-frontend` regression passes
   and the full-schema Hyhac large-object probe completes both pooled and shared
   writes successfully on integrated `main`.
+- Observation: the next honest failure is pooled `roundtrip`, not another
+  startup or setup problem.
+  Evidence: on a live cluster with the full `profiles` schema already added and
+  stable, `--select-tests='*pooled*'` reports `Can store a large object: [OK]`
+  and then fails first at `roundtrip` with `ClientReconfigure`.
 - Observation: the remaining work now belongs primarily in product code, not
   in more coordinator-protocol archaeology.
   Evidence: the active live failure appears after the system already accepts
@@ -124,5 +132,6 @@ failure.
 - The admin/bootstrap rewrite is no longer the active story in this
   workstream. The repository now has a real live baseline where schema
   creation, stability waits, native C writes, and the full-schema Hyhac
-  large-object subset all succeed. The remaining work is to find and clear the
-  next later client-visible divergence on that honest baseline.
+  large-object subset all succeed. The remaining work is to clear the next
+  later client-visible divergence on that honest baseline: pooled
+  `ClientReconfigure` after the large-object boundary.

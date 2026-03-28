@@ -44,7 +44,7 @@ fix.
 
 ## Plan Of Work
 
-Stay parked until the active product step needs a smaller truthful repro or a
+Stay quiet unless the active product step needs a smaller truthful repro or a
 more trustworthy process-level check. When reactivated, keep the scope limited
 to test or probe changes that directly improve cycle time or confidence for the
 active product pass.
@@ -57,23 +57,25 @@ active product pass.
 - [x] (2026-03-27 21:42Z) Proved the cleaned-baseline fast failure was still
   looping in coordinator bootstrap traffic, which was enough evidence to hand
   control back to product work.
-- [ ] Produce a smaller truthful post-success repro or prove the current
-  full-schema probe is already the right loop.
-  Current owner: `019d31c1-1662-75d3-83bf-8b2c03e809d7` (`Bohr`) on
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro`.
+- [x] (2026-03-28 01:02Z) The broader truthful full-schema pooled run showed
+  the next real failure after the cleared large-object boundary: `roundtrip`
+  fails first with `ClientReconfigure`.
+- [ ] Reduce that full-schema pooled `ClientReconfigure` failure to a smaller
+  truthful probe, or prove the broader full-schema pooled loop is already the
+  right engineering loop.
 
 ## Current Hypothesis
 
 The honest live baseline now exists, and this workstream is active only to test
-whether that baseline can be shortened without becoming dishonest. If it cannot
-produce a materially smaller truthful repro, it should say so cleanly and park
-again.
+whether the full-schema pooled `ClientReconfigure` failure can be shortened
+without becoming dishonest. If it cannot produce a materially smaller truthful
+repro, it should say so cleanly and park again.
 
 ## Next Bounded Step
 
-Produce a smaller truthful post-success repro for the active live failure, or
-prove that the current full-schema probe is already the smallest trustworthy
-loop worth keeping.
+Produce a smaller truthful repro for the first full-schema pooled
+`ClientReconfigure` failure, or prove that the broader full-schema pooled loop
+is already the smallest trustworthy loop worth keeping.
 
 ## Surprises & Discoveries
 
@@ -84,6 +86,11 @@ loop worth keeping.
   public failure boundary concrete and quickly repeatable.
   Evidence: the bootstrap-progress probe and the later large-object repro both
   changed product iteration speed materially.
+- Observation: the old pooled probe is no longer trustworthy after the
+  large-object fix because it fails before truthful setup.
+  Evidence: once the full `profiles` schema is created and stable, the first
+  honest pooled failure is later and different: `roundtrip` with
+  `ClientReconfigure`.
 
 ## Decision Log
 

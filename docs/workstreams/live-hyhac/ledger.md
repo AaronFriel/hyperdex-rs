@@ -2338,3 +2338,42 @@
 - Next move: find the next truthful failing Hyhac operation after the now-
   passing full-schema large-object boundary, then launch the next product-owned
   fix pass from that observed failure.
+
+### Entry `hyh-049` - Preregistration
+
+- Timestamp: `2026-03-28 01:02Z`
+- Kind: `preregister`
+- Hypothesis: a product-owned pass on a fresh worktree can clear the first
+  full-schema post-large-object pooled failure, where `roundtrip` returns
+  `ClientReconfigure`, and move the honest live baseline forward again.
+- Owner: next delegated worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-get-reconfigure`
+- Start commit: `94b13c5`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-get-reconfigure`
+    on `live-hyhac-get-reconfigure`
+- Mutable surface:
+  - `crates/legacy-protocol/**`
+  - `crates/legacy-frontend/**`
+  - `crates/hyperdex-client-protocol/**`
+  - `crates/server/**`
+  - `crates/server/tests/**` only when a focused validator is needed for this
+    exact failure
+  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if launcher wiring must
+    point at `hyperdex-rs`
+- Validator:
+  - fastest useful check:
+    a focused truthful full-schema pooled repro for the first
+    `ClientReconfigure` failure, if the supporting harness worker lands it
+  - current honest check:
+    a live full-schema `--select-tests='*pooled*'` run that shows
+    `Can store a large object: [OK]` and then fails first at `roundtrip` with
+    `ClientReconfigure`
+  - strong checks:
+    - `cargo test -p server`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - at least one material code change in `crates/**`
+  - a real move forward on the full-schema pooled compatibility path
+  - either a greener honest live baseline or one precise blocker tied to
+    current code and observed output
