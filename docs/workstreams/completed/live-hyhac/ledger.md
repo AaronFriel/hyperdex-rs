@@ -2419,7 +2419,7 @@
   in `worktrees/live-hyhac-atomic-fix`
 - Start commit: `1e12978`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-atomic-fix` on
+  - `worktrees/live-hyhac-atomic-fix` on
     `live-hyhac-atomic-fix`
 - Mutable surface:
   - `crates/legacy-protocol/**`
