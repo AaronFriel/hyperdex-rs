@@ -91,7 +91,7 @@
 - Owner: next forked worker on `distributed-simulation`
 - Start commit: `46949a1`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/recovery-ordering`
+  - `worktrees/recovery-ordering`
   - `recovery-ordering`
 - Mutable surface:
   - `crates/simulation-harness/**`
