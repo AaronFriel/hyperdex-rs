@@ -143,7 +143,7 @@
 - Owner: dedicated worker in `worktrees/dist-control-plane`
 - Start commit: `cd0d58c`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+  - `worktrees/dist-control-plane`
 - Mutable surface:
   - `crates/server/**`
   - `crates/hyperdex-admin-protocol/**`
