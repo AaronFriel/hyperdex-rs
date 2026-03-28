@@ -38,12 +38,12 @@ Each workstream directory contains:
 
 ## Completed
 
-- [live-hyhac](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/live-hyhac/plan.md)
-- [simulation-proof](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/simulation-proof/plan.md)
-- [multiprocess-harness](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/multiprocess-harness/plan.md)
-- [coordinator-config-evidence](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/coordinator-config-evidence/plan.md)
-- [validation-ci](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/validation-ci/plan.md)
-- [async-modernization](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/async-modernization/plan.md)
-- [panic-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/panic-hardening/plan.md)
-- [fuzzing-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/fuzzing-hardening/plan.md)
-- [nextest-fast-feedback](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/nextest-fast-feedback/plan.md)
+- [live-hyhac](docs/workstreams/completed/live-hyhac/plan.md)
+- [simulation-proof](docs/workstreams/completed/simulation-proof/plan.md)
+- [multiprocess-harness](docs/workstreams/completed/multiprocess-harness/plan.md)
+- [coordinator-config-evidence](docs/workstreams/completed/coordinator-config-evidence/plan.md)
+- [validation-ci](docs/workstreams/completed/validation-ci/plan.md)
+- [async-modernization](docs/workstreams/completed/async-modernization/plan.md)
+- [panic-hardening](docs/workstreams/completed/panic-hardening/plan.md)
+- [fuzzing-hardening](docs/workstreams/completed/fuzzing-hardening/plan.md)
+- [nextest-fast-feedback](docs/workstreams/completed/nextest-fast-feedback/plan.md)
