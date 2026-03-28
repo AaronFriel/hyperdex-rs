@@ -2350,7 +2350,7 @@
   in `worktrees/live-hyhac-get-reconfigure`
 - Start commit: `94b13c5`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-get-reconfigure`
+  - `worktrees/live-hyhac-get-reconfigure`
     on `live-hyhac-get-reconfigure`
 - Mutable surface:
   - `crates/legacy-protocol/**`
