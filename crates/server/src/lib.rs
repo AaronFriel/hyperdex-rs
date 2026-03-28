@@ -589,8 +589,12 @@ impl ClusterRuntime {
         Ok(())
     }
 
-    fn delete_group_snapshot_keys(records: &[Record]) -> BTreeSet<Bytes> {
-        records.iter().map(|record| record.key.clone()).collect()
+    fn delete_group_snapshot_records(records: &[Record]) -> BTreeMap<Bytes, Record> {
+        records
+            .iter()
+            .cloned()
+            .map(|record| (record.key.clone(), record))
+            .collect()
     }
 
     fn ensure_delete_group_snapshots_agree(
@@ -602,10 +606,10 @@ impl ClusterRuntime {
             return Ok(());
         };
 
-        let expected_keys = Self::delete_group_snapshot_keys(expected_records);
+        let expected_records = Self::delete_group_snapshot_records(expected_records);
         for (node_id, records) in snapshots.iter().skip(1) {
-            let observed_keys = Self::delete_group_snapshot_keys(records);
-            if observed_keys != expected_keys {
+            let observed_records = Self::delete_group_snapshot_records(records);
+            if observed_records != expected_records {
                 anyhow::bail!(
                     "distributed delete-group snapshot mismatch for space `{space}` between replicas {expected_node_id} and {node_id}"
                 );

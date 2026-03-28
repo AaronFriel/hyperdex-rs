@@ -1209,6 +1209,177 @@ fn turmoil_reverts_delete_group_when_replica_transport_fails() {
 }
 
 #[test]
+fn turmoil_rejects_divergent_delete_group_snapshots_with_same_keys() {
+    let mut sim = turmoil::Builder::new().build();
+
+    sim.client("cluster", async move {
+        let (_, runtime1, runtime2) =
+            distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
+
+        let divergent_key = (0..65536)
+            .map(|i| format!("divergent-delete-group-{i}"))
+            .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
+            .expect("expected a key routed to node 2");
+
+        let put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(divergent_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(73),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(put, ClientResponse::Unit);
+
+        runtime1
+            .handle_internode_request(
+                InternodeRequest::encode(
+                    DATA_PLANE_METHOD,
+                    &DataPlaneRequest::ReplicatedPut {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(divergent_key.as_bytes().to_vec()),
+                        mutations: vec![
+                            Mutation::Set(Attribute {
+                                name: "username".to_owned(),
+                                value: Value::Bytes(Bytes::from(divergent_key.as_bytes().to_vec())),
+                            }),
+                            Mutation::Set(Attribute {
+                                name: "profile_views".to_owned(),
+                                value: Value::Int(89),
+                            }),
+                        ],
+                    },
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let node1_record = runtime1
+            .handle_internode_request(
+                InternodeRequest::encode(
+                    DATA_PLANE_METHOD,
+                    &DataPlaneRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(divergent_key.as_bytes().to_vec()),
+                    },
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap()
+            .decode::<DataPlaneResponse>()
+            .unwrap();
+        match node1_record {
+            DataPlaneResponse::Record(Some(record)) => {
+                assert_eq!(
+                    record.attributes.get("profile_views"),
+                    Some(&Value::Int(89))
+                );
+            }
+            other => panic!("unexpected divergent node1 record: {other:?}"),
+        }
+
+        let node2_record = runtime2
+            .handle_internode_request(
+                InternodeRequest::encode(
+                    DATA_PLANE_METHOD,
+                    &DataPlaneRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(divergent_key.as_bytes().to_vec()),
+                    },
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap()
+            .decode::<DataPlaneResponse>()
+            .unwrap();
+        match node2_record {
+            DataPlaneResponse::Record(Some(record)) => {
+                assert_eq!(
+                    record.attributes.get("profile_views"),
+                    Some(&Value::Int(73))
+                );
+            }
+            other => panic!("unexpected authoritative node2 record: {other:?}"),
+        }
+
+        let delete_group = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::DeleteGroup {
+                space: "profiles".to_owned(),
+                checks: vec![],
+            },
+        )
+        .await;
+        assert!(
+            delete_group.is_err(),
+            "expected delete-group to fail closed on same-key divergent replica snapshots"
+        );
+
+        let node1_after = runtime1
+            .handle_internode_request(
+                InternodeRequest::encode(
+                    DATA_PLANE_METHOD,
+                    &DataPlaneRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(divergent_key.as_bytes().to_vec()),
+                    },
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap()
+            .decode::<DataPlaneResponse>()
+            .unwrap();
+        match node1_after {
+            DataPlaneResponse::Record(Some(record)) => {
+                assert_eq!(
+                    record.attributes.get("profile_views"),
+                    Some(&Value::Int(89))
+                );
+            }
+            other => panic!("unexpected node1 record after failed delete-group: {other:?}"),
+        }
+
+        let node2_after = runtime2
+            .handle_internode_request(
+                InternodeRequest::encode(
+                    DATA_PLANE_METHOD,
+                    &DataPlaneRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(divergent_key.as_bytes().to_vec()),
+                    },
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap()
+            .decode::<DataPlaneResponse>()
+            .unwrap();
+        match node2_after {
+            DataPlaneResponse::Record(Some(record)) => {
+                assert_eq!(
+                    record.attributes.get("profile_views"),
+                    Some(&Value::Int(73))
+                );
+            }
+            other => panic!("unexpected node2 record after failed delete-group: {other:?}"),
+        }
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[test]
 fn turmoil_rejects_divergent_replica_get_results() {
     let mut sim = turmoil::Builder::new().build();
 
