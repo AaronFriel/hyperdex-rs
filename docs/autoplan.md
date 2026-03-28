@@ -63,15 +63,16 @@ more deliberate: keep failure-oriented bug-finding active, treat Turmoil and
 Madsim as the distributed-failure and recovery tool family, and give Hegel its
 own property-testing track with broader state-space coverage than a single test
 or a single crate. In parallel, remove machine-specific home-directory paths
-from the repository and prepare a repeatable history rewrite so the repository
-can be pushed safely.
+from the repository and keep driving the remaining external-local bucket down
+with a repeatable history-rewrite toolchain so the repository can be pushed
+safely.
 
 ## Next Root Move
 
 Keep reconciling real code from the three active tracks: push failure-testing
-past the stale-primary delete fix, extend distributed recovery beyond the two
-stale-rejoin proofs now on `main`, and continue spreading Hegel properties into
-other correctness boundaries such as placement, protocol, or storage. At the
-same time, create and drive a dedicated history-scrub workstream that builds a
-repeatable rewrite/count toolchain, fixes the easy repository-relative path
-cases, and leaves external-local dependency paths in an explicit later bucket.
+to the next ownership-convergence or mixed-mutation case, extend distributed
+recovery beyond the current stale-rejoin and outage-retry proofs, and continue
+spreading Hegel properties into other correctness boundaries such as protocol
+or storage. At the same time, keep `history-scrub` active for the deferred
+external-local bucket now that the easy repo-local bucket is at zero in the
+current tree and the rewrite rehearsal toolchain is landed.

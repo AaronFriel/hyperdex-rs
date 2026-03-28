@@ -75,14 +75,18 @@ in an explicit later bucket.
   references from the current tree.
 - [x] (2026-03-28 19:31Z) Reported the deferred external-local bucket and the
   rewritten-history reduction.
+- [x] (2026-03-28 19:44Z) Reconciled the first owned pass onto `main` and
+  revalidated the counts on the merged branch.
 
 ## Current Hypothesis
 
-The easy repository-local bucket is now gone from the current tree. The
-remaining work is no longer broad search-and-replace; it is a narrower pass
-over the deferred external-local bucket, especially HyperDex and `hyhac`
+The easy repository-local bucket is now gone from the current tree on `main`.
+The remaining work is no longer broad search-and-replace; it is a narrower
+pass over the deferred external-local bucket, especially HyperDex and `hyhac`
 sibling-repo references in historical ledgers and the two live test-fixture
-paths in `crates/server/tests/dist_multiprocess_harness.rs`.
+paths in `crates/server/tests/dist_multiprocess_harness.rs`. The remaining
+`repo_local_refs=2` reported by the rewrite rehearsal appears to be a
+counter-accounting defect, not a surviving easy-path match.
 
 ## Next Bounded Step
 
@@ -93,6 +97,8 @@ Pick one external-local sub-bucket and remove it cleanly:
   repository-relative discovery
 - or reduce the historical HyperDex and `hyhac` command/source references in
   archived ledgers without damaging their evidence value
+- and tighten the history counter so the rewrite rehearsal reports the same
+  repo-local count as the direct debug grep
 
 ## Surprises & Discoveries
 
@@ -126,3 +132,8 @@ Pick one external-local sub-bucket and remove it cleanly:
 - The current-tree easy bucket dropped from `273` repo-local references to `0`.
 - The remaining current-tree references are all in the deferred external-local
   bucket.
+- The merged-branch measurements are:
+  - current tree: `total_refs=101`, `repo_local_refs=0`,
+    `external_local_refs=101`
+  - rewrite rehearsal: `total_refs=2377`, `repo_local_refs=2`,
+    `external_local_refs=2375`
