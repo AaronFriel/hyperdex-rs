@@ -522,7 +522,8 @@ fn drain_busybee_frames(buffer: &mut Vec<u8>) -> Result<Vec<BusyBeeFrame>> {
 }
 
 fn hex_prefix(bytes: &[u8], limit: usize) -> String {
-    bytes.iter()
+    bytes
+        .iter()
         .take(limit)
         .map(|byte| format!("{byte:02x}"))
         .collect::<Vec<_>>()
@@ -1065,6 +1066,31 @@ async fn run_wait_until_stable_direct(
     ))
 }
 
+async fn setup_full_profiles_schema(
+    address: SocketAddr,
+) -> Result<(
+    Option<std::process::ExitStatus>,
+    String,
+    String,
+    Option<std::process::ExitStatus>,
+    String,
+    String,
+)> {
+    let (add_exit_status, add_stdout, add_stderr) =
+        run_add_space_direct_with_schema(address, FULL_PROFILES_SPACE_DESC).await?;
+    let (stable_exit_status, stable_stdout, stable_stderr) =
+        run_wait_until_stable_direct(address).await?;
+
+    Ok((
+        add_exit_status,
+        add_stdout,
+        add_stderr,
+        stable_exit_status,
+        stable_stdout,
+        stable_stderr,
+    ))
+}
+
 async fn run_hyhac_selected_tests_direct(
     address: SocketAddr,
     pattern: &str,
@@ -1455,8 +1481,7 @@ async fn run_native_large_object_probe(
     ))
 }
 
-async fn spawn_single_daemon_cluster_with_legacy_proxy(
-) -> Result<(
+async fn spawn_single_daemon_cluster_with_legacy_proxy() -> Result<(
     TempDir,
     ChildProcess,
     ChildProcess,
@@ -1531,8 +1556,7 @@ async fn spawn_single_daemon_cluster_with_legacy_proxy(
     ))
 }
 
-async fn spawn_single_daemon_cluster_with_busybee_proxy(
-) -> Result<(
+async fn spawn_single_daemon_cluster_with_busybee_proxy() -> Result<(
     TempDir,
     ChildProcess,
     ChildProcess,
@@ -2005,7 +2029,8 @@ async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()>
         .await
         .context("waiting for daemon two internode readiness for `profiles`")?;
 
-    let (daemon_one_header, daemon_one_count) = request_count(daemon_one_address, "profiles", 1).await?;
+    let (daemon_one_header, daemon_one_count) =
+        request_count(daemon_one_address, "profiles", 1).await?;
     assert_eq!(daemon_one_header.message_type, LegacyMessageType::RespCount);
     assert_eq!(daemon_one_count.count, 0);
 
@@ -2136,11 +2161,15 @@ async fn legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Resu
     daemon_one
         .wait_for_internode_space(daemon_one_control_address, "profiles")
         .await
-        .context("waiting for daemon one internode readiness for `profiles` in remote primary test")?;
+        .context(
+            "waiting for daemon one internode readiness for `profiles` in remote primary test",
+        )?;
     daemon_two
         .wait_for_internode_space(daemon_two_control_address, "profiles")
         .await
-        .context("waiting for daemon two internode readiness for `profiles` in remote primary test")?;
+        .context(
+            "waiting for daemon two internode readiness for `profiles` in remote primary test",
+        )?;
 
     let (atomic_header, atomic_response) = request_atomic(
         daemon_one_address,
@@ -2282,11 +2311,15 @@ async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Resu
     daemon_one
         .wait_for_internode_space(daemon_one_control_address, "profiles")
         .await
-        .context("waiting for daemon one internode readiness for `profiles` in degraded read test")?;
+        .context(
+            "waiting for daemon one internode readiness for `profiles` in degraded read test",
+        )?;
     daemon_two
         .wait_for_internode_space(daemon_two_control_address, "profiles")
         .await
-        .context("waiting for daemon two internode readiness for `profiles` in degraded read test")?;
+        .context(
+            "waiting for daemon two internode readiness for `profiles` in degraded read test",
+        )?;
 
     for (nonce, key, views) in [
         (100_u64, "degraded-search-a", 7_i64),
@@ -2698,11 +2731,8 @@ async fn legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setu
     let mut cluster = spawn_single_daemon_cluster().await?;
     std::env::remove_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE");
 
-    let (add_exit_status, add_stdout, add_stderr) =
-        run_add_space_direct_with_schema(cluster.coordinator_address, FULL_PROFILES_SPACE_DESC)
-            .await?;
-    let (stable_exit_status, stable_stdout, stable_stderr) =
-        run_wait_until_stable_direct(cluster.coordinator_address).await?;
+    let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
+        setup_full_profiles_schema(cluster.coordinator_address).await?;
 
     fs::write(&capture_path, "")?;
 
@@ -2746,7 +2776,10 @@ async fn legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setu
     );
 
     assert_eq!(add_exit_status.map(|status| status.code()), Some(Some(0)));
-    assert_eq!(stable_exit_status.map(|status| status.code()), Some(Some(0)));
+    assert_eq!(
+        stable_exit_status.map(|status| status.code()),
+        Some(Some(0))
+    );
     assert!(
         !hyhac.trace.contains("put handle=-1 status=8512"),
         "expected the corrected probe to move beyond immediate UnknownSpace; trace=`{}`",
@@ -2831,7 +2864,10 @@ async fn legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pair() 
         "expected proxy to capture at least one daemon-to-client frame"
     );
     assert!(
-        capture.events.iter().all(|event| event.summary.starts_with("partial frame")),
+        capture
+            .events
+            .iter()
+            .all(|event| event.summary.starts_with("partial frame")),
         "expected the coordinator-path proxy to observe only partial non-legacy frames: {events:?}"
     );
     assert!(
@@ -2951,37 +2987,131 @@ async fn legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence() 
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_pooled_probe_reports_large_object_failure_first() -> Result<()> {
+async fn legacy_hyhac_pooled_probe_reaches_integer_div_failure_after_full_profiles_setup(
+) -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
+    let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
+        setup_full_profiles_schema(cluster.coordinator_address).await?;
 
     let (exit_status, stdout, stderr) = run_hyhac_selected_tests_direct(
         cluster.coordinator_address,
         "*pooled*",
-        Duration::from_secs(20),
+        Duration::from_secs(30),
     )
     .await?;
     eprintln!(
-        "hyhac pooled probe: exit_status={exit_status:?} stdout=`{stdout}` stderr=`{stderr}`"
+        "hyhac full-profiles pooled probe: add_exit={add_exit_status:?} add_stdout=`{add_stdout}` add_stderr=`{add_stderr}` stable_exit={stable_exit_status:?} stable_stdout=`{stable_stdout}` stable_stderr=`{stable_stderr}` exit_status={exit_status:?} stdout=`{stdout}` stderr=`{stderr}`"
     );
 
-    let large_object_idx = stdout
-        .find("Can store a large object: [Failed]")
-        .context("pooled hyhac probe did not report the large-object failure")?;
-    let roundtrip_idx = stdout
-        .find("roundtrip: [Failed]")
-        .context("pooled hyhac probe did not reach the later roundtrip failure")?;
-    assert!(
-        large_object_idx < roundtrip_idx,
-        "expected the large-object failure to appear before later pooled failures"
+    let search_idx = stdout
+        .find("search: [OK, passed 100 tests]")
+        .context("pooled hyhac probe did not report a green search boundary")?;
+    let count_idx = stdout
+        .find("count: [OK, passed 100 tests]")
+        .context("pooled hyhac probe did not report a green count boundary")?;
+    let div_idx = stdout
+        .find("div: [Failed]")
+        .context("pooled hyhac probe did not reach integer div failure")?;
+    let mod_idx = stdout
+        .find("mod: [Failed]")
+        .context("pooled hyhac probe did not reach integer mod failure")?;
+
+    assert_eq!(add_exit_status.map(|status| status.code()), Some(Some(0)));
+    assert_eq!(
+        stable_exit_status.map(|status| status.code()),
+        Some(Some(0))
     );
     assert!(
-        stdout.contains("Left ClientGarbage"),
-        "expected the pooled hyhac probe to report ClientGarbage"
+        stdout.contains("Can store a large object: [OK]"),
+        "expected the large-object boundary to stay green"
+    );
+    assert!(
+        stdout.contains("roundtrip: [OK, passed 100 tests]"),
+        "expected the pooled roundtrip boundary to stay green"
+    );
+    assert!(
+        stdout.contains("conditional: [OK, passed 100 tests]"),
+        "expected the pooled conditional boundary to stay green"
+    );
+    assert!(
+        search_idx < count_idx && count_idx < div_idx && div_idx < mod_idx,
+        "expected search/count to pass before the first pooled integer atomic failures"
+    );
+    assert!(
+        stdout.contains("output:    0"),
+        "expected the pooled div failure to report the incorrect truncated result"
+    );
+    assert!(
+        stdout.contains("expected:  -1"),
+        "expected the pooled div failure to report the Haskell expectation"
     );
     assert!(
         exit_status.is_some(),
         "expected the pooled hyhac probe to finish before the deadline"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn legacy_hyhac_integer_div_probe_fails_after_full_profiles_setup() -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+    let cluster = spawn_single_daemon_cluster().await?;
+    let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
+        setup_full_profiles_schema(cluster.coordinator_address).await?;
+
+    let (exit_status, stdout, stderr) = run_hyhac_selected_tests_direct(
+        cluster.coordinator_address,
+        "*pooled*/*atomic*/*integer*/*div",
+        Duration::from_secs(15),
+    )
+    .await?;
+    eprintln!(
+        "hyhac full-profiles integer-div probe: add_exit={add_exit_status:?} add_stdout=`{add_stdout}` add_stderr=`{add_stderr}` stable_exit={stable_exit_status:?} stable_stdout=`{stable_stdout}` stable_stderr=`{stable_stderr}` exit_status={exit_status:?} stdout=`{stdout}` stderr=`{stderr}`"
+    );
+
+    assert_eq!(add_exit_status.map(|status| status.code()), Some(Some(0)));
+    assert_eq!(
+        stable_exit_status.map(|status| status.code()),
+        Some(Some(0))
+    );
+    assert!(
+        stdout.contains("pooled:\n      atomic:\n        integer:"),
+        "expected the focused probe to stay inside the pooled integer atomic group"
+    );
+    assert!(
+        stdout.contains("div: [Failed]"),
+        "expected the focused probe to fail in integer div"
+    );
+    assert!(
+        stdout.contains("output:    0"),
+        "expected the focused probe to report the daemon result for div"
+    );
+    assert!(
+        stdout.contains("expected:  -1"),
+        "expected the focused probe to report the Haskell div expectation"
+    );
+    assert!(
+        stdout.contains("SafeDivideInt64 {safeDivideInt64 = (-4,7)}"),
+        "expected the focused probe to shrink to the stable integer div counterexample"
+    );
+    assert!(
+        !stdout.contains("search: ["),
+        "expected the focused probe to avoid rerunning earlier pooled groups"
+    );
+    assert!(
+        !stdout.contains("count: ["),
+        "expected the focused probe to avoid rerunning earlier pooled groups"
+    );
+    assert!(
+        !stdout.contains("mod: ["),
+        "expected the focused probe to isolate div instead of later atomic failures"
+    );
+    assert!(
+        exit_status.is_some(),
+        "expected the focused probe to finish before the deadline"
     );
 
     Ok(())
