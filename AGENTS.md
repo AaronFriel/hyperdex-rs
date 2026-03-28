@@ -44,9 +44,10 @@ This repository exists to deliver a real Rust replacement for HyperDex. Plans, l
 - Use broad validators such as package-wide or workspace-wide test runs at merge points, not as the only day-to-day loop.
 - Add harness coverage only when it directly helps expose or prove the next product change.
 
-## Test module layout
+## Module layout
 
-- When a Rust source file exceeds 250 lines and has `mod tests`, move that test module into `src/tests/mod.rs` beside the parent file and leave `#[cfg(test)] mod tests;` in the parent source file.
+- When a Rust source file exceeds 250 lines, do not keep inline submodules in that file. Move them into external module files and leave `mod name;` in the parent file instead.
+- Generated Rust sources are exempt from the inline-submodule rule.
 
 ## Harnesses and proof code
 

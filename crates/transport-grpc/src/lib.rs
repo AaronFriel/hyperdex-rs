@@ -9,9 +9,7 @@ use std::future::Future;
 use std::pin::Pin;
 use transport_core::{ClusterTransport, InternodeRequest, InternodeResponse, RemoteNode};
 
-pub mod hyperdex {
-    pub use grpc_api::v1;
-}
+pub mod hyperdex;
 
 fn status_from_anyhow(err: anyhow::Error) -> tonic::Status {
     let msg = err.to_string();
@@ -134,10 +132,7 @@ impl v1::hyperdex_client_server::HyperdexClient for HyperdexClientGrpc {
     ) -> Pin<
         Box<
             dyn Future<
-                    Output = std::result::Result<
-                        tonic::Response<v1::PutResponse>,
-                        tonic::Status,
-                    >,
+                    Output = std::result::Result<tonic::Response<v1::PutResponse>, tonic::Status>,
                 > + Send,
         >,
     > {
@@ -167,10 +162,7 @@ impl v1::hyperdex_client_server::HyperdexClient for HyperdexClientGrpc {
     ) -> Pin<
         Box<
             dyn Future<
-                    Output = std::result::Result<
-                        tonic::Response<v1::GetResponse>,
-                        tonic::Status,
-                    >,
+                    Output = std::result::Result<tonic::Response<v1::GetResponse>, tonic::Status>,
                 > + Send,
         >,
     > {
@@ -276,8 +268,7 @@ impl ClusterTransport for GrpcTransportAdapter {
         Box::pin(async move {
             let endpoint = format!("http://{}:{}", node.host, node.port);
             let mut client =
-                v1::internode_transport_client::InternodeTransportClient::connect(endpoint)
-                .await?;
+                v1::internode_transport_client::InternodeTransportClient::connect(endpoint).await?;
             let response = client
                 .send(v1::InternodeRpcRequest {
                     method: request.method,

@@ -5,3 +5,4 @@ Cargo.lock
 /.hegel/
 **/.hegel/
 docs/.worktrees.md
+.agent/.setup_done

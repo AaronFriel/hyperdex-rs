@@ -1,0 +1,46 @@
+repos:
+  - repo: local
+    hooks:
+      - id: rustfmt-check
+        name: rustfmt check
+        entry: rustfmt
+        language: system
+        args: [--edition, "2024", --check]
+        files: \.rs$
+
+      - id: module-layout
+        name: rust module layout
+        entry: scripts/check-module-layout.sh
+        language: system
+        pass_filenames: false
+        files: ^crates/.*\.rs$
+
+      - id: workflow-audit
+        name: github actions audit
+        entry: scripts/check-actions.sh
+        language: system
+        pass_filenames: false
+        files: ^\.github/workflows/.*\.ya?ml$
+
+      - id: shell-syntax
+        name: shell syntax
+        entry: scripts/check-shell-syntax.sh
+        language: system
+        pass_filenames: false
+        files: ^(\.agent|scripts)/.*\.sh$
+
+      - id: nextest-fast
+        name: nextest fast suite
+        entry: scripts/check-nextest-fast.sh
+        language: system
+        pass_filenames: false
+        files: ^(Cargo\.toml|Cargo\.lock|\.config/nextest\.toml|crates/.*\.(rs|toml))$
+        stages: [pre-commit, manual]
+
+      - id: rustfmt-fix
+        name: rustfmt fix
+        entry: rustfmt
+        language: system
+        args: [--edition, "2024"]
+        always_run: true
+        stages: [manual]

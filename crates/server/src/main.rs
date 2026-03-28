@@ -5,14 +5,14 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use hyperdex_admin_protocol::{CoordinatorAdminRequest, CoordinatorReturnCode};
 use legacy_frontend::LegacyFrontend;
 use server::{
-    coordinator_cluster_config, daemon_cluster_config, daemon_registration_node,
-    handle_legacy_request, parse_process_mode, request_coordinator_control_once,
-    serve_coordinator_public_connection, sync_runtime_with_coordinator, ClusterRuntime,
-    ProcessMode, TransportRuntime,
+    ClusterRuntime, ProcessMode, TransportRuntime, coordinator_cluster_config,
+    daemon_cluster_config, daemon_registration_node, handle_legacy_request, parse_process_mode,
+    request_coordinator_control_once, serve_coordinator_public_connection,
+    sync_runtime_with_coordinator,
 };
 use std::future::Future;
 use std::pin::Pin;
@@ -23,9 +23,7 @@ use tonic::transport::Server;
 use tracing::{info, warn};
 use transport_core::{ClusterTransport, InternodeRequest, InternodeResponse, RemoteNode};
 
-pub mod grpc_api {
-    pub use ::grpc_api::v1;
-}
+pub mod grpc_api;
 
 #[derive(Clone)]
 struct ProcessInternodeGrpc {

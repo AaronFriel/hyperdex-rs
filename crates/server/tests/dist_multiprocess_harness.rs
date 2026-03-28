@@ -7,38 +7,55 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use cluster_config::{ClusterConfig, ClusterNode, TransportBackend};
 use data_model::parse_hyperdex_space;
 use hyperdex_admin_protocol::{
-    decode_packed_hyperdex_space, BusyBeeFrame, ConfigView, CoordinatorAdminRequest,
-    CoordinatorReturnCode, ReplicantAdminRequestMessage, ReplicantCallCompletion,
-    ReplicantNetworkMsgtype,
+    BusyBeeFrame, ConfigView, CoordinatorAdminRequest, CoordinatorReturnCode,
+    ReplicantAdminRequestMessage, ReplicantCallCompletion, ReplicantNetworkMsgtype,
+    decode_packed_hyperdex_space,
 };
 use legacy_frontend::request_once;
 use legacy_protocol::{
-    AtomicRequest, AtomicResponse, CountRequest, CountResponse, GetAttribute, GetRequest,
-    GetResponse, GetValue, LegacyCheck, LegacyFuncall, LegacyFuncallName, LegacyMessageType,
+    AtomicRequest, AtomicResponse, BUSYBEE_HEADER_SIZE, CountRequest, CountResponse, GetAttribute,
+    GetRequest, GetResponse, GetValue, LEGACY_ATOMIC_FLAG_WRITE, LEGACY_REQUEST_HEADER_SIZE,
+    LEGACY_RESPONSE_HEADER_SIZE, LegacyCheck, LegacyFuncall, LegacyFuncallName, LegacyMessageType,
     LegacyPredicate, LegacyReturnCode, RequestHeader, ResponseHeader, SearchContinueRequest,
-    SearchDoneResponse, SearchItemResponse, SearchStartRequest, BUSYBEE_HEADER_SIZE,
-    LEGACY_ATOMIC_FLAG_WRITE, LEGACY_REQUEST_HEADER_SIZE, LEGACY_RESPONSE_HEADER_SIZE,
+    SearchDoneResponse, SearchItemResponse, SearchStartRequest,
 };
 use serial_test::serial;
 use server::{
-    request_coordinator_control_once, request_coordinator_control_with_body_once, ClusterRuntime,
+    ClusterRuntime, request_coordinator_control_once, request_coordinator_control_with_body_once,
 };
 use tempfile::TempDir;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::sleep;
 use transport_core::{
-    DataPlaneRequest, DataPlaneResponse, InternodeRequest, InternodeResponse, DATA_PLANE_METHOD,
+    DATA_PLANE_METHOD, DataPlaneRequest, DataPlaneResponse, InternodeRequest, InternodeResponse,
 };
 
-pub mod grpc_api {
-    pub use ::grpc_api::v1;
-}
+mod grpc_api;
 
 static MULTIPROCESS_HARNESS_LOCK: LazyLock<AsyncMutex<()>> = LazyLock::new(|| AsyncMutex::new(()));
+
+fn set_test_env_var<K, V>(key: K, value: V)
+where
+    K: AsRef<std::ffi::OsStr>,
+    V: AsRef<std::ffi::OsStr>,
+{
+    // These tests serialize access to process-global environment mutation with
+    // MULTIPROCESS_HARNESS_LOCK before calling into the harness.
+    unsafe { std::env::set_var(key, value) };
+}
+
+fn remove_test_env_var<K>(key: K)
+where
+    K: AsRef<std::ffi::OsStr>,
+{
+    // These tests serialize access to process-global environment mutation with
+    // MULTIPROCESS_HARNESS_LOCK before calling into the harness.
+    unsafe { std::env::remove_var(key) };
+}
 
 struct ChildProcess {
     name: &'static str,
@@ -1977,7 +1994,7 @@ async fn request_internode_data_plane(
         status: response.status as u16,
         body: response.body.into(),
     };
-    Ok(response.decode()?)
+    response.decode()
 }
 
 fn grpc_route_runtime(
@@ -2320,12 +2337,14 @@ async fn slow_legacy_atomic_routes_numeric_update_to_remote_primary_process() ->
     let (get_header, get_response) = request_get(daemon_two_address, key.as_bytes(), 42).await?;
     assert_eq!(get_header.message_type, LegacyMessageType::RespGet);
     assert_eq!(get_response.status, LegacyReturnCode::Success);
-    assert!(get_response
-        .attributes
-        .iter()
-        .any(|GetAttribute { name, value }| {
-            name == "profile_views" && *value == GetValue::Int(3)
-        }));
+    assert!(
+        get_response
+            .attributes
+            .iter()
+            .any(|GetAttribute { name, value }| {
+                name == "profile_views" && *value == GetValue::Int(3)
+            })
+    );
 
     Ok(())
 }
@@ -2537,12 +2556,12 @@ async fn slow_legacy_admin_wait_until_stable_probe_reports_bootstrap_progress() 
     let proxy_address = localhost(proxy_port.port())?;
     proxy_port.release();
     let proxy_listener = tokio::net::TcpListener::bind(proxy_address).await?;
-    std::env::set_var(
+    set_test_env_var(
         "HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR",
         proxy_address.to_string(),
     );
     let cluster = spawn_single_daemon_cluster().await?;
-    std::env::remove_var("HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR");
+    remove_test_env_var("HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR");
 
     let capture = Arc::new(Mutex::new(BusyBeeCapture::default()));
     let stop = Arc::new(AtomicBool::new(false));
@@ -2589,12 +2608,14 @@ async fn slow_legacy_admin_wait_until_stable_probe_reports_bootstrap_progress() 
         assert!(
             advanced,
             "expected the C admin client to advance beyond bootstrap; client_frames={:?} server_frames={:?} stdout=`{}` stderr=`{}`",
-            probe.capture
+            probe
+                .capture
                 .client_frames
                 .iter()
                 .map(frame_summary)
                 .collect::<Vec<_>>(),
-            probe.capture
+            probe
+                .capture
                 .server_frames
                 .iter()
                 .map(frame_summary)
@@ -2620,12 +2641,12 @@ async fn slow_legacy_admin_add_space_probe_completes_after_bootstrap_and_robust_
     let proxy_address = localhost(proxy_port.port())?;
     proxy_port.release();
     let proxy_listener = tokio::net::TcpListener::bind(proxy_address).await?;
-    std::env::set_var(
+    set_test_env_var(
         "HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR",
         proxy_address.to_string(),
     );
     let cluster = spawn_single_daemon_cluster().await?;
-    std::env::remove_var("HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR");
+    remove_test_env_var("HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR");
 
     let capture = Arc::new(Mutex::new(BusyBeeCapture::default()));
     let stop = Arc::new(AtomicBool::new(false));
@@ -2651,7 +2672,8 @@ async fn slow_legacy_admin_add_space_probe_completes_after_bootstrap_and_robust_
         "legacy add-space probe: tool_exit={:?} client_frames={:?} server_frames={:?} stdout=`{}` stderr=`{}`",
         probe.tool_exit,
         frame_summaries,
-        probe.capture
+        probe
+            .capture
             .server_frames
             .iter()
             .map(frame_summary)
@@ -2769,9 +2791,9 @@ async fn slow_legacy_hyhac_large_object_probe_reports_no_daemon_traffic_after_st
     let capture_path = capture_file.path().to_path_buf();
     drop(capture_file);
 
-    std::env::set_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE", &capture_path);
+    set_test_env_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE", &capture_path);
     let mut cluster = spawn_single_daemon_cluster().await?;
-    std::env::remove_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE");
+    remove_test_env_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE");
     fs::write(&capture_path, "")?;
 
     let (exit_status, stdout, stderr) = run_hyhac_selected_tests_direct(
@@ -2802,16 +2824,16 @@ async fn slow_legacy_hyhac_large_object_probe_reports_no_daemon_traffic_after_st
 
 #[tokio::test]
 #[serial]
-async fn slow_legacy_hyhac_large_object_probe_reports_immediate_unknownspace_before_deferred_loop(
-) -> Result<()> {
+async fn slow_legacy_hyhac_large_object_probe_reports_immediate_unknownspace_before_deferred_loop()
+-> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let capture_file = tempfile::NamedTempFile::new()?;
     let capture_path = capture_file.path().to_path_buf();
     drop(capture_file);
 
-    std::env::set_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE", &capture_path);
+    set_test_env_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE", &capture_path);
     let mut cluster = spawn_single_daemon_cluster().await?;
-    std::env::remove_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE");
+    remove_test_env_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE");
     fs::write(&capture_path, "")?;
 
     let hyhac = run_hyhac_selected_tests_with_client_trace(
@@ -2875,16 +2897,16 @@ async fn slow_legacy_hyhac_large_object_probe_reports_immediate_unknownspace_bef
 
 #[tokio::test]
 #[serial]
-async fn slow_legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup(
-) -> Result<()> {
+async fn slow_legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup()
+-> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let capture_file = tempfile::NamedTempFile::new()?;
     let capture_path = capture_file.path().to_path_buf();
     drop(capture_file);
 
-    std::env::set_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE", &capture_path);
+    set_test_env_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE", &capture_path);
     let mut cluster = spawn_single_daemon_cluster().await?;
-    std::env::remove_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE");
+    remove_test_env_var("HYPERDEX_RS_LEGACY_FRONTEND_CAPTURE");
 
     let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
         setup_full_profiles_schema(cluster.coordinator_address).await?;
@@ -2896,10 +2918,7 @@ async fn slow_legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles
 
     eprintln!(
         "hyhac full-profiles native-first probe: add_exit={add_exit_status:?} add_stdout=`{add_stdout}` add_stderr=`{add_stderr}` stable_exit={stable_exit_status:?} stable_stdout=`{stable_stdout}` stable_stderr=`{stable_stderr}` native_exit={:?} native_stdout=`{}` native_stderr=`{}` capture_after_native=`{}`",
-        native.0,
-        native.1,
-        native.2,
-        capture_after_native
+        native.0, native.1, native.2, capture_after_native
     );
 
     cluster._coordinator.ensure_running()?;
@@ -3033,7 +3052,7 @@ async fn slow_legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pa
             .all(|event| {
                 event.summary.contains("trailing_bytes=45")
                     && event.raw_prefix.starts_with(
-                        "80 00 00 14 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 05"
+                        "80 00 00 14 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 05",
                     )
             }),
         "expected client-side coordinator frames to be 45-byte partial BusyBee-style payloads: {events:?}"
@@ -3046,7 +3065,7 @@ async fn slow_legacy_hyhac_large_object_probe_reports_first_coordinator_frame_pa
             .all(|event| {
                 event.summary.contains("trailing_bytes=80")
                     && event.raw_prefix.starts_with(
-                        "80 00 00 14 00 00 00 00 00 00 00 02 00 00 00 00 00 00 00 00 00 00 00 3c"
+                        "80 00 00 14 00 00 00 00 00 00 00 02 00 00 00 00 00 00 00 00 00 00 00 3c",
                     )
             }),
         "expected server-side coordinator frames to be 80-byte partial BusyBee-style payloads: {events:?}"
@@ -3062,7 +3081,7 @@ async fn slow_legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequen
     let mut proxy_port = ReservedPort::new()?;
     let proxy_address = localhost(proxy_port.port())?;
     proxy_port.release();
-    std::env::set_var(
+    set_test_env_var(
         "HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR",
         proxy_address.to_string(),
     );
@@ -3075,7 +3094,7 @@ async fn slow_legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequen
         proxy_stop,
         busybee_capture,
     ) = spawn_single_daemon_cluster_with_busybee_proxy().await?;
-    std::env::remove_var("HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR");
+    remove_test_env_var("HYPERDEX_RS_LEGACY_BOOTSTRAP_ADDR");
 
     let (exit_status, stdout, stderr) = run_hyhac_selected_tests_direct(
         proxy_address,
@@ -3712,8 +3731,8 @@ async fn slow_legacy_hyhac_split_acceptance_suite_passes_two_daemon_live_cluster
 
 #[tokio::test]
 #[serial]
-async fn slow_legacy_hyhac_map_int_int_add_probe_turns_green_after_full_profiles_setup(
-) -> Result<()> {
+async fn slow_legacy_hyhac_map_int_int_add_probe_turns_green_after_full_profiles_setup()
+-> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
     let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
@@ -3764,8 +3783,8 @@ async fn slow_legacy_hyhac_map_int_int_add_probe_turns_green_after_full_profiles
 
 #[tokio::test]
 #[serial]
-async fn slow_legacy_hyhac_map_string_string_prepend_probe_turns_green_after_full_profiles_setup(
-) -> Result<()> {
+async fn slow_legacy_hyhac_map_string_string_prepend_probe_turns_green_after_full_profiles_setup()
+-> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
     let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
@@ -3813,8 +3832,8 @@ async fn slow_legacy_hyhac_map_string_string_prepend_probe_turns_green_after_ful
 
 #[tokio::test]
 #[serial]
-async fn slow_legacy_hyhac_map_int_string_prepend_probe_turns_green_after_numeric_map_boundary(
-) -> Result<()> {
+async fn slow_legacy_hyhac_map_int_string_prepend_probe_turns_green_after_numeric_map_boundary()
+-> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
     let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
