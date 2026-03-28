@@ -44,13 +44,13 @@ georeplication.
 
 ### Backlog
 
-1. [warp-transactions](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/warp-transactions/plan.md)
-2. [georeplication](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/georeplication/plan.md)
-3. [programmability](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/programmability/plan.md)
-4. [graph-vector-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/graph-vector-layer/plan.md)
-5. [temporal-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/temporal-layer/plan.md)
-6. [object-storage-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/object-storage-layer/plan.md)
-7. [database-corpus](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/database-corpus/plan.md)
+1. [warp-transactions](docs/workstreams/backlog/warp-transactions/plan.md)
+2. [georeplication](docs/workstreams/backlog/georeplication/plan.md)
+3. [programmability](docs/workstreams/backlog/programmability/plan.md)
+4. [graph-vector-layer](docs/workstreams/backlog/graph-vector-layer/plan.md)
+5. [temporal-layer](docs/workstreams/backlog/temporal-layer/plan.md)
+6. [object-storage-layer](docs/workstreams/backlog/object-storage-layer/plan.md)
+7. [database-corpus](docs/workstreams/backlog/database-corpus/plan.md)
 
 ### Completed Baseline
 
