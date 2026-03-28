@@ -963,6 +963,105 @@ fn turmoil_rejects_or_recovers_routed_mutation_under_stale_placement() {
     sim.run().unwrap();
 }
 
+#[test]
+fn turmoil_preserves_correctness_when_stale_node_rejoins_cluster() {
+    let mut sim = turmoil::Builder::new().build();
+
+    sim.client("cluster", async move {
+        let (transport, runtime1, runtime2_stale) =
+            distributed_runtime_fixture_with_diverged_cluster_views(profiles_schema()).await;
+
+        let (runtime1_primary, runtime2_primary, rejoin_key) =
+            stale_placement_mutation_target(&runtime1, &runtime2_stale, "stale-rejoin-put");
+        assert_eq!(runtime1_primary, 2);
+        assert_ne!(runtime2_primary, 2);
+
+        let stale_put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(rejoin_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(41),
+                })],
+            },
+        )
+        .await;
+        assert!(
+            stale_put.is_err(),
+            "expected routed mutation to fail while node 2 still has stale placement"
+        );
+
+        let corrected_config = ClusterConfig {
+            nodes: vec![
+                ClusterNode {
+                    id: 1,
+                    host: "node1".to_owned(),
+                    control_port: 1001,
+                    data_port: 2001,
+                },
+                ClusterNode {
+                    id: 2,
+                    host: "node2".to_owned(),
+                    control_port: 1002,
+                    data_port: 2002,
+                },
+            ],
+            replicas: 1,
+            internode_transport: TransportBackend::Grpc,
+            ..ClusterConfig::default()
+        };
+
+        let mut recovered_runtime = ClusterRuntime::for_node(corrected_config, 2).unwrap();
+        recovered_runtime.install_cluster_transport(transport.clone(), TransportRuntime::Grpc);
+        let recovered_runtime = Arc::new(recovered_runtime);
+        HyperdexAdminService::handle(
+            recovered_runtime.as_ref(),
+            AdminRequest::CreateSpaceDsl(profiles_schema()),
+        )
+        .await
+        .unwrap();
+        transport.register(2, recovered_runtime.clone()).await;
+
+        let recovered_put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(rejoin_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(41),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(recovered_put, ClientResponse::Unit);
+
+        let recovered_record = HyperdexClientService::handle(
+            recovered_runtime.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(rejoin_key.as_bytes().to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+        match recovered_record {
+            ClientResponse::Record(Some(record)) => {
+                assert_eq!(record.key, Bytes::from(rejoin_key.as_bytes().to_vec()));
+                assert_eq!(record.attributes.get("profile_views"), Some(&Value::Int(41)));
+            }
+            other => panic!("unexpected recovered record after rejoin: {other:?}"),
+        }
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.run().unwrap();
+}
+
 #[cfg(madsim)]
 #[test]
 fn madsim_preserves_degraded_read_correctness_after_one_node_loss() {
