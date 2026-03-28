@@ -2516,7 +2516,7 @@
   in `worktrees/map-atomic-string`
 - Start commit: `83e6003`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-string` on
+  - `worktrees/map-atomic-string` on
     `map-atomic-string`
 - Mutable surface:
   - `crates/server/**`
