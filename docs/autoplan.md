@@ -3,7 +3,7 @@
 This is the active root AutoPlan for `hyperdex-rs`.
 
 Use this file for current priorities only. Earlier planning state is archived
-under [archive/phase-1](/home/friel/c/aaronfriel/hyperdex-rs/docs/archive/phase-1).
+under [archive/phase-1](docs/archive/phase-1).
 
 ## Companion Files
 
