@@ -40,27 +40,36 @@ impl ProcessInternodeGrpc {
     }
 }
 
-#[tonic::async_trait]
 impl grpc_api::v1::internode_transport_server::InternodeTransport for ProcessInternodeGrpc {
-    async fn send(
+    fn send(
         &self,
         request: tonic::Request<grpc_api::v1::InternodeRpcRequest>,
-    ) -> std::result::Result<tonic::Response<grpc_api::v1::InternodeRpcResponse>, tonic::Status>
-    {
-        let request = request.into_inner();
-        let response = self
-            .runtime
-            .handle_internode_request(InternodeRequest {
-                method: request.method,
-                body: Bytes::from(request.body),
-            })
-            .await
-            .map_err(|err| tonic::Status::internal(err.to_string()))?;
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = std::result::Result<
+                        tonic::Response<grpc_api::v1::InternodeRpcResponse>,
+                        tonic::Status,
+                    >,
+                > + Send,
+        >,
+    > {
+        let runtime = self.runtime.clone();
+        Box::pin(async move {
+            let request = request.into_inner();
+            let response = runtime
+                .handle_internode_request(InternodeRequest {
+                    method: request.method,
+                    body: Bytes::from(request.body),
+                })
+                .await
+                .map_err(|err| tonic::Status::internal(err.to_string()))?;
 
-        Ok(tonic::Response::new(grpc_api::v1::InternodeRpcResponse {
-            status: response.status as u32,
-            body: response.body.to_vec(),
-        }))
+            Ok(tonic::Response::new(grpc_api::v1::InternodeRpcResponse {
+                status: response.status as u32,
+                body: response.body.to_vec(),
+            }))
+        })
     }
 }
 

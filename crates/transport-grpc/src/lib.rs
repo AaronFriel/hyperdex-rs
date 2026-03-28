@@ -90,22 +90,32 @@ impl HyperdexAdminGrpc {
     }
 }
 
-#[tonic::async_trait]
 impl hyperdex::v1::hyperdex_admin_server::HyperdexAdmin for HyperdexAdminGrpc {
-    async fn create_space(
+    fn create_space(
         &self,
         request: tonic::Request<hyperdex::v1::CreateSpaceRequest>,
-    ) -> std::result::Result<tonic::Response<hyperdex::v1::CreateSpaceResponse>, tonic::Status>
-    {
-        let schema_dsl = request.into_inner().schema_dsl;
-        hyperdex_admin_protocol::HyperdexAdminService::handle(
-            self.runtime.as_ref(),
-            hyperdex_admin_protocol::AdminRequest::CreateSpaceDsl(schema_dsl),
-        )
-        .await
-        .map_err(status_from_anyhow)?;
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = std::result::Result<
+                        tonic::Response<hyperdex::v1::CreateSpaceResponse>,
+                        tonic::Status,
+                    >,
+                > + Send,
+        >,
+    > {
+        let runtime = self.runtime.clone();
+        Box::pin(async move {
+            let schema_dsl = request.into_inner().schema_dsl;
+            hyperdex_admin_protocol::HyperdexAdminService::handle(
+                runtime.as_ref(),
+                hyperdex_admin_protocol::AdminRequest::CreateSpaceDsl(schema_dsl),
+            )
+            .await
+            .map_err(status_from_anyhow)?;
 
-        Ok(tonic::Response::new(hyperdex::v1::CreateSpaceResponse {}))
+            Ok(tonic::Response::new(hyperdex::v1::CreateSpaceResponse {}))
+        })
     }
 }
 
@@ -120,73 +130,96 @@ impl HyperdexClientGrpc {
     }
 }
 
-#[tonic::async_trait]
 impl hyperdex::v1::hyperdex_client_server::HyperdexClient for HyperdexClientGrpc {
-    async fn put(
+    fn put(
         &self,
         request: tonic::Request<hyperdex::v1::PutRequest>,
-    ) -> std::result::Result<tonic::Response<hyperdex::v1::PutResponse>, tonic::Status> {
-        let request = request.into_inner();
-        let mutations = model_mutations_from_attributes(request.attributes)?;
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = std::result::Result<
+                        tonic::Response<hyperdex::v1::PutResponse>,
+                        tonic::Status,
+                    >,
+                > + Send,
+        >,
+    > {
+        let runtime = self.runtime.clone();
+        Box::pin(async move {
+            let request = request.into_inner();
+            let mutations = model_mutations_from_attributes(request.attributes)?;
 
-        hyperdex_client_protocol::HyperdexClientService::handle(
-            self.runtime.as_ref(),
-            hyperdex_client_protocol::ClientRequest::Put {
-                space: request.space,
-                key: Bytes::from(request.key),
-                mutations,
-            },
-        )
-        .await
-        .map_err(status_from_anyhow)?;
+            hyperdex_client_protocol::HyperdexClientService::handle(
+                runtime.as_ref(),
+                hyperdex_client_protocol::ClientRequest::Put {
+                    space: request.space,
+                    key: Bytes::from(request.key),
+                    mutations,
+                },
+            )
+            .await
+            .map_err(status_from_anyhow)?;
 
-        Ok(tonic::Response::new(hyperdex::v1::PutResponse {}))
+            Ok(tonic::Response::new(hyperdex::v1::PutResponse {}))
+        })
     }
 
-    async fn get(
+    fn get(
         &self,
         request: tonic::Request<hyperdex::v1::GetRequest>,
-    ) -> std::result::Result<tonic::Response<hyperdex::v1::GetResponse>, tonic::Status> {
-        let request = request.into_inner();
-        let response = hyperdex_client_protocol::HyperdexClientService::handle(
-            self.runtime.as_ref(),
-            hyperdex_client_protocol::ClientRequest::Get {
-                space: request.space,
-                key: Bytes::from(request.key),
-            },
-        )
-        .await
-        .map_err(status_from_anyhow)?;
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = std::result::Result<
+                        tonic::Response<hyperdex::v1::GetResponse>,
+                        tonic::Status,
+                    >,
+                > + Send,
+        >,
+    > {
+        let runtime = self.runtime.clone();
+        Box::pin(async move {
+            let request = request.into_inner();
+            let response = hyperdex_client_protocol::HyperdexClientService::handle(
+                runtime.as_ref(),
+                hyperdex_client_protocol::ClientRequest::Get {
+                    space: request.space,
+                    key: Bytes::from(request.key),
+                },
+            )
+            .await
+            .map_err(status_from_anyhow)?;
 
-        let record = match response {
-            hyperdex_client_protocol::ClientResponse::Record(record) => record,
-            other => {
-                return Err(tonic::Status::internal(format!(
-                    "unexpected response from runtime: {other:?}"
-                )));
-            }
-        };
+            let record = match response {
+                hyperdex_client_protocol::ClientResponse::Record(record) => record,
+                other => {
+                    return Err(tonic::Status::internal(format!(
+                        "unexpected response from runtime: {other:?}"
+                    )));
+                }
+            };
 
-        let Some(record) = record else {
-            return Ok(tonic::Response::new(hyperdex::v1::GetResponse {
-                found: false,
-                attributes: Vec::new(),
-            }));
-        };
+            let Some(record) = record else {
+                return Ok(tonic::Response::new(hyperdex::v1::GetResponse {
+                    found: false,
+                    attributes: Vec::new(),
+                }));
+            };
 
-        let attributes = record
-            .attributes
-            .into_iter()
-            .map(|(name, value)| hyperdex::v1::Attribute {
-                name,
-                value: Some(proto_value_from_model(value)),
-            })
-            .collect();
+            let attributes = record
+                .attributes
+                .into_iter()
+                .map(|(name, value)| hyperdex::v1::Attribute {
+                    name,
+                    value: Some(proto_value_from_model(value)),
+                })
+                .collect();
 
-        Ok(tonic::Response::new(hyperdex::v1::GetResponse {
-            found: true,
-            attributes,
-        }))
+            Ok(tonic::Response::new(hyperdex::v1::GetResponse {
+                found: true,
+                attributes,
+            }))
+        })
     }
 }
 
@@ -201,27 +234,36 @@ impl InternodeGrpc {
     }
 }
 
-#[tonic::async_trait]
 impl hyperdex::v1::internode_transport_server::InternodeTransport for InternodeGrpc {
-    async fn send(
+    fn send(
         &self,
         request: tonic::Request<hyperdex::v1::InternodeRpcRequest>,
-    ) -> std::result::Result<tonic::Response<hyperdex::v1::InternodeRpcResponse>, tonic::Status>
-    {
-        let request = request.into_inner();
-        let response = self
-            .runtime
-            .handle_internode_request(InternodeRequest {
-                method: request.method,
-                body: Bytes::from(request.body),
-            })
-            .await
-            .map_err(status_from_anyhow)?;
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = std::result::Result<
+                        tonic::Response<hyperdex::v1::InternodeRpcResponse>,
+                        tonic::Status,
+                    >,
+                > + Send,
+        >,
+    > {
+        let runtime = self.runtime.clone();
+        Box::pin(async move {
+            let request = request.into_inner();
+            let response = runtime
+                .handle_internode_request(InternodeRequest {
+                    method: request.method,
+                    body: Bytes::from(request.body),
+                })
+                .await
+                .map_err(status_from_anyhow)?;
 
-        Ok(tonic::Response::new(hyperdex::v1::InternodeRpcResponse {
-            status: response.status as u32,
-            body: response.body.to_vec(),
-        }))
+            Ok(tonic::Response::new(hyperdex::v1::InternodeRpcResponse {
+                status: response.status as u32,
+                body: response.body.to_vec(),
+            }))
+        })
     }
 }
 
