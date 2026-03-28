@@ -2626,7 +2626,7 @@
   live public proof beyond the split single-daemon cluster by proving the same
   Hyhac-facing surface against a real two-daemon cluster.
 - Owner: delegated worker on
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-two-daemon`
+  `worktrees/live-hyhac-two-daemon`
 - Start commit: `8db4d81`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-two-daemon` on
