@@ -56,23 +56,25 @@ accepted in the right order when ownership changes around a node failure.
   stale rejoin.
 - [x] (2026-03-28 22:16Z) Landed single-key delete retry/rewrite recovery
   proof after replica outage.
-- [ ] Land the next distributed recovery proof beyond the stale-rejoin,
-  delete-group, mixed conditional-put, and single-key delete recovery cases.
+- [x] (2026-03-28 23:45Z) Landed a Madsim stale-rejoin ordering proof so the
+  scheduler now covers both outage-retry and stale-placement recovery.
+- [ ] Land the next distributed recovery proof beyond the current two-node
+  stale-rejoin and replica-outage families.
 
 ## Current Hypothesis
 
-The workstream now covers five concrete recovery proofs on the merged tree:
-stale-rejoin ordered writes, stale-rejoin delete/rewrite visibility,
-delete-group retry after outage, mixed conditional-put retry after outage, and
-single-key delete retry after outage. The next high-value step is either a
-three-node failover/handoff proof or a Madsim proof for one of the non-
-delete-group outage recovery paths.
+The workstream now covers six concrete recovery proofs on the merged tree:
+two stale-rejoin ordering or visibility cases under Turmoil, one stale-rejoin
+ordering case under Madsim, and three replica-outage retry or recovery cases.
+The next high-value step is either a three-node failover or handoff proof, or
+another recovery family that is not just a two-node stale rejoin or a
+replica-outage retry.
 
 ## Next Bounded Step
 
-Add the next deterministic Turmoil or Madsim proof that exercises recovery with
-either three-node failover/handoff or non-delete-group outage recovery under
-Madsim.
+Add the next deterministic recovery proof that exercises either three-node
+failover or handoff ordering, or a recovery family outside the current two-node
+stale-rejoin and replica-outage retry shapes.
 
 ## Surprises & Discoveries
 
@@ -97,3 +99,7 @@ Madsim.
 - The latest pass now proves that a single-key delete which fails during replica
   outage rolls back cleanly, succeeds after recovery, and does not interfere
   with a later rewrite observed on both replicas.
+- The latest pass also proves the stale local-primary rejoin ordering guarantee
+  under Madsim: a rejected pre-recovery write does not leak through, and two
+  later authoritative writes are observed in order after the recovered node
+  rejoins with the converged two-node view.
