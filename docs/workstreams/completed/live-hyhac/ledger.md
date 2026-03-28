@@ -1956,7 +1956,7 @@
 - Owner: delegated worker `019d3180-ba84-7443-9a62-8de2faaeb9c1` (`Parfit`)
 - Start commit: `a618ea0`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
+  - `worktrees/live-hyhac-post-follow`
     on `live-hyhac-post-follow`
 - Mutable surface:
   - `crates/server/**`
