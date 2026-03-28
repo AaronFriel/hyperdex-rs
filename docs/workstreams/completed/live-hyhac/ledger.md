@@ -728,7 +728,7 @@
 - Hypothesis: implementing the packed `space_add` payload decoder and the
   matching service-core consumption path will unblock the coordinator
   BusyBee/Replicant service work.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Owner: dedicated worker in `worktrees/admin-server`
 - Start commit: `51002a7`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
