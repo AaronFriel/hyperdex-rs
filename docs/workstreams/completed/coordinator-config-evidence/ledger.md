@@ -100,11 +100,11 @@
     HyperDex `configuration` / `space` packing sources
 - Evidence summary:
   - the live `profiles` schema is the container-heavy definition in
-    `/home/friel/c/aaronfriel/hyhac/test/Test/HyperDex/Space.hs`
+    `hyhac/test/Test/HyperDex/Space.hs`
   - the original HyperDex builder inserts the primary subspace on attribute `0`
     and fills each region with `hyperdex::partition(...)` from
-    `/home/friel/c/aaronfriel/HyperDex/admin/hyperspace_builder.cc` and
-    `/home/friel/c/aaronfriel/HyperDex/admin/partition.cc`
+    `HyperDex/admin/hyperspace_builder.cc` and
+    `HyperDex/admin/partition.cc`
   - for `64` partitions on a 1-attribute primary subspace, the first primary
     region is `lower=0`, `upper=0x03ffffffffffffff`, the second begins at
     `0x0400000000000000`, and the last ends at `UINT64_MAX`
@@ -159,9 +159,9 @@
 - Kind: `outcome`
 - End commit: `1d6093c`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/HyperDex/admin/hyperspace_builder.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/admin/partition.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/common/hyperspace.cc`
+  - `HyperDex/admin/hyperspace_builder.cc`
+  - `HyperDex/admin/partition.cc`
+  - `HyperDex/common/hyperspace.cc`
   - `crates/server/src/lib.rs`
 - Evidence summary:
   - the original `profiles` layout is a one-dimensional primary subspace on
@@ -211,10 +211,10 @@
 - End commit: `1c18705`
 - Artifact location:
   - `crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/HyperDex/coordinator/coordinator.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/common/configuration.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/common/ids.h`
+  - `HyperDex/coordinator/coordinator.cc`
+  - `HyperDex/common/configuration.cc`
+  - `HyperDex/client/client.cc`
+  - `HyperDex/common/ids.h`
 - Evidence summary:
   - Rust still emits zero-based `space_id`, `subspace_id`, `region_id`, and
     `virtual_server_id` values from defaulted counters in
@@ -266,11 +266,11 @@
 - Kind: `outcome`
 - End commit: `05f3abd`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyhac/test/Test/HyperDex/Shared.hs`
-  - `/home/friel/c/aaronfriel/hyhac/test/Test/HyperDex/Pool.hs`
-  - `/home/friel/c/aaronfriel/HyperDex/common/datatype_string.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/common/configuration.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
+  - `hyhac/test/Test/HyperDex/Shared.hs`
+  - `hyhac/test/Test/HyperDex/Pool.hs`
+  - `HyperDex/common/datatype_string.cc`
+  - `HyperDex/common/configuration.cc`
+  - `HyperDex/client/client.cc`
   - `crates/server/src/lib.rs`
 - Evidence summary:
   - the failing key is `"large"` in the `hyhac` large-object tests
@@ -320,12 +320,12 @@
 - Kind: `outcome`
 - End commit: `7afc90f`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/common/configuration.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/common/mapper.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/daemon/communication.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/daemon/daemon.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/common/key_change.cc`
+  - `HyperDex/client/client.cc`
+  - `HyperDex/common/configuration.cc`
+  - `HyperDex/common/mapper.cc`
+  - `HyperDex/daemon/communication.cc`
+  - `HyperDex/daemon/daemon.cc`
+  - `HyperDex/common/key_change.cc`
 - Evidence summary:
   - after `configuration::point_leader`, the original client only allocates a
     nonce and sends a header `(mt, flags=0, version, vidt, nonce)`
@@ -378,10 +378,10 @@
 - Artifact location:
   - `crates/server/src/lib.rs`
   - `crates/server/tests/dist_multiprocess_harness.rs`
-  - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/common/configuration.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/common/mapper.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/daemon/communication.cc`
+  - `HyperDex/client/client.cc`
+  - `HyperDex/common/configuration.cc`
+  - `HyperDex/common/mapper.cc`
+  - `HyperDex/daemon/communication.cc`
 - Evidence summary:
   - for the concrete failing key `"large"`, current Rust config already gives
     the selected region a non-null replica tuple and matching server-table
@@ -428,11 +428,11 @@
 - Kind: `outcome`
 - End commit: `dd2553b`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/HyperDex/client/c.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/client/keyop_info.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/common/key_change.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/common/funcall.cc`
+  - `HyperDex/client/c.cc`
+  - `HyperDex/client/client.cc`
+  - `HyperDex/client/keyop_info.cc`
+  - `HyperDex/common/key_change.cc`
+  - `HyperDex/common/funcall.cc`
   - `crates/legacy-frontend/src/lib.rs`
   - `crates/legacy-protocol/src/lib.rs`
   - `crates/server/src/lib.rs`
@@ -480,11 +480,11 @@
 - Kind: `outcome`
 - End commit: `e29034a`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/HyperDex/daemon/replication_manager.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/common/key_change.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/common/funcall.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/common/attribute_check.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/client/pending_atomic.cc`
+  - `HyperDex/daemon/replication_manager.cc`
+  - `HyperDex/common/key_change.cc`
+  - `HyperDex/common/funcall.cc`
+  - `HyperDex/common/attribute_check.cc`
+  - `HyperDex/client/pending_atomic.cc`
   - `crates/server/src/lib.rs`
 - Evidence summary:
   - upstream `replication_manager::client_atomic` validates `key_change`
@@ -534,8 +534,8 @@
 - Kind: `outcome`
 - End commit: `0f7e9e4`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/client/pending_get_partial.cc`
+  - `HyperDex/client/client.cc`
+  - `HyperDex/client/pending_get_partial.cc`
   - `crates/server/src/lib.rs`
   - manual clean-baseline live-cluster probe with daemon capture cleared after
     startup
@@ -591,8 +591,8 @@
 - Kind: `outcome`
 - End commit: `6fe08c5`
 - Artifact location:
-  - `/home/friel/HyperDex/Replicant/client/client.cc`
-  - `/home/friel/HyperDex/Replicant/daemon/daemon.cc`
+  - `HyperDex/Replicant/client/client.cc`
+  - `HyperDex/Replicant/daemon/daemon.cc`
   - `crates/server/src/lib.rs`
   - `crates/hyperdex-admin-protocol/src/lib.rs`
   - `crates/server/tests/dist_multiprocess_harness.rs`
@@ -689,7 +689,7 @@
 - Kind: `outcome`
 - End commit: `main after the repeated-identify fix and corrected BusyBee proxy probe`
 - Artifact location:
-  - `/home/friel/HyperDex/busybee/busybee.cc`
+  - `HyperDex/busybee/busybee.cc`
   - `crates/server/src/lib.rs`
   - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
@@ -788,11 +788,11 @@
 - Kind: `outcome`
 - End commit: `a618ea0`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/HyperDex/Replicant/client/pending_cond_follow.cc`
+  - `HyperDex/Replicant/client/pending_cond_follow.cc`
   - `crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Ffi/Client.chs`
-  - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Core.hs`
-  - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Handle.hs`
+  - `hyhac/src/Database/HyperDex/Internal/Ffi/Client.chs`
+  - `hyhac/src/Database/HyperDex/Internal/Core.hs`
+  - `hyhac/src/Database/HyperDex/Internal/Handle.hs`
 - Evidence summary:
   - the observed coordinator post-follow exchange is already consistent with
     original Replicant: upstream consumes `REPLNET_COND_WAIT` through

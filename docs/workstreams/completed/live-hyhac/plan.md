@@ -35,7 +35,7 @@ until the suite passes.
 - `crates/hyperdex-admin-protocol/**`
 - `crates/hyperdex-client-protocol/**`
 - `crates/server/**`
-- `/home/friel/c/aaronfriel/hyhac/scripts/**` only when launcher or harness
+- `hyhac/scripts/**` only when launcher or harness
   wiring must point at `hyperdex-rs`
 
 ## Dependencies / Blockers

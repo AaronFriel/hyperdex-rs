@@ -155,7 +155,7 @@
   - `Cargo.toml`
   - `crates/server/Cargo.toml`
   - `crates/server/tests/**`
-  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+  - `hyhac/scripts/**` only if a tiny focused helper
     is strictly necessary for the shorter repro
 - Validator:
   - fastest useful check: focused repro target for the first `ClientGarbage`
@@ -207,7 +207,7 @@
   - `Cargo.toml`
   - `crates/server/Cargo.toml`
   - `crates/server/tests/**`
-  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+  - `hyhac/scripts/**` only if a tiny focused helper
     is strictly necessary
 - Validator:
   - fastest useful check: focused large-object repro with added capture or
@@ -259,7 +259,7 @@
   - `Cargo.toml`
   - `crates/server/Cargo.toml`
   - `crates/server/tests/**`
-  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+  - `hyhac/scripts/**` only if a tiny focused helper
     is strictly necessary
 - Validator:
   - fastest useful check: `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
@@ -309,7 +309,7 @@
   - `Cargo.toml`
   - `crates/server/Cargo.toml`
   - `crates/server/tests/**`
-  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+  - `hyhac/scripts/**` only if a tiny focused helper
     is strictly necessary
 - Validator:
   - fastest useful check: `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_hits_clientgarbage_fast -- --nocapture`
@@ -369,7 +369,7 @@
   - `Cargo.toml`
   - `crates/server/Cargo.toml`
   - `crates/server/tests/**`
-  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+  - `hyhac/scripts/**` only if a tiny focused helper
     is strictly necessary
 - Validator:
   - fastest useful check:
@@ -427,7 +427,7 @@
   - `Cargo.toml`
   - `crates/server/Cargo.toml`
   - `crates/server/tests/**`
-  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+  - `hyhac/scripts/**` only if a tiny focused helper
     is strictly necessary for the repro
 - Validator:
   - fastest useful check:
@@ -479,7 +479,7 @@
   - `Cargo.toml`
   - `crates/server/Cargo.toml`
   - `crates/server/tests/**`
-  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+  - `hyhac/scripts/**` only if a tiny focused helper
     is strictly necessary for the repro
 - Validator:
   - fastest useful check:
@@ -533,7 +533,7 @@
   - `Cargo.toml`
   - `crates/server/Cargo.toml`
   - `crates/server/tests/**`
-  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+  - `hyhac/scripts/**` only if a tiny focused helper
     is strictly necessary for the repro
 - Validator:
   - fastest useful check:

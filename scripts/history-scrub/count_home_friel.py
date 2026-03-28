@@ -48,7 +48,7 @@ def classify(path: str, line: str) -> str:
         return "external_local"
     if any(prefix in line for prefix in NEUTRAL_LOCAL_PREFIXES):
         return "repo_local"
-    if "/home/friel" in line:
+    if TARGET in line:
         return "external_local"
     return "repo_local"
 

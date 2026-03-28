@@ -9,10 +9,21 @@ HOME_PREFIX = "/" + "home" + "/" + "friel"
 TARGET = HOME_PREFIX
 REPO_PREFIX = f"{HOME_PREFIX}/c/aaronfriel/hyperdex-rs/"
 REPO_ROOT = REPO_PREFIX[:-1]
-REPLACEMENTS = {
-    f"{HOME_PREFIX}/.codex/skills/autoplan/references/PLANS.md": "the installed `autoplan` skill fallback rules",
-    f"{HOME_PREFIX}/.codex/skills/autoplan/references/AUTOPLANS.md": "the installed `autoplan` skill fallback rules",
-}
+REPLACEMENTS = (
+    (f"{HOME_PREFIX}/c/aaronfriel/HyperDex", "HyperDex"),
+    (f"{HOME_PREFIX}/HyperDex", "HyperDex"),
+    (f"{HOME_PREFIX}/c/aaronfriel/hyhac", "hyhac"),
+    (f"{HOME_PREFIX}/c/aaronfriel/busybee-", "busybee-"),
+    (f"{HOME_PREFIX}/c/aaronfriel/busybee", "busybee"),
+    (
+        f"{HOME_PREFIX}/.codex/skills/autoplan/references/PLANS.md",
+        "the installed `autoplan` skill fallback rules",
+    ),
+    (
+        f"{HOME_PREFIX}/.codex/skills/autoplan/references/AUTOPLANS.md",
+        "the installed `autoplan` skill fallback rules",
+    ),
+)
 EXCLUDED_PREFIXES = ("docs/research/",)
 
 
@@ -24,7 +35,7 @@ def tracked_files() -> list[Path]:
 def scrub_text(path_str: str, text: str) -> str:
     text = text.replace(REPO_PREFIX, "")
     text = text.replace(REPO_ROOT, "this repository")
-    for old, new in REPLACEMENTS.items():
+    for old, new in REPLACEMENTS:
         text = text.replace(old, new)
     if path_str.startswith("scripts/history-scrub/"):
         text = text.replace(f'"{TARGET}"', '"/" + "home" + "/" + "friel"')

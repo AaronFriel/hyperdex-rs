@@ -65,7 +65,7 @@ Deterministic
 ## Mutable Surface
 
 - `**`
-- `/home/friel/c/aaronfriel/hyhac/scripts/**` only when launcher or harness
+- `hyhac/scripts/**` only when launcher or harness
   wiring must point at `hyperdex-rs`
 - Active worktrees listed in the `Workstream Board`
 - Watchdog check-ins for this effort must send an explicit parent-thread

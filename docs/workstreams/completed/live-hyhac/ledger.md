@@ -18,7 +18,7 @@
   - `cargo build -p server --bin server`
   - start `target/debug/server coordinator --data=/tmp/hyperdex-rs-live/coordinator --listen=127.0.0.1 --listen-port=1982`
   - start `target/debug/server daemon --node-id=1 --threads=1 --data=/tmp/hyperdex-rs-live/daemon1 --listen=127.0.0.1 --listen-port=2012 --control-port=3012 --coordinator=127.0.0.1 --coordinator-port=1982 --transport=grpc`
-  - `HYPERDEX_ROOT=/home/friel/c/aaronfriel/HyperDex HYPERDEX_COORD_HOST=127.0.0.1 HYPERDEX_COORD_PORT=1982 /home/friel/c/aaronfriel/hyhac/scripts/cabal.sh test -f tests test:tests --test-show-details=direct --test-option=--plain --test-option=--test-seed=1`
+  - `HYPERDEX_ROOT=HyperDex HYPERDEX_COORD_HOST=127.0.0.1 HYPERDEX_COORD_PORT=1982 hyhac/scripts/cabal.sh test -f tests test:tests --test-show-details=direct --test-option=--plain --test-option=--test-seed=1`
 - Expected artifacts:
   - observed first failing operation from a real `hyhac` run
   - captured admin or client error surface
@@ -65,8 +65,8 @@
 - Validator:
   - `cargo test -p server coordinator_control_service_ -- --nocapture`
   - `cargo test --workspace`
-  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
-  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
 - Expected artifacts:
   - live legacy admin endpoint that no longer times out on `add_space`
   - live legacy admin endpoint that no longer times out on `wait_until_stable`
@@ -105,7 +105,7 @@
 - Mutable surface:
   - none; read-only evidence gathering only
 - Validator:
-  - verified findings tied to concrete source paths in `/home/friel/c/aaronfriel/HyperDex`
+  - verified findings tied to concrete source paths in `HyperDex`
   - enough protocol detail to define the next bounded implementation surface
 - Expected artifacts:
   - verified transport and completion facts for the original admin client path
@@ -117,7 +117,7 @@
 - Kind: `outcome`
 - End commit: `cd0d58c`
 - Artifact location:
-  - original HyperDex admin/client sources under `/home/friel/c/aaronfriel/HyperDex`
+  - original HyperDex admin/client sources under `HyperDex`
 - Evidence summary:
   - `space_add` is issued through `replicant_client_call(..., "hyperdex", "space_add", packed_space, ...)`
   - `wait_until_stable` is issued through `replicant_client_cond_wait(..., "hyperdex", "stable", m_config.version(), ...)`
@@ -151,8 +151,8 @@
 - Validator:
   - `cargo test -p server coordinator_control_service_ -- --nocapture`
   - `cargo test --workspace`
-  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
-  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
 - Expected artifacts:
   - live legacy admin endpoint that no longer times out on `add_space`
   - live legacy admin endpoint that no longer times out on `wait_until_stable`
@@ -201,8 +201,8 @@
 - Kind: `outcome`
 - End commit: `85cf798`
 - Artifact location:
-  - original BusyBee and Replicant sources under `/home/friel/HyperDex`
-  - original HyperDex admin sources under `/home/friel/c/aaronfriel/HyperDex`
+  - original BusyBee and Replicant sources under `HyperDex`
+  - original HyperDex admin sources under `HyperDex`
 - Evidence summary:
   - BusyBee framing uses a 4-byte big-endian size header, with an extended-size
     path for large frames
@@ -279,8 +279,8 @@
 - Validator:
   - `cargo test -p server coordinator_control_service_ -- --nocapture`
   - `cargo test --workspace`
-  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
-  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
 - Expected artifacts:
   - legacy admin endpoint no longer timing out
   - one bounded commit ready for reconciliation
@@ -495,8 +495,8 @@
 - Validator:
   - `cargo test -p server`
   - `cargo test --workspace`
-  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
-  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
 - Expected artifacts:
   - coordinator-side legacy admin listener
   - session state with request-id allocation and pending completions
@@ -541,8 +541,8 @@
 - Validator:
   - `cargo test -p server`
   - `cargo test --workspace`
-  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
-  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
 - Expected artifacts:
   - coordinator-side legacy admin listener
   - session state with request-id allocation and pending completions
@@ -591,8 +591,8 @@
 - Validator:
   - `cargo test -p server`
   - `cargo test --workspace`
-  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
-  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
 - Expected artifacts:
   - coordinator-side legacy admin listener
   - session state with request-id allocation and pending completions
@@ -645,8 +645,8 @@
 - Validator:
   - `cargo test -p server`
   - `cargo test --workspace`
-  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
-  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=/home/friel/c/aaronfriel/HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} /home/friel/c/aaronfriel/HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'printf \"%s\\n\" \"space profiles key username attributes string first, int profile_views tolerate 0 failures\" | LD_LIBRARY_PATH=HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} HyperDex/hyperdex-add-space -h 127.0.0.1 -p 1982'`
+  - `timeout 5s bash -lc 'LD_LIBRARY_PATH=HyperDex/.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} HyperDex/hyperdex-wait-until-stable -h 127.0.0.1 -p 1982'`
 - Expected artifacts:
   - separate coordinator-side BusyBee/Replicant admin listener
   - per-connection session state with nonce allocation and pending completions
@@ -791,8 +791,8 @@
   - the decoder-side blocker remained the missing packed `space_add` decoder
   - the service-core side remained blocked on consuming decoded `Space`
   - root then pinned down the exact binary format from:
-    - `/home/friel/c/aaronfriel/HyperDex/common/hyperspace.cc`
-    - `/home/friel/c/aaronfriel/HyperDex/admin/admin.cc`
+    - `HyperDex/common/hyperspace.cc`
+    - `HyperDex/admin/admin.cc`
 - Conclusion: the split was still right, but the workers lacked the exact
   source-file targets for the original binary format.
 - Disposition: `retry`
@@ -1249,15 +1249,15 @@
 - End commit: `afcfcd8`
 - Artifact location:
   - `/tmp/hyh-029.WZxvnF/admin-proxy.log`
-  - `/home/friel/HyperDex/Replicant/client/client.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/admin/admin.cc`
+  - `HyperDex/Replicant/client/client.cc`
+  - `HyperDex/admin/admin.cc`
 - Evidence summary:
   - the captured 88-byte Rust reply decodes as a BusyBee-framed
     `REPLNET_CLIENT_RESPONSE` with a success status and 64-byte data payload
-  - `/home/friel/HyperDex/Replicant/client/client.cc` expects the first
+  - `HyperDex/Replicant/client/client.cc` expects the first
     successful reply on this path to be `REPLNET_BOOTSTRAP`, not a client
     response
-  - `/home/friel/c/aaronfriel/HyperDex/admin/admin.cc` only issues
+  - `HyperDex/admin/admin.cc` only issues
     `replicant_client_cond_follow(..., "hyperdex", "config", ...)` after that
     Replicant bootstrap state exists
   - the admin client therefore never advances to a second request, so the
@@ -1461,7 +1461,7 @@
   - `crates/hyperdex-admin-protocol/**`
   - `crates/hyperdex-client-protocol/**`
   - `crates/server/**`
-  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if launcher wiring is
+  - `hyhac/scripts/**` only if launcher wiring is
     strictly necessary for the focused probe
 - Validator:
   - fastest useful check:
@@ -1535,7 +1535,7 @@
   - `crates/hyperdex-admin-protocol/**`
   - `crates/hyperdex-client-protocol/**`
   - `crates/server/**`
-  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if launcher wiring is
+  - `hyhac/scripts/**` only if launcher wiring is
     strictly necessary for the focused probe
 - Validator:
   - fastest useful check:
@@ -1598,7 +1598,7 @@
   - `crates/hyperdex-admin-protocol/**`
   - `crates/hyperdex-client-protocol/**`
   - `crates/server/**`
-  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if launcher wiring is
+  - `hyhac/scripts/**` only if launcher wiring is
     strictly necessary for the focused probe
 - Validator:
   - fastest useful check:
@@ -1794,7 +1794,7 @@
   - `crates/server/**`
   - `crates/hyperdex-admin-protocol/**`
   - `crates/server/tests/**`
-  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+  - `hyhac/scripts/**` only if a tiny focused helper
     is strictly necessary
 - Validator:
   - fastest useful check:
@@ -1961,7 +1961,7 @@
 - Mutable surface:
   - `crates/server/**`
   - `crates/server/tests/**`
-  - `/home/friel/c/aaronfriel/hyhac/**` only if a tiny focused probe helper is
+  - `hyhac/**` only if a tiny focused probe helper is
     strictly necessary and does not change Hyhac semantics
 - Validator:
   - fastest useful checks:
@@ -2028,11 +2028,11 @@
 - Kind: `outcome`
 - End commit: `eb6d093`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/HyperDex/client/c.cc`
-  - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
-  - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Ffi/Client.chs`
-  - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Core.hs`
-  - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Handle.hs`
+  - `HyperDex/client/c.cc`
+  - `HyperDex/client/client.cc`
+  - `hyhac/src/Database/HyperDex/Internal/Ffi/Client.chs`
+  - `hyhac/src/Database/HyperDex/Internal/Core.hs`
+  - `hyhac/src/Database/HyperDex/Internal/Handle.hs`
 - Evidence summary:
   - the original HyperDex client returns a negative immediate handle when
     `hyperdex_client_put` fails before queueing any request
@@ -2063,7 +2063,7 @@
 - Mutable surface:
   - `crates/server/**`
   - `crates/server/tests/**`
-  - `/home/friel/c/aaronfriel/hyhac/**` only if a tiny focused probe helper is
+  - `hyhac/**` only if a tiny focused probe helper is
     strictly necessary and does not change Hyhac semantics
 - Validator:
   - current flaw proof:
@@ -2104,9 +2104,9 @@
 - Kind: `outcome`
 - End commit: `589ce4f`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyhac/test/Test/HyperDex/Space.hs`
-  - `/home/friel/c/aaronfriel/hyhac/test/Test/HyperDex/Shared.hs`
-  - `/home/friel/c/aaronfriel/hyhac/test/Test/HyperDex/Pool.hs`
+  - `hyhac/test/Test/HyperDex/Space.hs`
+  - `hyhac/test/Test/HyperDex/Shared.hs`
+  - `hyhac/test/Test/HyperDex/Pool.hs`
 - Evidence summary:
   - `defaultSpaceDesc` and `makeSpaceDesc` define the full 19-attribute
     `profiles` schema rather than the old two-column shortcut
@@ -2297,7 +2297,7 @@
   - `crates/hyperdex-client-protocol/**`
   - `crates/server/**`
   - `crates/server/tests/**`
-  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if launcher wiring must
+  - `hyhac/scripts/**` only if launcher wiring must
     point at `hyperdex-rs`
 - Validator:
   - fastest useful check:
@@ -2359,7 +2359,7 @@
   - `crates/server/**`
   - `crates/server/tests/**` only when a focused validator is needed for this
     exact failure
-  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if launcher wiring must
+  - `hyhac/scripts/**` only if launcher wiring must
     point at `hyperdex-rs`
 - Validator:
   - fastest useful check:
@@ -2428,7 +2428,7 @@
   - `crates/server/**`
   - `crates/server/tests/**` only when a focused validator is needed for this
     exact failure
-  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if launcher wiring must
+  - `hyhac/scripts/**` only if launcher wiring must
     point at `hyperdex-rs`
 - Validator:
   - fastest useful check:
