@@ -27,6 +27,19 @@ fn decode_handler_nonce(body: &[u8]) -> (u64, &[u8]) {
     (nonce, &body[8..])
 }
 
+#[test]
+fn decode_identify_remote_server_id_returns_none_for_short_frames() {
+    assert_eq!(decode_identify_remote_server_id(&[]), None);
+    assert_eq!(decode_identify_remote_server_id(&[0_u8; 19]), None);
+}
+
+#[test]
+fn decode_identify_remote_server_id_reads_wire_value() {
+    let mut frame = vec![0_u8; 20];
+    frame[12..20].copy_from_slice(&29_u64.to_be_bytes());
+    assert_eq!(decode_identify_remote_server_id(&frame), Some(29));
+}
+
 #[tokio::test]
 async fn serve_once_returns_config_mismatch() {
     let frontend = LegacyFrontend::bind("127.0.0.1:0".parse().unwrap())
