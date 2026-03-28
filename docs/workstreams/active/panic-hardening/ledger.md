@@ -7,10 +7,11 @@
 - Hypothesis: one bounded pass over startup or public-runtime entry points can
   remove meaningful panic sites, introduce the first practical `#[no_panic]`
   contracts, and set the next lint ratchet without broad repository churn.
-- Owner: next forked worker
-- Start commit: `HEAD`
+- Owner: forked worker on `panic-hardening`
+- Start commit: `9104047`
 - Worktree / branch:
-  - worktree to be created from current `main`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/panic-hardening`
+  - `panic-hardening`
 - Mutable surface:
   - `crates/server/**`
   - `crates/legacy-frontend/**`

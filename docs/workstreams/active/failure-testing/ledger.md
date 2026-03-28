@@ -7,10 +7,11 @@
 - Hypothesis: the current deterministic proof surface can support a more
   adversarial distributed failure test without a large harness rewrite, and
   that test will either harden the runtime or expose the next concrete bug.
-- Owner: next forked worker
-- Start commit: `HEAD`
+- Owner: forked worker on `failure-testing`
+- Start commit: `9104047`
 - Worktree / branch:
-  - worktree to be created from current `main`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/failure-testing`
+  - `failure-testing`
 - Mutable surface:
   - `crates/simulation-harness/**`
   - `crates/server/**` only if the proof finds a runtime bug

@@ -24,6 +24,7 @@ tests, and the reusable live acceptance verifier shape.
 
 - `.github/workflows/**` exists on `main`.
 - Workflow files pass `actionlint`.
+- Workflow files pass local `act` runs for the implemented jobs.
 - The workflow set covers at least formatting, clippy, and workspace tests.
 - The workflow design includes a bounded way to run the reusable live
   acceptance verifier or an equivalent non-interactive acceptance command.
@@ -50,8 +51,11 @@ the live acceptance path still needs a practical compromise.
 
 - [x] (2026-03-28 10:00Z) Created the workstream and made it an active root
   priority for the post-compatibility phase.
+- [x] (2026-03-28 18:15Z) Bound this workstream to the dedicated
+  `worktrees/validation-ci` checkout and made local `act` execution part of
+  the validator.
 - [ ] Land the first workflow set and verify it locally with `actionlint` plus
-  the equivalent cargo commands.
+  local `act` plus the equivalent cargo commands.
 
 ## Current Hypothesis
 
@@ -61,8 +65,10 @@ merge discipline.
 
 ## Next Bounded Step
 
-Create `.github/workflows` with formatting, clippy, workspace tests, and a
-bounded acceptance path derived from `scripts/verify-live-acceptance.sh`.
+Install or bootstrap `act` if needed, create `.github/workflows` with
+formatting, clippy, workspace tests, and a bounded acceptance path derived
+from `scripts/verify-live-acceptance.sh`, then prove the implemented jobs
+locally with `act`.
 
 ## Surprises & Discoveries
 

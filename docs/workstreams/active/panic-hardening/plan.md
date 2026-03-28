@@ -53,6 +53,8 @@ panic behavior to explicit contracts and then set the next ratchet.
 
 - [x] (2026-03-28 10:40Z) Created the workstream and promoted it into the
   active root priority set.
+- [x] (2026-03-28 18:15Z) Bound this workstream to the dedicated
+  `worktrees/panic-hardening` checkout for one owned fork.
 - [ ] Land the first bounded no-panic and unwrap-reduction pass.
 
 ## Current Hypothesis

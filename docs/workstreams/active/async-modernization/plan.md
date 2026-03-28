@@ -49,6 +49,8 @@ edits.
 
 - [x] (2026-03-28 10:00Z) Created the workstream and made it an active root
   priority for the next phase.
+- [x] (2026-03-28 18:15Z) Bound this workstream to the dedicated
+  `worktrees/async-modernization` checkout for one owned fork.
 - [ ] Remove `async_trait` from the first meaningful cross-crate surface and
   validate the result.
 
@@ -61,7 +63,8 @@ land cleanly.
 ## Next Bounded Step
 
 Pick one cross-crate async trait surface, convert it to native Rust async
-traits, and validate the result without broad unrelated refactoring.
+traits, remove `async_trait` from that surface end to end, and validate the
+result without broad unrelated refactoring.
 
 ## Surprises & Discoveries
 

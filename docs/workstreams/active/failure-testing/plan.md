@@ -48,6 +48,8 @@ design.
 
 - [x] (2026-03-28 10:00Z) Created the workstream and promoted it to an active
   root priority for the next phase.
+- [x] (2026-03-28 18:15Z) Bound this workstream to the dedicated
+  `worktrees/failure-testing` checkout for one owned fork.
 - [ ] Land the first new failure-oriented deterministic proof and keep the
   workspace green.
 
@@ -59,8 +61,9 @@ propagation, stale config visibility, or degraded write/read ordering.
 
 ## Next Bounded Step
 
-Choose one runtime assumption to break, add the deterministic proof, and only
-touch server runtime code if the proof exposes a real bug.
+Choose one concrete distributed assumption to break, add the deterministic
+proof in the simulation harness, and only touch runtime code if the proof
+exposes a real bug.
 
 ## Surprises & Discoveries
 

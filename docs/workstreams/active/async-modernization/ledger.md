@@ -7,10 +7,11 @@
 - Hypothesis: at least one important async service boundary can be converted
   from `async_trait` to native Rust async traits in one bounded pass without
   destabilizing the repository.
-- Owner: next forked worker
-- Start commit: `HEAD`
+- Owner: forked worker on `async-modernization`
+- Start commit: `9104047`
 - Worktree / branch:
-  - worktree to be created from current `main`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/async-modernization`
+  - `async-modernization`
 - Mutable surface:
   - `crates/transport-core/**`
   - `crates/consensus-core/**`

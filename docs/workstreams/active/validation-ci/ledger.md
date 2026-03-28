@@ -8,17 +8,21 @@
   repositories can land quickly and raise the validation floor without needing
   a large supporting framework first.
 - Owner: next forked worker
-- Start commit: `HEAD`
+- Owner: forked worker on `validation-ci`
+- Start commit: `9104047`
 - Worktree / branch:
-  - worktree to be created from current `main`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/validation-ci`
+  - `validation-ci`
 - Mutable surface:
   - `.github/workflows/**`
   - `scripts/verify-live-acceptance.sh`
+  - repository-local CI helper files if needed
 - Validator:
   - fastest useful check:
-    `find .github/workflows -maxdepth 1 -type f | sort`
+    `act --list`
   - strong checks:
     - `actionlint`
+    - local `act` execution for the implemented jobs
     - `cargo fmt --all -- --check`
     - `cargo clippy --workspace --all-targets -- -D warnings`
     - `cargo test --workspace`
