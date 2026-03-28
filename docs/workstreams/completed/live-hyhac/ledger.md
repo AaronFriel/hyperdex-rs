@@ -2655,7 +2655,7 @@
   into a reusable repository-local verifier so the acceptance path is runnable
   without remembering cargo-test filters or ad hoc shell commands.
 - Owner: delegated worker on
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-acceptance-script`
+  `worktrees/live-acceptance-script`
 - Start commit: `8db4d81`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-acceptance-script` on
