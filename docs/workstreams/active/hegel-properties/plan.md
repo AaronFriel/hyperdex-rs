@@ -58,6 +58,9 @@ operation-sequence behavior that would be tedious to cover by hand.
 - [x] (2026-03-29 20:55Z) Landed
   `hegel_placement_strategies_preserve_replica_invariants_and_input_order_independence`
   in `placement-core`.
+- [x] (2026-03-28 19:28Z) Landed
+  `hegel_memory_engine_preserves_conditional_and_delete_matching_model`
+  in `engine-memory`.
 - [ ] Add the next Hegel property in another high-value correctness boundary.
 
 ## Current Hypothesis
@@ -70,7 +73,8 @@ crate-local invariant is more natural than a full runtime simulation.
 ## Next Bounded Step
 
 Add the next Hegel property in a different correctness boundary from the
-already-landed runtime and placement properties, ideally protocol or storage.
+already-landed runtime, placement, and `engine-memory` properties, ideally
+protocol or another storage/query boundary.
 
 ## Surprises & Discoveries
 
@@ -80,6 +84,8 @@ already-landed runtime and placement properties, ideally protocol or storage.
   runtime.
 - Hegel is no longer isolated to `simulation-harness`; `placement-core` now has
   a generated invariant check for both placement strategies.
+- `engine-memory` now also has a generated storage-state model, so Hegel is
+  spread across runtime, placement, and storage layers.
 
 ## Decision Log
 
@@ -97,3 +103,5 @@ already-landed runtime and placement properties, ideally protocol or storage.
   runtime-level mixed-operation coverage.
 - `hegel_placement_strategies_preserve_replica_invariants_and_input_order_independence`
   pushed Hegel into `placement-core`.
+- `hegel_memory_engine_preserves_conditional_and_delete_matching_model`
+  pushed Hegel into `engine-memory` with a crate-local storage-state model.

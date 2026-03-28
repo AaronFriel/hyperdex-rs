@@ -153,3 +153,36 @@
   - one new Hegel-backed storage-state property
   - a green targeted validator
   - one bounded commit ready for reconciliation
+
+### Entry `hgl-004` - Outcome
+
+- Timestamp: `2026-03-28 19:28Z`
+- Kind: `outcome`
+- End commit: `9ebcf1c`
+- Artifact location:
+  - `crates/engine-memory/Cargo.toml`
+  - `crates/engine-memory/src/tests/mod.rs`
+  - `crates/engine-memory/src/tests/hegel.rs`
+- Evidence summary:
+  - Added
+    `hegel_memory_engine_preserves_conditional_and_delete_matching_model`.
+  - The property exercises generated storage operations directly against
+    `MemoryEngine`:
+    - `Put`
+    - `ConditionalPut`
+    - `Delete`
+    - `DeleteMatching`
+    - `Get`
+    - threshold `Search`
+    - threshold `Count`
+  - After every step, it checks `MemoryEngine` against one explicit logical
+    state model, including scalar numeric state, map-numeric state, and
+    logical search/count behavior.
+  - Root validation passed with:
+    - `cargo test -p engine-memory hegel_memory_engine_preserves_conditional_and_delete_matching_model -- --nocapture`
+    - `cargo test -p engine-memory`
+- Conclusion: Hegel now covers a real crate-local storage-state invariant in
+  `engine-memory`, not only runtime and placement behavior.
+- Disposition: `advance`
+- Next move: choose the next Hegel target in another protocol, query, or
+  storage boundary.
