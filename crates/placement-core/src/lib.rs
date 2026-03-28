@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::result::Result as StdResult;
 
@@ -165,21 +164,11 @@ fn build_hyperspace_ring(nodes: &[NodeId], tokens_per_node: usize) -> Vec<HyperT
 }
 
 fn hyperspace_ring_start(ring: &[HyperToken], key_pos: u64) -> usize {
-    match ring.binary_search_by(|t| {
-        if t.pos < key_pos {
-            Ordering::Less
-        } else {
-            Ordering::Greater
-        }
-    }) {
-        Ok(_) => unreachable!("binary_search_by never returns Ok for this comparator"),
-        Err(idx) => {
-            if idx == ring.len() {
-                0
-            } else {
-                idx
-            }
-        }
+    let idx = ring.partition_point(|token| token.pos < key_pos);
+    if idx == ring.len() {
+        0
+    } else {
+        idx
     }
 }
 
