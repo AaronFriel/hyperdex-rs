@@ -29,7 +29,7 @@
 - Kind: `outcome`
 - End commit: `d8ac0ad`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md`
+  - `docs/workstreams/coordinator-config-evidence/plan.md`
 - Evidence summary:
   - The captured client-side `trailing_bytes=45` stream matches a BusyBee
     `IDENTIFY` frame (`0x80000014`, 20 bytes) plus a Replicant bootstrap
