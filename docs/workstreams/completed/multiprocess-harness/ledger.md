@@ -96,7 +96,7 @@
   `worktrees/admin-probe-harness`
 - Start commit: `4ccf113`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-probe-harness` on
+  - `worktrees/admin-probe-harness` on
     `admin-probe-harness`
 - Mutable surface:
   - `Cargo.toml`
