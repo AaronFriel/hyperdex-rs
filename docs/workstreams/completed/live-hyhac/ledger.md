@@ -1926,7 +1926,7 @@
 - Kind: `outcome`
 - End commit: `5e2224a`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - `5e2224a` adds a focused daemon-capture harness for the failing large-object
     Hyhac subset and clears startup readiness probe noise before asserting on
