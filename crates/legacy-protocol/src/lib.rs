@@ -561,8 +561,8 @@ impl SearchItemResponse {
         }
 
         let search_id = u64::from_be_bytes(bytes[..8].try_into().expect("fixed-width slice"));
-        let key_len = u16::from_be_bytes(bytes[8..10].try_into().expect("fixed-width slice"))
-            as usize;
+        let key_len =
+            u16::from_be_bytes(bytes[8..10].try_into().expect("fixed-width slice")) as usize;
         if bytes.len() < 10 + key_len + 2 {
             return Err(LegacyProtocolError::ShortBuffer);
         }
@@ -616,7 +616,8 @@ impl AtomicRequest {
             return Err(LegacyProtocolError::ShortBuffer);
         }
 
-        let key_len = u16::from_be_bytes(bytes[..2].try_into().expect("fixed-width slice")) as usize;
+        let key_len =
+            u16::from_be_bytes(bytes[..2].try_into().expect("fixed-width slice")) as usize;
         if bytes.len() < 2 + key_len + 5 {
             return Err(LegacyProtocolError::ShortBuffer);
         }
@@ -1030,7 +1031,9 @@ pub fn decode_protocol_search_continue(bytes: &[u8]) -> Result<u64, LegacyProtoc
     if bytes.len() != 8 {
         return Err(LegacyProtocolError::ShortBuffer);
     }
-    Ok(u64::from_be_bytes(bytes.try_into().expect("fixed-width slice")))
+    Ok(u64::from_be_bytes(
+        bytes.try_into().expect("fixed-width slice"),
+    ))
 }
 
 pub fn encode_protocol_atomic_response(status: u16) -> [u8; 2] {
@@ -1041,7 +1044,9 @@ pub fn decode_protocol_atomic_response(bytes: &[u8]) -> Result<u16, LegacyProtoc
     if bytes.len() != 2 {
         return Err(LegacyProtocolError::ShortBuffer);
     }
-    Ok(u16::from_be_bytes(bytes.try_into().expect("fixed-width slice")))
+    Ok(u16::from_be_bytes(
+        bytes.try_into().expect("fixed-width slice"),
+    ))
 }
 
 pub fn encode_protocol_count_response(count: u64) -> [u8; 8] {
@@ -1052,7 +1057,9 @@ pub fn decode_protocol_count_response(bytes: &[u8]) -> Result<u64, LegacyProtoco
     if bytes.len() != 8 {
         return Err(LegacyProtocolError::ShortBuffer);
     }
-    Ok(u64::from_be_bytes(bytes.try_into().expect("fixed-width slice")))
+    Ok(u64::from_be_bytes(
+        bytes.try_into().expect("fixed-width slice"),
+    ))
 }
 
 pub fn encode_protocol_get_response(response: &ProtocolGetResponse) -> Vec<u8> {
@@ -1438,14 +1445,20 @@ mod tests {
             space: "profiles".to_owned(),
         };
 
-        assert_eq!(CountRequest::decode_body(&request.encode_body()).unwrap(), request);
+        assert_eq!(
+            CountRequest::decode_body(&request.encode_body()).unwrap(),
+            request
+        );
     }
 
     #[test]
     fn count_response_round_trips() {
         let response = CountResponse { count: 42 };
 
-        assert_eq!(CountResponse::decode_body(&response.encode_body()).unwrap(), response);
+        assert_eq!(
+            CountResponse::decode_body(&response.encode_body()).unwrap(),
+            response
+        );
     }
 
     #[test]
@@ -1454,7 +1467,10 @@ mod tests {
             key: b"ada".to_vec(),
         };
 
-        assert_eq!(GetRequest::decode_body(&request.encode_body()).unwrap(), request);
+        assert_eq!(
+            GetRequest::decode_body(&request.encode_body()).unwrap(),
+            request
+        );
     }
 
     #[test]
@@ -1473,7 +1489,10 @@ mod tests {
             ],
         };
 
-        assert_eq!(GetResponse::decode_body(&response.encode_body()).unwrap(), response);
+        assert_eq!(
+            GetResponse::decode_body(&response.encode_body()).unwrap(),
+            response
+        );
     }
 
     #[test]
@@ -1569,7 +1588,10 @@ mod tests {
             ],
         };
 
-        assert_eq!(AtomicRequest::decode_body(&request.encode_body()).unwrap(), request);
+        assert_eq!(
+            AtomicRequest::decode_body(&request.encode_body()).unwrap(),
+            request
+        );
     }
 
     #[test]
@@ -1578,7 +1600,10 @@ mod tests {
             status: LegacyReturnCode::Success,
         };
 
-        assert_eq!(AtomicResponse::decode_body(&response.encode_body()).unwrap(), response);
+        assert_eq!(
+            AtomicResponse::decode_body(&response.encode_body()).unwrap(),
+            response
+        );
     }
 
     #[test]

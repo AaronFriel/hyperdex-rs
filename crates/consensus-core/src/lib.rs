@@ -155,10 +155,7 @@ mod omnipaxos_backend {
                 };
                 let storage = MemoryStorage::default();
                 let paxos = config.build(storage).map_err(|e| anyhow!("{e}"))?;
-                nodes.insert(
-                    *pid,
-                    Node { paxos },
-                );
+                nodes.insert(*pid, Node { paxos });
             }
 
             let mut cluster = Self { nodes, leader_pid };

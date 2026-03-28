@@ -256,7 +256,8 @@ pub fn parse_hyperdex_space(input: &str) -> Result<Space, DataModelError> {
         }
     }
 
-    let name = name.ok_or_else(|| DataModelError::InvalidSchema("missing space name".to_owned()))?;
+    let name =
+        name.ok_or_else(|| DataModelError::InvalidSchema("missing space name".to_owned()))?;
     let key_attribute = key_attribute
         .ok_or_else(|| DataModelError::InvalidSchema("missing key attribute".to_owned()))?;
 
@@ -314,15 +315,24 @@ fn parse_value_kind(input: &str) -> Result<ValueKind, DataModelError> {
         _ => {}
     }
 
-    if let Some(inner) = input.strip_prefix("list(").and_then(|rest| rest.strip_suffix(')')) {
+    if let Some(inner) = input
+        .strip_prefix("list(")
+        .and_then(|rest| rest.strip_suffix(')'))
+    {
         return Ok(ValueKind::List(Box::new(parse_value_kind(inner.trim())?)));
     }
 
-    if let Some(inner) = input.strip_prefix("set(").and_then(|rest| rest.strip_suffix(')')) {
+    if let Some(inner) = input
+        .strip_prefix("set(")
+        .and_then(|rest| rest.strip_suffix(')'))
+    {
         return Ok(ValueKind::Set(Box::new(parse_value_kind(inner.trim())?)));
     }
 
-    if let Some(inner) = input.strip_prefix("map(").and_then(|rest| rest.strip_suffix(')')) {
+    if let Some(inner) = input
+        .strip_prefix("map(")
+        .and_then(|rest| rest.strip_suffix(')'))
+    {
         let mut parts = inner.splitn(2, ',');
         let key = parts
             .next()
@@ -381,7 +391,10 @@ mod tests {
             ],
         );
 
-        assert_eq!(record.attributes.get("name"), Some(&Value::String("ada".to_owned())));
+        assert_eq!(
+            record.attributes.get("name"),
+            Some(&Value::String("ada".to_owned()))
+        );
         assert_eq!(record.attributes.get("age"), Some(&Value::Int(37)));
     }
 

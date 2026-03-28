@@ -25,7 +25,8 @@ fn maybe_capture_legacy_frontend_event(event: &str) {
 }
 
 fn capture_hex_prefix(bytes: &[u8], width: usize) -> String {
-    bytes.iter()
+    bytes
+        .iter()
         .take(width)
         .map(|byte| format!("{byte:02x}"))
         .collect::<Vec<_>>()
@@ -106,12 +107,9 @@ impl LegacyFrontend {
             let handler = handler.clone();
             let local_server_id = self.local_server_id;
             tokio::spawn(async move {
-                if let Err(err) =
-                    serve_connection_with(&mut stream, local_server_id, handler).await
+                if let Err(err) = serve_connection_with(&mut stream, local_server_id, handler).await
                 {
-                    maybe_capture_legacy_frontend_event(&format!(
-                        "connection_error {err:#}"
-                    ));
+                    maybe_capture_legacy_frontend_event(&format!("connection_error {err:#}"));
                 }
             });
         }
@@ -166,7 +164,9 @@ async fn read_request_frame(
 
         let mut bytes = vec![0u8; total_len];
         bytes[..BUSYBEE_HEADER_SIZE].copy_from_slice(&prefix);
-        stream.read_exact(&mut bytes[BUSYBEE_HEADER_SIZE..total_len]).await?;
+        stream
+            .read_exact(&mut bytes[BUSYBEE_HEADER_SIZE..total_len])
+            .await?;
         maybe_capture_legacy_frontend_event(&format!(
             "frame flags=0x{raw_header:08x} len={} prefix={}",
             bytes.len(),
@@ -248,14 +248,13 @@ pub async fn request_once(
 mod tests {
     use super::*;
     use legacy_protocol::{
-        decode_protocol_atomic_request, decode_protocol_atomic_response, decode_protocol_count_request,
-        decode_protocol_count_response,
-        decode_protocol_search_item, decode_protocol_search_start,
-        encode_identify_frame, encode_protocol_atomic_request, encode_protocol_count_request,
-        encode_protocol_search_item, encode_protocol_search_start, ProtocolAttributeCheck,
-        ProtocolFuncall, ProtocolKeyChange, ProtocolSearchItem, ProtocolSearchStart,
-        LegacyMessageType, RequestHeader, ResponseHeader, FUNC_SET, HYPERDATATYPE_INT64,
-        HYPERDATATYPE_STRING, HYPERPREDICATE_GREATER_EQUAL,
+        decode_protocol_atomic_request, decode_protocol_atomic_response,
+        decode_protocol_count_request, decode_protocol_count_response, decode_protocol_search_item,
+        decode_protocol_search_start, encode_identify_frame, encode_protocol_atomic_request,
+        encode_protocol_count_request, encode_protocol_search_item, encode_protocol_search_start,
+        LegacyMessageType, ProtocolAttributeCheck, ProtocolFuncall, ProtocolKeyChange,
+        ProtocolSearchItem, ProtocolSearchStart, RequestHeader, ResponseHeader, FUNC_SET,
+        HYPERDATATYPE_INT64, HYPERDATATYPE_STRING, HYPERPREDICATE_GREATER_EQUAL,
     };
 
     async fn read_raw_frame(stream: &mut tokio::net::TcpStream) -> Vec<u8> {

@@ -595,16 +595,12 @@ impl ReplicantAdminRequestMessage {
                 "get_robust_params is transport machinery, not a coordinator admin request"
             )),
             Self::CondWait {
-                object,
-                condition,
-                ..
+                object, condition, ..
             } if object == REPLICANT_OBJECT_HYPERDEX && condition == REPLICANT_CONDITION_STABLE => {
                 Ok(CoordinatorAdminRequest::WaitUntilStable)
             }
             Self::CondWait {
-                object,
-                condition,
-                ..
+                object, condition, ..
             } if object == REPLICANT_OBJECT_HYPERDEX && condition == REPLICANT_CONDITION_CONFIG => {
                 Ok(CoordinatorAdminRequest::ConfigGet)
             }
@@ -619,10 +615,12 @@ impl ReplicantAdminRequestMessage {
                 function,
                 input,
                 ..
-            } if object == REPLICANT_OBJECT_HYPERDEX && function == REPLICANT_FUNCTION_SPACE_ADD => {
-                Ok(CoordinatorAdminRequest::SpaceAdd(decode_packed_hyperdex_space(
-                    &input,
-                )?))
+            } if object == REPLICANT_OBJECT_HYPERDEX
+                && function == REPLICANT_FUNCTION_SPACE_ADD =>
+            {
+                Ok(CoordinatorAdminRequest::SpaceAdd(
+                    decode_packed_hyperdex_space(&input)?,
+                ))
             }
             Self::Call {
                 object,
@@ -1123,9 +1121,9 @@ fn decode_packed_region(decoder: &mut PackedSpaceDecoder<'_>) -> Result<()> {
     let hashes_len = decoder.read_u16("region hash count")? as usize;
     let replicas_len = decoder.read_u8("region replica count")? as usize;
 
-    let coord_bytes = hashes_len
-        .checked_mul(16)
-        .ok_or_else(|| anyhow!("region coordinate byte count overflow in packed hyperdex::space"))?;
+    let coord_bytes = hashes_len.checked_mul(16).ok_or_else(|| {
+        anyhow!("region coordinate byte count overflow in packed hyperdex::space")
+    })?;
     decoder.read_exact(coord_bytes, "region coordinates")?;
 
     let replica_bytes = replicas_len
@@ -1164,15 +1162,21 @@ impl<'a> PackedSpaceDecoder<'a> {
     }
 
     fn read_u16(&mut self, label: &str) -> Result<u16> {
-        Ok(u16::from_be_bytes(self.read_exact(2, label)?.try_into().unwrap()))
+        Ok(u16::from_be_bytes(
+            self.read_exact(2, label)?.try_into().unwrap(),
+        ))
     }
 
     fn read_u32(&mut self, label: &str) -> Result<u32> {
-        Ok(u32::from_be_bytes(self.read_exact(4, label)?.try_into().unwrap()))
+        Ok(u32::from_be_bytes(
+            self.read_exact(4, label)?.try_into().unwrap(),
+        ))
     }
 
     fn read_u64(&mut self, label: &str) -> Result<u64> {
-        Ok(u64::from_be_bytes(self.read_exact(8, label)?.try_into().unwrap()))
+        Ok(u64::from_be_bytes(
+            self.read_exact(8, label)?.try_into().unwrap(),
+        ))
     }
 
     fn read_slice(&mut self, label: &str) -> Result<&'a [u8]> {
@@ -1188,9 +1192,11 @@ impl<'a> PackedSpaceDecoder<'a> {
     }
 
     fn read_varint(&mut self, label: &str) -> Result<usize> {
-        let len = decode_varint_u64_at(self.bytes, &mut self.cursor)
-            .map_err(|err| anyhow!("{label} length varint is invalid in packed hyperdex::space: {err}"))?;
-        usize::try_from(len).map_err(|_| anyhow!("{label} length does not fit usize in packed hyperdex::space"))
+        let len = decode_varint_u64_at(self.bytes, &mut self.cursor).map_err(|err| {
+            anyhow!("{label} length varint is invalid in packed hyperdex::space: {err}")
+        })?;
+        usize::try_from(len)
+            .map_err(|_| anyhow!("{label} length does not fit usize in packed hyperdex::space"))
     }
 
     fn read_exact(&mut self, len: usize, label: &str) -> Result<&'a [u8]> {
@@ -1323,7 +1329,9 @@ fn expect_consumed(bytes: &[u8], cursor: usize, context: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use data_model::{AttributeDefinition, SchemaFormat, SpaceOptions, Subspace, TimeUnit, ValueKind};
+    use data_model::{
+        AttributeDefinition, SchemaFormat, SpaceOptions, Subspace, TimeUnit, ValueKind,
+    };
 
     #[derive(Clone, Debug)]
     struct PackedAttribute<'a> {
@@ -1477,8 +1485,7 @@ mod tests {
 
     #[test]
     fn space_add_request_maps_through_packed_space_decoder() {
-        let request =
-            ReplicantAdminRequestMessage::space_add(41, encode_test_space_payload());
+        let request = ReplicantAdminRequestMessage::space_add(41, encode_test_space_payload());
 
         let mapped = request.into_coordinator_request().unwrap();
 
@@ -1540,7 +1547,9 @@ mod tests {
             indices: vec![],
         });
 
-        let err = decode_packed_hyperdex_space(&encoded_space).unwrap_err().to_string();
+        let err = decode_packed_hyperdex_space(&encoded_space)
+            .unwrap_err()
+            .to_string();
 
         assert!(err.contains("authorization attribute name `api_secret`, expected `__secret`"));
     }
@@ -1559,7 +1568,9 @@ mod tests {
             indices: vec![],
         });
 
-        let err = decode_packed_hyperdex_space(&encoded_space).unwrap_err().to_string();
+        let err = decode_packed_hyperdex_space(&encoded_space)
+            .unwrap_err()
+            .to_string();
 
         assert!(err.contains("key attribute cannot be the authorization secret"));
     }
@@ -1587,7 +1598,9 @@ mod tests {
             indices: vec![],
         });
 
-        let err = decode_packed_hyperdex_space(&encoded_space).unwrap_err().to_string();
+        let err = decode_packed_hyperdex_space(&encoded_space)
+            .unwrap_err()
+            .to_string();
 
         assert!(err.contains("subspaces disagree on partition count: 2 vs 3"));
     }
@@ -1613,7 +1626,9 @@ mod tests {
             .unwrap_err()
             .to_string();
 
-        assert!(err.contains("index references attribute index 99, but only 6 attributes were decoded"));
+        assert!(
+            err.contains("index references attribute index 99, but only 6 attributes were decoded")
+        );
     }
 
     #[test]
@@ -1707,7 +1722,10 @@ mod tests {
         };
         let encoded = response.encode();
 
-        assert_eq!(ReplicantBootstrapResponse::decode(&encoded).unwrap(), response);
+        assert_eq!(
+            ReplicantBootstrapResponse::decode(&encoded).unwrap(),
+            response
+        );
     }
 
     #[test]

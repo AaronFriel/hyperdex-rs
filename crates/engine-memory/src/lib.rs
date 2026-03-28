@@ -32,7 +32,9 @@ impl StorageEngine for MemoryEngine {
 
     fn get(&self, space: &str, key: &[u8]) -> Result<Option<Record>> {
         let guard = self.spaces.read();
-        Ok(guard.get(space).and_then(|records| records.get(key).cloned()))
+        Ok(guard
+            .get(space)
+            .and_then(|records| records.get(key).cloned()))
     }
 
     fn delete(&self, space: &str, key: &[u8]) -> Result<WriteResult> {
@@ -253,7 +255,13 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, WriteResult::ConditionFailed);
-        assert!(engine.get("profiles", b"ada").unwrap().unwrap().attributes.get("name").is_none());
+        assert!(engine
+            .get("profiles", b"ada")
+            .unwrap()
+            .unwrap()
+            .attributes
+            .get("name")
+            .is_none());
     }
 
     #[test]
