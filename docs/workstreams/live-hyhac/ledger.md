@@ -2442,3 +2442,96 @@
   - a real move forward on the first remaining truthful pooled atomic failure
   - either a greener honest live baseline or one precise blocker tied to
     current code and observed output
+
+### Entry `hyh-050` - Outcome
+
+- Timestamp: `2026-03-28 00:58Z`
+- Kind: `outcome`
+- End commit: `83e6003`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence summary:
+  - `83e6003` is on `main`
+  - `cargo test -p server legacy_atomic_integer_div_and_mod_follow_hyperdex_signed_semantics -- --nocapture`
+    passed
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_integer_div_probe_turns_green_after_full_profiles_setup -- --nocapture`
+    passed
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_map_int_int_add_probe_fails_after_full_profiles_setup -- --nocapture`
+    passed
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_pooled_probe_reaches_map_atomic_failure_after_integer_boundary -- --nocapture`
+    passed
+  - `cargo test -p server` passed
+  - `cargo test --workspace` passed on the current tree
+  - the honest pooled live boundary now stays green through integer and float
+    atomic sections and fails next in map-valued atomic mutation with
+    `ClientServererror`
+- Conclusion: the first remaining pooled atomic failure moved forward
+  materially. Integer `div` and `mod` are fixed, the harness is truthful
+  again, and the next product target is map-valued atomic mutation.
+- Disposition: `advance`
+- Next move: split the next product ownership into numeric map mutation and
+  string map mutation on clean worktrees from `83e6003`.
+
+### Entry `hyh-051` - Preregistration
+
+- Timestamp: `2026-03-28 00:58Z`
+- Kind: `preregister`
+- Hypothesis: one product-owned pass can move the live pooled path through the
+  failing numeric map mutations by teaching the legacy atomic path to apply
+  map-valued numeric and bitwise updates instead of rejecting them with
+  `ClientServererror`.
+- Owner: delegated worker `019d31f4-8bce-7b72-a250-9526b3b31743` (`Pascal`)
+  in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-numeric`
+- Start commit: `83e6003`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-numeric` on
+    `map-atomic-numeric`
+- Mutable surface:
+  - `crates/server/**`
+  - `crates/legacy-protocol/**` only if wire decoding must change for this
+    exact map-mutation contract
+  - `crates/server/tests/**` only for focused truthful validators
+- Validator:
+  - fastest useful check:
+    `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_map_int_int_add_probe_fails_after_full_profiles_setup -- --nocapture`
+  - strong checks:
+    - `cargo test -p server`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - at least one material code change in `crates/**`
+  - a greener live pooled boundary on numeric map mutation
+  - either a focused next failing map-numeric operation or a clear exact
+    blocker tied to current code and observed output
+
+### Entry `hyh-052` - Preregistration
+
+- Timestamp: `2026-03-28 00:58Z`
+- Kind: `preregister`
+- Hypothesis: one product-owned pass can move the live pooled path through the
+  failing string-keyed or string-valued map mutations by teaching the legacy
+  atomic path to apply map string prepend/append and other string-map updates
+  instead of rejecting them with `ClientServererror`.
+- Owner: delegated worker `019d31f4-8e23-7b81-8879-c089630de0dc` (`Franklin`)
+  in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-string`
+- Start commit: `83e6003`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-string` on
+    `map-atomic-string`
+- Mutable surface:
+  - `crates/server/**`
+  - `crates/legacy-protocol/**` only if wire decoding must change for this
+    exact map-mutation contract
+  - `crates/server/tests/**` only for focused truthful validators
+- Validator:
+  - fastest useful check:
+    the current broad truthful pooled probe, narrowed further inside the
+    worker only if it preserves the map-string failure honestly
+  - strong checks:
+    - `cargo test -p server`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - at least one material code change in `crates/**`
+  - a greener live pooled boundary on string map mutation
+  - either a focused next failing map-string operation or a clear exact
+    blocker tied to current code and observed output

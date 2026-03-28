@@ -111,8 +111,8 @@ split, sequencing, or validators need to change.
 
 | Workstream | Status | Owner | Dependencies / Blockers | Plan | Ledger | Worktree / Branch | Fastest Useful Check | Next Step | Latest Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `live-hyhac` | active | `019d31dc-cffe-7840-83a8-73e01c839261` (`Archimedes`) | The honest full-schema pooled path is now green through `large object`, `roundtrip`, `conditional`, `search`, and `count`. The next truthful failures are later pooled atomic operations. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-atomic-fix` on `live-hyhac-atomic-fix` | live full-schema `--select-tests='*pooled*'` check on the real cluster | Land the next product fix on the first remaining truthful pooled atomic failure while keeping the now-green earlier boundary intact. | `advance` |
-| `multiprocess-harness` | active | `019d31ce-0ba4-7d51-bb1a-347bd18dad3d` (`Bernoulli`) | No current blocker. This workstream is active only to isolate the first remaining truthful pooled atomic failure into the smallest honest repro that still preserves real setup. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/full-schema-roundtrip-repro` on `full-schema-roundtrip-repro` | live full-schema `--select-tests='*pooled*'` check on the real cluster | Add a focused truthful repro for the first remaining pooled atomic failure, or prove the broader pooled loop should stand. | `advance` |
+| `live-hyhac` | active | `019d31f4-8bce-7b72-a250-9526b3b31743` (`Pascal`) and `019d31f4-8e23-7b81-8879-c089630de0dc` (`Franklin`) | The honest full-schema pooled path is now green through `large object`, `roundtrip`, `conditional`, `search`, `count`, integer atomics, and float atomics. The next truthful failures are map-valued atomic mutations returning `ClientServererror`. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-numeric` and `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-string` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_map_int_int_add_probe_fails_after_full_profiles_setup -- --nocapture` | Let the two larger product forks own numeric-map and string-map mutation end to end, then reconcile the first substantive result. | `advance` |
+| `multiprocess-harness` | parked | root | No current blocker. The truthful repro work is already good enough to support the next product step. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | none active | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_pooled_probe_reaches_map_atomic_failure_after_integer_boundary -- --nocapture` | Leave parked until the next product pass needs a smaller live repro. | `advance` |
 | `simulation-proof` | parked | root | Not on the critical path while live compatibility still fails earlier. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Leave parked until a live failure needs new deterministic coverage. | `advance` |
 | `coordinator-config-evidence` | parked | root | Not on the critical path. The next active question is later than the coordinator follow/bootstrap path. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Leave parked until the product pass needs another exact source comparison. | `advance` |
 
@@ -142,24 +142,27 @@ split, sequencing, or validators need to change.
 - [x] (2026-03-28 01:18Z) Landed a sparse-record legacy `get` fix on `main`,
   keeping the large-object guard green and moving the broader pooled live
   boundary forward: `roundtrip` and `conditional` now pass.
-- [ ] Land the next product fix for the first remaining truthful pooled atomic
-  failure and keep the greener earlier boundary intact.
+- [x] (2026-03-28 02:35Z) Landed `83e6003` on `main`, fixing legacy integer
+  `div`/`mod` semantics and moving the honest pooled live boundary through
+  integer and float atomics.
+- [ ] Land the next product fix for map-valued atomic mutation on the honest
+  pooled live path and keep the greener earlier boundary intact.
 
 ## Current Root Focus
 
-Drive the live compatibility path past the now-cleared large-object boundary
-and keep the next iterations biased toward material code in `crates/**`. The
-active problem is no longer bootstrap, schema creation, the first daemon
-round-trip, the large-object post-success stall, or the later pooled
-`roundtrip`, `conditional`, `search`, and `count` failures. The active problem
-is now the first remaining truthful pooled atomic failure.
+Drive the live compatibility path through the newly-cleared integer and float
+atomic sections and keep the next iterations biased toward material code in
+`crates/**`. The active problem is no longer bootstrap, schema creation, the
+first daemon round-trip, the large-object post-success stall, or the pooled
+`roundtrip`, `conditional`, `search`, `count`, integer atomic, and float
+atomic failures. The active problem is now map-valued atomic mutation.
 
 ## Next Root Move
 
-Keep the newly-cleared pooled path through `count` green, wait for the active
-harness reduction result if it returns useful leverage, and push the new
-product pass onto the first remaining pooled atomic failure with the same
-honest live setup.
+Keep the newly-cleared pooled path through float atomics green, park the
+harness unless the next product pass needs a smaller live repro, and launch
+two product-owned forks on map-valued atomic mutation with the same honest
+full-schema setup.
 
 ## Surprises & Discoveries
 
@@ -193,6 +196,12 @@ honest live setup.
   passes, `cargo test -p server` and `cargo test --workspace` pass, and the
   live full-schema pooled run now reports `roundtrip: [OK]` and
   `conditional: [OK]`.
+- Observation: the honest pooled boundary moved forward again after the legacy
+  integer `div`/`mod` fix.
+  Evidence: `83e6003` is on `main`; `legacy_atomic_integer_div_and_mod_follow_hyperdex_signed_semantics`
+  passes; the focused pooled integer-div probe is green; and the broad pooled
+  probe now stays green through integer and float atomics before failing in
+  map-valued atomic operations with `ClientServererror`.
 - Observation: the recent imbalance was real: too much activity was being
   expressed in ledgers and harness growth rather than in product code.
   Evidence: the recent compact diff summary was dominated by `docs/**` and one
