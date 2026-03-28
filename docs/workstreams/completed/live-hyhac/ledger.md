@@ -579,7 +579,7 @@
 - Owner: root-coordinated pair
 - Start commit: `ee09ee0`
 - Worktree / branch:
-  - implementation: `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - implementation: `worktrees/admin-server`
   - reviewer: read-only, no code edits
 - Mutable surface:
   - implementation worker:
