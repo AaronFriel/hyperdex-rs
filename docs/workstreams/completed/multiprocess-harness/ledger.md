@@ -93,7 +93,7 @@
   signal than the current manual free-port probe sequence, without touching
   product code.
 - Owner: forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-probe-harness`
+  `worktrees/admin-probe-harness`
 - Start commit: `4ccf113`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-probe-harness` on
