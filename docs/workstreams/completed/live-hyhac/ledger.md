@@ -830,8 +830,8 @@
 - Kind: `outcome`
 - End commit: `df633ac`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/hyperdex-admin-protocol/src/lib.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - `decode_packed_hyperdex_space` now ports the original
     `hyperdex::space` binary layout into the Rust `Space` model, including
