@@ -53,7 +53,7 @@
 - Hypothesis: implementing the legacy coordinator admin frontend for
   `add_space` and `wait_until_stable` will unblock the first `hyhac` admin test
   and the matching HyperDex admin tools.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+- Owner: dedicated worker in `worktrees/dist-control-plane`
 - Start commit: `faa6cb6`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
