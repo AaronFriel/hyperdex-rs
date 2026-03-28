@@ -10,26 +10,27 @@ fallback rules from the installed `autoplan` skill.
 
 ## Purpose / Big Picture
 
-This workstream removes machine-specific `/home/friel` paths from the
+This workstream removes machine-specific home-directory paths from the
 repository, then proves the cleanup can be applied as a history rewrite
 instead of only a tip-of-tree cosmetic pass.
 
 ## Goal
 
 Land a repeatable scan-and-rewrite toolchain, fix the easy repository-local
-path cases, and drive the measured `/home/friel` count in rewritten history
+path cases, and drive the measured home-directory path count in rewritten history
 down to zero for the easy bucket while leaving external-local dependency paths
 in an explicit later bucket.
 
 ## Acceptance Evidence
 
-- The repository has a repeatable script that counts `/home/friel` references
+- The repository has a repeatable script that counts machine-specific
+  home-directory references
   in the current tree and in rewritten history.
 - The repository has a repeatable script that can rewrite history in a throwaway
   clone or worktree and report the post-rewrite count.
 - New repository-authored paths in tracked files are repository-root-relative
-  rather than `/home/friel/...`.
-- The remaining `/home/friel` references, if any, are only in the explicitly
+  rather than machine-specific home-directory paths.
+- The remaining home-directory references, if any, are only in the explicitly
   deferred external-local bucket or other intentionally documented exclusions.
 
 ## Mutable Surface
@@ -40,7 +41,8 @@ in an explicit later bucket.
 - `docs/workstreams.md`
 - `docs/workstreams/active/history-scrub/**`
 - `scripts/**`
-- tracked repository files that contain `/home/friel`, except `docs/research/**`
+- tracked repository files that contain the machine-specific home-directory
+  prefix, except `docs/research/**`
 
 ## Dependencies / Blockers
 
@@ -52,7 +54,7 @@ in an explicit later bucket.
 ## Plan Of Work
 
 1. Build the measurement loop first:
-   - count `/home/friel` references in the tracked tree
+   - count machine-specific home-directory references in the tracked tree
    - count them in full history
    - count them again after applying fixups in a throwaway rewritten clone
 2. Separate easy repository-local paths from deferred external-local paths.
@@ -68,12 +70,12 @@ in an explicit later bucket.
 - [ ] Create the dedicated `history-scrub` worktree and preregister the first
   owned implementation pass.
 - [ ] Land the scan-and-rewrite tooling.
-- [ ] Remove the easy repository-local `/home/friel` references.
+- [ ] Remove the easy repository-local home-directory references.
 - [ ] Report the remaining deferred external-local bucket.
 
 ## Current Hypothesis
 
-Most of the remaining current-tree `/home/friel` paths are repository-authored
+Most of the remaining current-tree home-directory paths are repository-authored
 markdown links and workstream records that can be converted mechanically to
 root-relative paths. The hard part is not finding them; it is making the
 cleanup repeatable and safe enough to apply as a history rewrite later.
@@ -91,9 +93,9 @@ pass, and land the initial history-scrub toolchain:
 ## Surprises & Discoveries
 
 - Observation: the easy bucket is large but mostly mechanical.
-  Evidence: `git grep -n "/home/friel" -- ':(exclude)docs/research/**'` shows
-  many repository-local markdown links and workstream records, plus only a
-  small number of real external-local code references in
+  Evidence: `scripts/history-scrub/count-home-friel.sh --tree` and the
+  matching `git grep` output show many repository-local markdown links and
+  workstream records, plus only a small number of real external-local code references in
   `crates/server/tests/dist_multiprocess_harness.rs`.
 
 ## Decision Log

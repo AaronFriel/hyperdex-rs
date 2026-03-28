@@ -4,7 +4,7 @@
 
 - Timestamp: `2026-03-28 19:18Z`
 - Kind: `preregister`
-- Hypothesis: the `/home/friel` cleanup can be driven with a repeatable metric
+- Hypothesis: the home-directory path cleanup can be driven with a repeatable metric
   instead of one-off grep work by combining fixup commits, an autosquash
   rewrite runner, and current-tree/history counters.
 - Owner: dedicated worker on `history-scrub`
@@ -19,7 +19,8 @@
   - `docs/workstreams.md`
   - `docs/workstreams/active/history-scrub/**`
   - `scripts/**`
-  - tracked repository files that contain `/home/friel`, except
+  - tracked repository files that contain the machine-specific home-directory
+    prefix, except
     `docs/research/**`
 - Validator:
   - fastest useful check:
@@ -30,6 +31,6 @@
 - Expected artifacts:
   - a repeatable current-tree and history counter
   - a throwaway rewrite runner with autosquash support
-  - the first reduction pass over easy repository-local `/home/friel`
+  - the first reduction pass over easy repository-local home-directory
     references
   - an explicit remaining external-local bucket, if any
