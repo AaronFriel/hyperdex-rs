@@ -60,22 +60,22 @@ active product pass.
 - [x] (2026-03-28 01:02Z) The broader truthful full-schema pooled run showed
   the next real failure after the cleared large-object boundary: `roundtrip`
   fails first with `ClientReconfigure`.
-- [ ] Reduce that full-schema pooled `ClientReconfigure` failure to a smaller
-  truthful probe, or prove the broader full-schema pooled loop is already the
+- [ ] Reduce the first remaining truthful pooled atomic failure to a smaller
+  honest probe, or prove the broader full-schema pooled loop is already the
   right engineering loop.
 
 ## Current Hypothesis
 
 The honest live baseline now exists, and this workstream is active only to test
-whether the full-schema pooled `ClientReconfigure` failure can be shortened
+whether the first remaining truthful pooled atomic failure can be shortened
 without becoming dishonest. If it cannot produce a materially smaller truthful
 repro, it should say so cleanly and park again.
 
 ## Next Bounded Step
 
-Produce a smaller truthful repro for the first full-schema pooled
-`ClientReconfigure` failure, or prove that the broader full-schema pooled loop
-is already the smallest trustworthy loop worth keeping.
+Produce a smaller truthful repro for the first remaining full-schema pooled
+atomic failure, or prove that the broader full-schema pooled loop is already
+the smallest trustworthy loop worth keeping.
 
 ## Surprises & Discoveries
 
@@ -89,8 +89,8 @@ is already the smallest trustworthy loop worth keeping.
 - Observation: the old pooled probe is no longer trustworthy after the
   large-object fix because it fails before truthful setup.
   Evidence: once the full `profiles` schema is created and stable, the first
-  honest pooled failure is later and different: `roundtrip` with
-  `ClientReconfigure`.
+  honest pooled failure moved later to `roundtrip` with `ClientReconfigure`,
+  and after `b23458c` it moved later again into the atomic surface.
 
 ## Decision Log
 

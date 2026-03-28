@@ -520,9 +520,9 @@
 
 - Timestamp: `2026-03-28 01:02Z`
 - Kind: `preregister`
-- Hypothesis: a harness-owned pass can reduce the honest full-schema pooled
-  `ClientReconfigure` failure to a smaller truthful repro without drifting into
-  product implementation.
+- Hypothesis: a harness-owned pass can reduce the first remaining truthful
+  full-schema pooled atomic failure to a smaller truthful repro without
+  drifting into product implementation.
 - Owner: delegated worker `019d31ce-0ba4-7d51-bb1a-347bd18dad3d` (`Bernoulli`)
   in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/full-schema-roundtrip-repro`
 - Start commit: `94b13c5`
@@ -542,7 +542,7 @@
     - `cargo test -p server --test dist_multiprocess_harness -- --nocapture`
     - `cargo test --workspace`
 - Expected artifacts:
-  - a focused truthful repro for the first post-large-object pooled
-    `ClientReconfigure` failure, or a clean proof that the broader full-schema
-    pooled loop is already the right one
+  - a focused truthful repro for the first remaining pooled atomic failure, or
+    a clean proof that the broader full-schema pooled loop is already the right
+    one
   - no product-code drift outside the harness-owned surface

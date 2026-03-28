@@ -77,8 +77,8 @@ failures and rerun the live check before returning.
 - [x] (2026-03-28 01:18Z) Landed a sparse-record legacy `get` fix that keeps
   the large-object boundary green and moves the broader pooled live boundary
   forward: `roundtrip` and `conditional` now pass.
-- [ ] Land the next product fix for the later pooled `search`, `count`, and
-  atomic failures and move the live baseline forward again.
+- [ ] Land the next product fix for the first remaining truthful pooled atomic
+  failure and move the live baseline forward again.
 
 ## Current Hypothesis
 
@@ -86,16 +86,16 @@ The remaining live mismatch is later than bootstrap, later than schema
 creation, later than the first daemon round-trip, later than the
 large-object post-success stall that `3c72516` removed, and later than the
 pooled `roundtrip` reconfigure that `b23458c` fixed. On the honest
-full-schema baseline, the next failures are in pooled `search`, `count`, and
-parts of the atomic surface.
+full-schema baseline, pooled `search` and `count` now pass too. The next
+failures are later in the atomic surface.
 
 ## Next Bounded Step
 
 Keep the full-schema large-object probe green as a regression check. Keep the
 broader pooled live check as the honest surface, use the supporting harness
 workstream only if it materially shortens that later failure boundary without
-losing truthful setup, and launch the next product-owned pass on the later
-pooled `search`/`count` and atomic failures.
+losing truthful setup, and launch the next product-owned pass on the first
+remaining truthful pooled atomic failure.
 
 ## Surprises & Discoveries
 
@@ -121,6 +121,11 @@ pooled `search`/`count` and atomic failures.
   Evidence: after `b23458c`, `legacy_get_fills_defaults_for_sparse_record_attributes`
   passes and the broader pooled live run now reports both `roundtrip: [OK]`
   and `conditional: [OK]`.
+- Observation: the honest pooled boundary moved forward again immediately after
+  that sparse-record fix.
+  Evidence: a root-run live full-schema `*pooled*` check now reports
+  `search: [OK, passed 100 tests]` and `count: [OK, passed 100 tests]`; the
+  remaining failures start later in atomic operations.
 - Observation: the remaining work now belongs primarily in product code, not
   in more coordinator-protocol archaeology.
   Evidence: the active live failure appears after the system already accepts
@@ -144,6 +149,6 @@ pooled `search`/`count` and atomic failures.
   workstream. The repository now has a real live baseline where schema
   creation, stability waits, native C writes, and the full-schema Hyhac
   large-object subset all succeed. The remaining work is to clear the next
-  later client-visible divergences on that honest baseline: pooled `search`,
-  `count`, and the remaining atomic failures after the now-fixed `roundtrip`
-  and `conditional` path.
+  later client-visible divergences on that honest baseline: the remaining
+  pooled atomic failures after the now-fixed `roundtrip`, `conditional`,
+  `search`, and `count` path.

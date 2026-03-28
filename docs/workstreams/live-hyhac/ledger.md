@@ -2404,6 +2404,41 @@
   The live compatibility boundary moved forward without regressing the
   large-object guard.
 - Disposition: `advance`
-- Next move: launch the next product pass on the later pooled `search`,
-  `count`, and atomic failures, while keeping the active harness workstream
-  focused on shortening that truthful boundary if it can.
+- Next move: launch the next product pass on the first remaining truthful
+  pooled atomic failure, while keeping the active harness workstream focused on
+  shortening that later boundary if it can.
+
+### Entry `hyh-050` - Preregistration
+
+- Timestamp: `2026-03-28 01:32Z`
+- Kind: `preregister`
+- Hypothesis: a product-owned pass on a fresh worktree can clear the first
+  remaining truthful pooled atomic failure on the full-schema live path and
+  move the honest compatibility boundary forward again.
+- Owner: delegated worker `019d31dc-cffe-7840-83a8-73e01c839261` (`Archimedes`)
+  in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-atomic-fix`
+- Start commit: `1e12978`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-atomic-fix` on
+    `live-hyhac-atomic-fix`
+- Mutable surface:
+  - `crates/legacy-protocol/**`
+  - `crates/legacy-frontend/**`
+  - `crates/hyperdex-client-protocol/**`
+  - `crates/server/**`
+  - `crates/server/tests/**` only when a focused validator is needed for this
+    exact failure
+  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if launcher wiring must
+    point at `hyperdex-rs`
+- Validator:
+  - fastest useful check:
+    the honest live full-schema pooled check on the real cluster, narrowed
+    further if the worker can do so truthfully inside its scope
+  - strong checks:
+    - `cargo test -p server`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - at least one material code change in `crates/**`
+  - a real move forward on the first remaining truthful pooled atomic failure
+  - either a greener honest live baseline or one precise blocker tied to
+    current code and observed output

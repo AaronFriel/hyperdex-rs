@@ -111,8 +111,8 @@ split, sequencing, or validators need to change.
 
 | Workstream | Status | Owner | Dependencies / Blockers | Plan | Ledger | Worktree / Branch | Fastest Useful Check | Next Step | Latest Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `live-hyhac` | active | `019d31ce-097e-7e51-bc7d-03b86e2996f6` (`Descartes`) | The honest full-schema large-object boundary now passes. `roundtrip` and `conditional` are now green on the broader pooled run too. The next honest pooled failures are later `search`, `count`, and parts of the atomic surface. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-get-reconfigure` on `live-hyhac-get-reconfigure` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Land the next product fix on the later pooled failures while keeping the cleared large-object, `roundtrip`, and `conditional` paths green. | `advance` |
-| `multiprocess-harness` | active | `019d31ce-0ba4-7d51-bb1a-347bd18dad3d` (`Bernoulli`) | No current blocker. This workstream is active only to isolate the full-schema `roundtrip` failure into the smallest truthful post-large-object repro that still preserves real setup. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/full-schema-roundtrip-repro` on `full-schema-roundtrip-repro` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Add a focused truthful repro for the first post-large-object pooled `ClientReconfigure` failure, or prove the broader full-schema pooled loop should stand. | `advance` |
+| `live-hyhac` | active | `019d31dc-cffe-7840-83a8-73e01c839261` (`Archimedes`) | The honest full-schema pooled path is now green through `large object`, `roundtrip`, `conditional`, `search`, and `count`. The next truthful failures are later pooled atomic operations. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-atomic-fix` on `live-hyhac-atomic-fix` | live full-schema `--select-tests='*pooled*'` check on the real cluster | Land the next product fix on the first remaining truthful pooled atomic failure while keeping the now-green earlier boundary intact. | `advance` |
+| `multiprocess-harness` | active | `019d31ce-0ba4-7d51-bb1a-347bd18dad3d` (`Bernoulli`) | No current blocker. This workstream is active only to isolate the first remaining truthful pooled atomic failure into the smallest honest repro that still preserves real setup. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/full-schema-roundtrip-repro` on `full-schema-roundtrip-repro` | live full-schema `--select-tests='*pooled*'` check on the real cluster | Add a focused truthful repro for the first remaining pooled atomic failure, or prove the broader pooled loop should stand. | `advance` |
 | `simulation-proof` | parked | root | Not on the critical path while live compatibility still fails earlier. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Leave parked until a live failure needs new deterministic coverage. | `advance` |
 | `coordinator-config-evidence` | parked | root | Not on the critical path. The next active question is later than the coordinator follow/bootstrap path. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Leave parked until the product pass needs another exact source comparison. | `advance` |
 
@@ -142,24 +142,24 @@ split, sequencing, or validators need to change.
 - [x] (2026-03-28 01:18Z) Landed a sparse-record legacy `get` fix on `main`,
   keeping the large-object guard green and moving the broader pooled live
   boundary forward: `roundtrip` and `conditional` now pass.
-- [ ] Land the next product fix for the later pooled failures in `search`,
-  `count`, and the remaining atomic paths.
+- [ ] Land the next product fix for the first remaining truthful pooled atomic
+  failure and keep the greener earlier boundary intact.
 
 ## Current Root Focus
 
 Drive the live compatibility path past the now-cleared large-object boundary
 and keep the next iterations biased toward material code in `crates/**`. The
 active problem is no longer bootstrap, schema creation, the first daemon
-round-trip, the large-object post-success stall, or pooled `roundtrip`
-reconfigure. The active problem is now later in the pooled surface: `search`,
-`count`, and several atomic operations still diverge.
+round-trip, the large-object post-success stall, or the later pooled
+`roundtrip`, `conditional`, `search`, and `count` failures. The active problem
+is now the first remaining truthful pooled atomic failure.
 
 ## Next Root Move
 
-Keep the newly-cleared pooled `roundtrip` and `conditional` paths green, wait
-for the active harness reduction result if it returns useful leverage, and push
-the next product pass onto the later pooled `search`/`count` and atomic
-failures with the same honest live setup.
+Keep the newly-cleared pooled path through `count` green, wait for the active
+harness reduction result if it returns useful leverage, and push the new
+product pass onto the first remaining pooled atomic failure with the same
+honest live setup.
 
 ## Surprises & Discoveries
 
