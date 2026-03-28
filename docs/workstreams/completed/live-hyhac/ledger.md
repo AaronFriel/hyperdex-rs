@@ -660,7 +660,7 @@
 - Kind: `outcome`
 - End commit: `175ed25`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - no code changes in `worktrees/admin-server`
 - Evidence summary:
   - the corrected-transport worker still produced no diff
   - it returned a precise blocker report matching the reviewer: the current
