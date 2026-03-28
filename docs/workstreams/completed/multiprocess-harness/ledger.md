@@ -277,7 +277,7 @@
 - Kind: `outcome`
 - End commit: `ad458f1`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire`
+  - no code changes in `worktrees/clientgarbage-wire`
 - Evidence summary:
   - the completed worker verified that `main` is at `ad458f1`
   - the completed worker rechecked the fast validator and confirmed the same
