@@ -789,7 +789,7 @@
 - End commit: `a618ea0`
 - Artifact location:
   - `/home/friel/c/aaronfriel/HyperDex/Replicant/client/pending_cond_follow.cc`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
   - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Ffi/Client.chs`
   - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Core.hs`
   - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Handle.hs`
