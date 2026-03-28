@@ -1209,6 +1209,256 @@ fn turmoil_reverts_delete_group_when_replica_transport_fails() {
 }
 
 #[test]
+fn turmoil_rejects_divergent_replica_get_results() {
+    let mut sim = turmoil::Builder::new().build();
+
+    sim.client("cluster", async move {
+        let (_, runtime1, runtime2) =
+            distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
+
+        let divergent_key = (0..65536)
+            .map(|i| format!("divergent-get-{i}"))
+            .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
+            .expect("expected a key routed to node 2");
+
+        let put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(divergent_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(17),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(put, ClientResponse::Unit);
+
+        runtime1
+            .handle_internode_request(
+                InternodeRequest::encode(
+                    DATA_PLANE_METHOD,
+                    &DataPlaneRequest::ReplicatedPut {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(divergent_key.as_bytes().to_vec()),
+                        mutations: vec![
+                            Mutation::Set(Attribute {
+                                name: "username".to_owned(),
+                                value: Value::String(divergent_key.clone()),
+                            }),
+                            Mutation::Set(Attribute {
+                                name: "profile_views".to_owned(),
+                                value: Value::Int(29),
+                            }),
+                        ],
+                    },
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let node1_record = runtime1
+            .handle_internode_request(
+                InternodeRequest::encode(
+                    DATA_PLANE_METHOD,
+                    &DataPlaneRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(divergent_key.as_bytes().to_vec()),
+                    },
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap()
+            .decode::<DataPlaneResponse>()
+            .unwrap();
+        match node1_record {
+            DataPlaneResponse::Record(Some(record)) => {
+                assert_eq!(
+                    record.attributes.get("profile_views"),
+                    Some(&Value::Int(29))
+                );
+            }
+            other => panic!("unexpected divergent node1 record: {other:?}"),
+        }
+
+        let node2_record = runtime2
+            .handle_internode_request(
+                InternodeRequest::encode(
+                    DATA_PLANE_METHOD,
+                    &DataPlaneRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(divergent_key.as_bytes().to_vec()),
+                    },
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap()
+            .decode::<DataPlaneResponse>()
+            .unwrap();
+        match node2_record {
+            DataPlaneResponse::Record(Some(record)) => {
+                assert_eq!(
+                    record.attributes.get("profile_views"),
+                    Some(&Value::Int(17))
+                );
+            }
+            other => panic!("unexpected authoritative node2 record: {other:?}"),
+        }
+
+        let get_from_secondary = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(divergent_key.as_bytes().to_vec()),
+            },
+        )
+        .await;
+        assert!(
+            get_from_secondary.is_err(),
+            "expected divergent replica get to fail closed from the secondary"
+        );
+
+        let get_from_primary = HyperdexClientService::handle(
+            runtime2.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(divergent_key.as_bytes().to_vec()),
+            },
+        )
+        .await;
+        assert!(
+            get_from_primary.is_err(),
+            "expected divergent replica get to fail closed from the primary"
+        );
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[test]
+fn turmoil_rejects_divergent_replica_get_presence() {
+    let mut sim = turmoil::Builder::new().build();
+
+    sim.client("cluster", async move {
+        let (_, runtime1, runtime2) =
+            distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
+
+        let divergent_key = (0..65536)
+            .map(|i| format!("divergent-get-presence-{i}"))
+            .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
+            .expect("expected a key routed to node 2");
+
+        let put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(divergent_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(41),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(put, ClientResponse::Unit);
+
+        runtime1
+            .handle_internode_request(
+                InternodeRequest::encode(
+                    DATA_PLANE_METHOD,
+                    &DataPlaneRequest::ReplicatedDelete {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(divergent_key.as_bytes().to_vec()),
+                    },
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let node1_record = runtime1
+            .handle_internode_request(
+                InternodeRequest::encode(
+                    DATA_PLANE_METHOD,
+                    &DataPlaneRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(divergent_key.as_bytes().to_vec()),
+                    },
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap()
+            .decode::<DataPlaneResponse>()
+            .unwrap();
+        assert_eq!(node1_record, DataPlaneResponse::Record(None));
+
+        let node2_record = runtime2
+            .handle_internode_request(
+                InternodeRequest::encode(
+                    DATA_PLANE_METHOD,
+                    &DataPlaneRequest::Get {
+                        space: "profiles".to_owned(),
+                        key: Bytes::from(divergent_key.as_bytes().to_vec()),
+                    },
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap()
+            .decode::<DataPlaneResponse>()
+            .unwrap();
+        match node2_record {
+            DataPlaneResponse::Record(Some(record)) => {
+                assert_eq!(
+                    record.attributes.get("profile_views"),
+                    Some(&Value::Int(41))
+                );
+            }
+            other => panic!("unexpected surviving node2 record: {other:?}"),
+        }
+
+        let get_from_secondary = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(divergent_key.as_bytes().to_vec()),
+            },
+        )
+        .await;
+        assert!(
+            get_from_secondary.is_err(),
+            "expected record-versus-tombstone divergence to fail closed from the secondary"
+        );
+
+        let get_from_primary = HyperdexClientService::handle(
+            runtime2.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(divergent_key.as_bytes().to_vec()),
+            },
+        )
+        .await;
+        assert!(
+            get_from_primary.is_err(),
+            "expected record-versus-tombstone divergence to fail closed from the primary"
+        );
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[test]
 fn turmoil_rejects_or_recovers_routed_mutation_under_stale_placement() {
     let mut sim = turmoil::Builder::new().build();
 

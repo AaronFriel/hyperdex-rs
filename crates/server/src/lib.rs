@@ -423,28 +423,49 @@ impl ClusterRuntime {
         key: bytes::Bytes,
     ) -> Result<Option<Record>> {
         let decision = self.locate_key(&space, &key)?;
-        let mut last_remote_error = None;
+        let mut agreed_record: Option<Option<Record>> = None;
+        let mut agreed_replica = None;
+        let mut skipped_replicas = Vec::new();
 
         for replica in decision.replicas {
-            if replica == self.local_node_id {
-                return self.data_plane.get(&space, &key);
-            }
+            let record = if replica == self.local_node_id {
+                self.data_plane.get(&space, &key)?
+            } else {
+                match self.get_from_replica(replica, &space, &key).await {
+                    Ok(record) => record,
+                    Err(err) if should_skip_distributed_read_replica(&err) => {
+                        skipped_replicas.push(replica);
+                        continue;
+                    }
+                    Err(err) => {
+                        return Err(anyhow!(
+                            "get failed on replica {replica} for space `{space}`: {err}"
+                        ));
+                    }
+                }
+            };
 
-            match self.get_from_replica(replica, &space, &key).await {
-                Ok(record) => return Ok(record),
-                Err(err) => last_remote_error = Some((replica, err)),
+            if let Some(previous) = &agreed_record {
+                if previous != &record {
+                    anyhow::bail!(
+                        "distributed get observed divergent replica state for space `{space}` between replica {} and replica {replica}",
+                        agreed_replica.expect("agreed replica must exist once a record is stored"),
+                    );
+                }
+            } else {
+                agreed_replica = Some(replica);
+                agreed_record = Some(record);
             }
         }
 
-        if let Some((replica, err)) = last_remote_error {
-            return Err(anyhow!(
-                "get failed on all replicas for space `{space}` after remote failure on replica {replica}: {err}"
-            ));
+        if let Some(record) = agreed_record {
+            return Ok(record);
         }
 
-        Err(anyhow!(
-            "get had no available replicas for space `{space}` and key lookup"
-        ))
+        anyhow::bail!(
+            "get had no reachable replicas for space `{space}`; skipped replicas: {:?}",
+            skipped_replicas
+        );
     }
 
     async fn replicate_put_to_secondaries(
