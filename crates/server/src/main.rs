@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
 use hyperdex_admin_protocol::{CoordinatorAdminRequest, CoordinatorReturnCode};
 use legacy_frontend::LegacyFrontend;
 use server::{
@@ -14,13 +14,13 @@ use server::{
     serve_coordinator_public_connection, sync_runtime_with_coordinator, ClusterRuntime,
     ProcessMode, TransportRuntime,
 };
+use std::future::Future;
+use std::pin::Pin;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
 use tracing::{info, warn};
-use std::future::Future;
-use std::pin::Pin;
 use transport_core::{ClusterTransport, InternodeRequest, InternodeResponse, RemoteNode};
 
 pub mod grpc_api {
@@ -128,6 +128,12 @@ fn legacy_request_needs_config_refresh(err: &anyhow::Error) -> bool {
         || message.contains("catalog lost space definition")
 }
 
+fn parse_socket_address(host: &str, port: u16, label: &str) -> Result<std::net::SocketAddr> {
+    format!("{host}:{port}")
+        .parse::<std::net::SocketAddr>()
+        .with_context(|| format!("invalid {label} socket address {host}:{port}"))
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -150,11 +156,11 @@ async fn main() -> Result<()> {
                 listen_host, listen_port, "hyperdex-rs coordinator bootstrapped"
             );
 
-            let listener = TcpListener::bind(
-                format!("{listen_host}:{listen_port}")
-                    .parse::<std::net::SocketAddr>()
-                    .expect("validated socket address"),
-            )
+            let listener = TcpListener::bind(parse_socket_address(
+                &listen_host,
+                listen_port,
+                "coordinator listen",
+            )?)
             .await?;
 
             info!(
@@ -208,11 +214,10 @@ async fn main() -> Result<()> {
                 internode_transport: internode_transport.clone(),
             };
             let daemon_config = daemon_cluster_config(&daemon_mode);
-            let daemon_node =
-                daemon_registration_node(&daemon_mode).expect("daemon mode has a node identity");
-            let coordinator_address = format!("{coordinator_host}:{coordinator_port}")
-                .parse()
-                .expect("validated socket address");
+            let daemon_node = daemon_registration_node(&daemon_mode)
+                .ok_or_else(|| anyhow!("daemon mode is missing node identity"))?;
+            let coordinator_address =
+                parse_socket_address(&coordinator_host, coordinator_port, "coordinator")?;
             let status = request_coordinator_control_once(
                 coordinator_address,
                 "daemon_register",
@@ -272,9 +277,8 @@ async fn main() -> Result<()> {
             if internode_transport == cluster_config::TransportBackend::Grpc {
                 let (shutdown_tx, shutdown_rx) = oneshot::channel();
                 let grpc_runtime = runtime.clone();
-                let grpc_address = format!("{listen_host}:{control_port}")
-                    .parse()
-                    .expect("validated socket address");
+                let grpc_address =
+                    parse_socket_address(&listen_host, control_port, "daemon gRPC listen")?;
                 grpc_shutdown_tx = Some(shutdown_tx);
                 grpc_task = Some(tokio::spawn(async move {
                     serve_internode_grpc(grpc_runtime, grpc_address, shutdown_rx).await
@@ -282,9 +286,7 @@ async fn main() -> Result<()> {
             }
 
             let legacy_frontend = LegacyFrontend::bind_with_server_id(
-                format!("{listen_host}:{listen_port}")
-                    .parse()
-                    .expect("validated socket address"),
+                parse_socket_address(&listen_host, listen_port, "daemon legacy listen")?,
                 node_id,
             )
             .await?;

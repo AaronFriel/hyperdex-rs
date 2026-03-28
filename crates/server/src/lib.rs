@@ -528,7 +528,9 @@ impl ClusterRuntime {
         let previous = self.data_plane.get(&space, &key)?;
         match self.data_plane.put(&space, key.clone(), &mutations)? {
             WriteResult::Written | WriteResult::Missing => {
-                if let Err(err) = self.replicate_put_to_secondaries(&space, &key, &mutations).await
+                if let Err(err) = self
+                    .replicate_put_to_secondaries(&space, &key, &mutations)
+                    .await
                 {
                     self.restore_local_record(&space, &key, previous)?;
                     return Err(err);
@@ -662,7 +664,9 @@ impl ClusterRuntime {
             .conditional_put(&space, key.clone(), &checks, &mutations)?
         {
             WriteResult::Written | WriteResult::Missing => {
-                if let Err(err) = self.replicate_put_to_secondaries(&space, &key, &mutations).await
+                if let Err(err) = self
+                    .replicate_put_to_secondaries(&space, &key, &mutations)
+                    .await
                 {
                     self.restore_local_record(&space, &key, previous)?;
                     return Err(err);
@@ -4594,6 +4598,10 @@ pub fn daemon_cluster_config(mode: &ProcessMode) -> ClusterConfig {
     let mut config = ClusterConfig::default();
 
     if let ProcessMode::Daemon {
+        node_id,
+        listen_host,
+        listen_port,
+        control_port,
         consensus,
         placement,
         storage,
@@ -4601,7 +4609,12 @@ pub fn daemon_cluster_config(mode: &ProcessMode) -> ClusterConfig {
         ..
     } = mode
     {
-        config.nodes = vec![daemon_registration_node(mode).expect("daemon mode has a node")];
+        config.nodes = vec![ClusterNode {
+            id: *node_id,
+            host: listen_host.clone(),
+            control_port: *control_port,
+            data_port: *listen_port,
+        }];
         config.consensus = consensus.clone();
         config.placement = placement.clone();
         config.storage = storage.clone();
