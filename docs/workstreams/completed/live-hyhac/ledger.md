@@ -880,8 +880,8 @@
 - Kind: `outcome`
 - End commit: `f26d042`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/hyperdex-admin-protocol/src/lib.rs`
 - Evidence summary:
   - `78162d5` lands `CoordinatorAdminLegacyService`, per-connection pending
     completion state, BusyBee-framed bootstrap handling, and focused server
