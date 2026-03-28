@@ -54,7 +54,7 @@ georeplication.
 
 ### Completed Baseline
 
-- [completed](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed)
+- [completed](docs/workstreams/completed)
 
 ## Current Root Focus
 
