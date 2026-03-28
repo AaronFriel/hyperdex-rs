@@ -164,7 +164,7 @@
 - Kind: `outcome`
 - End commit: `5b6b614`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+  - no code changes in `worktrees/dist-control-plane`
 - Evidence summary:
   - the replacement worker again reported no file changes
   - the replacement worker confirmed the remaining blocker is concrete
