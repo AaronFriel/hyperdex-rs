@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_trait::async_trait;
 use bytes::Bytes;
 use data_model::{Attribute as ModelAttribute, Mutation as ModelMutation, Value as ModelValue};
 use server::ClusterRuntime;
+use std::future::Future;
+use std::pin::Pin;
 use transport_core::{ClusterTransport, InternodeRequest, InternodeResponse, RemoteNode};
 
 pub mod hyperdex {
@@ -227,28 +228,31 @@ impl hyperdex::v1::internode_transport_server::InternodeTransport for InternodeG
 #[derive(Default)]
 pub struct GrpcTransportAdapter;
 
-#[async_trait]
 impl ClusterTransport for GrpcTransportAdapter {
-    async fn send(
-        &self,
-        node: &RemoteNode,
+    fn send<'a>(
+        &'a self,
+        node: &'a RemoteNode,
         request: InternodeRequest,
-    ) -> Result<InternodeResponse> {
-        let endpoint = format!("http://{}:{}", node.host, node.port);
-        let mut client =
-            hyperdex::v1::internode_transport_client::InternodeTransportClient::connect(endpoint)
+    ) -> Pin<Box<dyn Future<Output = Result<InternodeResponse>> + Send + 'a>> {
+        Box::pin(async move {
+            let endpoint = format!("http://{}:{}", node.host, node.port);
+            let mut client =
+                hyperdex::v1::internode_transport_client::InternodeTransportClient::connect(
+                    endpoint,
+                )
                 .await?;
-        let response = client
-            .send(hyperdex::v1::InternodeRpcRequest {
-                method: request.method,
-                body: request.body.to_vec(),
-            })
-            .await?
-            .into_inner();
+            let response = client
+                .send(hyperdex::v1::InternodeRpcRequest {
+                    method: request.method,
+                    body: request.body.to_vec(),
+                })
+                .await?
+                .into_inner();
 
-        Ok(InternodeResponse {
-            status: response.status as u16,
-            body: Bytes::from(response.body),
+            Ok(InternodeResponse {
+                status: response.status as u16,
+                body: Bytes::from(response.body),
+            })
         })
     }
 

@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use async_trait::async_trait;
 use hyperdex_admin_protocol::{CoordinatorAdminRequest, CoordinatorReturnCode};
 use legacy_frontend::LegacyFrontend;
 use server::{
@@ -20,6 +19,8 @@ use tokio::sync::oneshot;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
 use tracing::{info, warn};
+use std::future::Future;
+use std::pin::Pin;
 use transport_core::{ClusterTransport, InternodeRequest, InternodeResponse, RemoteNode};
 
 pub mod grpc_api {
@@ -66,28 +67,31 @@ impl grpc_api::v1::internode_transport_server::InternodeTransport for ProcessInt
 #[derive(Default)]
 struct ProcessGrpcTransportAdapter;
 
-#[async_trait]
 impl ClusterTransport for ProcessGrpcTransportAdapter {
-    async fn send(
-        &self,
-        node: &RemoteNode,
+    fn send<'a>(
+        &'a self,
+        node: &'a RemoteNode,
         request: InternodeRequest,
-    ) -> Result<InternodeResponse> {
-        let endpoint = format!("http://{}:{}", node.host, node.port);
-        let mut client =
-            grpc_api::v1::internode_transport_client::InternodeTransportClient::connect(endpoint)
+    ) -> Pin<Box<dyn Future<Output = Result<InternodeResponse>> + Send + 'a>> {
+        Box::pin(async move {
+            let endpoint = format!("http://{}:{}", node.host, node.port);
+            let mut client =
+                grpc_api::v1::internode_transport_client::InternodeTransportClient::connect(
+                    endpoint,
+                )
                 .await?;
-        let response = client
-            .send(grpc_api::v1::InternodeRpcRequest {
-                method: request.method,
-                body: request.body.to_vec(),
-            })
-            .await?
-            .into_inner();
+            let response = client
+                .send(grpc_api::v1::InternodeRpcRequest {
+                    method: request.method,
+                    body: request.body.to_vec(),
+                })
+                .await?
+                .into_inner();
 
-        Ok(InternodeResponse {
-            status: response.status as u16,
-            body: Bytes::from(response.body),
+            Ok(InternodeResponse {
+                status: response.status as u16,
+                body: Bytes::from(response.body),
+            })
         })
     }
 

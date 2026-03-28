@@ -1,8 +1,9 @@
 use anyhow::Result;
-use async_trait::async_trait;
 use bytes::Bytes;
 use data_model::{Check, Mutation, Record};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::future::Future;
+use std::pin::Pin;
 
 pub const DATA_PLANE_METHOD: &str = "data-plane";
 
@@ -100,26 +101,29 @@ impl InternodeResponse {
     }
 }
 
-#[async_trait]
 pub trait ClusterTransport: Send + Sync {
-    async fn send(&self, node: &RemoteNode, request: InternodeRequest)
-        -> Result<InternodeResponse>;
+    fn send<'a>(
+        &'a self,
+        node: &'a RemoteNode,
+        request: InternodeRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<InternodeResponse>> + Send + 'a>>;
     fn name(&self) -> &'static str;
 }
 
 #[derive(Default)]
 pub struct InProcessTransport;
 
-#[async_trait]
 impl ClusterTransport for InProcessTransport {
-    async fn send(
-        &self,
-        _node: &RemoteNode,
+    fn send<'a>(
+        &'a self,
+        _node: &'a RemoteNode,
         request: InternodeRequest,
-    ) -> Result<InternodeResponse> {
-        Ok(InternodeResponse {
-            status: 200,
-            body: request.body,
+    ) -> Pin<Box<dyn Future<Output = Result<InternodeResponse>> + Send + 'a>> {
+        Box::pin(async move {
+            Ok(InternodeResponse {
+                status: 200,
+                body: request.body,
+            })
         })
     }
 

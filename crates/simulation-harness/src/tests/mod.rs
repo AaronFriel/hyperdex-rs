@@ -1,9 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
-use async_trait::async_trait;
 use bytes::Bytes;
 use cluster_config::{ClusterConfig, ClusterNode, TransportBackend};
 use control_plane::{Catalog, InMemoryCatalog};
@@ -321,25 +322,26 @@ fn ensure_hegel_server_command() -> String {
         .clone()
 }
 
-#[async_trait]
 impl ClusterTransport for SimTransport {
-    async fn send(
-        &self,
-        node: &RemoteNode,
+    fn send<'a>(
+        &'a self,
+        node: &'a RemoteNode,
         request: InternodeRequest,
-    ) -> Result<InternodeResponse> {
-        if self.unavailable.lock().await.contains(&node.id) {
-            return Err(anyhow!("connection refused for simulated node {}", node.id));
-        }
+    ) -> Pin<Box<dyn Future<Output = Result<InternodeResponse>> + Send + 'a>> {
+        Box::pin(async move {
+            if self.unavailable.lock().await.contains(&node.id) {
+                return Err(anyhow!("connection refused for simulated node {}", node.id));
+            }
 
-        let runtime = self
-            .runtimes
-            .lock()
-            .await
-            .get(&node.id)
-            .cloned()
-            .ok_or_else(|| anyhow!("missing simulated node {}", node.id))?;
-        runtime.handle_internode_request(request).await
+            let runtime = self
+                .runtimes
+                .lock()
+                .await
+                .get(&node.id)
+                .cloned()
+                .ok_or_else(|| anyhow!("missing simulated node {}", node.id))?;
+            runtime.handle_internode_request(request).await
+        })
     }
 
     fn name(&self) -> &'static str {
