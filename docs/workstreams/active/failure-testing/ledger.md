@@ -388,6 +388,7 @@
   - a runtime fix if the proof exposes a bug
   - one bounded commit ready for reconciliation
 
+<<<<<<< HEAD
 ### Entry `flt-011` - Preregistration
 
 - Timestamp: `2026-03-28 19:24Z`
@@ -415,3 +416,26 @@
   - one deterministic ownership-convergence proof for `ConditionalPut`
   - a runtime fix if the proof exposes a bug
   - one bounded commit ready for reconciliation
+
+### Entry `flt-011` - Outcome
+
+- Timestamp: `2026-03-28 19:31Z`
+- Kind: `outcome`
+- End commit: `087520a`
+- Artifact location:
+  - `crates/simulation-harness/src/tests/mod.rs`
+  - `crates/simulation-harness/src/tests/failure_testing.rs`
+- Evidence summary:
+  - Added
+    `turmoil_rejects_stale_local_conditional_put_across_peer_outage_and_recovery`.
+  - Moved the new proof into the owned `failure_testing.rs` module instead of
+    growing the shared `mod.rs`.
+  - Validation passed with:
+    - `cargo test -p simulation-harness turmoil_rejects_stale_local_conditional_put_across_peer_outage_and_recovery -- --nocapture`
+    - `cargo test -p simulation-harness`
+- Conclusion: this pass was proof-only. The current runtime already rejects the
+  stale local-primary `ConditionalPut` path during peer outage and recovery.
+- Disposition: `advance`
+- Next move: move to another ownership-convergence mutation or mixed
+  multi-step sequence outside the already-covered `Put`, `Delete`, and
+  `ConditionalPut` cases.

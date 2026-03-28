@@ -1,3 +1,5 @@
+mod failure_testing;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::pin::Pin;
