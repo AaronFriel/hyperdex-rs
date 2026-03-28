@@ -50,6 +50,15 @@ These are the explicit next-phase directions requested for `hyperdex-rs`.
 - Remove `async_trait` where modern Rust async traits are sufficient.
 - Prefer coherent cross-crate conversions over scattered local edits.
 
+### Panic Hardening
+
+- Reduce or remove unchecked `unwrap`, `expect`, `todo`, and similar panic
+  sites from runtime and protocol code.
+- Add stricter Clippy policy over time so these become deliberate exceptions
+  instead of default habits.
+- Use `#[no_panic]` on entry points and important public functions where the
+  contract is practical and verifiable.
+
 ## Additional Directions Worth Tracking
 
 These are not above the user-prioritized list, but they are worth recording as

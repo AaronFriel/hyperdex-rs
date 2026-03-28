@@ -30,6 +30,7 @@ This group improves engineering leverage and lowers risk.
 
 - GitHub Actions validation
 - stronger deterministic failure testing
+- panic hardening and explicit no-panic contracts
 - fuzzing of critical parsers and protocol handlers
 - native Rust async traits instead of `async_trait`
 - tracing, metrics, and repair-oriented diagnostics
@@ -193,6 +194,7 @@ This order is not absolute. A later-group spike is acceptable when:
 
 - GitHub Actions workflows
 - fuzz harness setup
+- gradual panic-hardening ratchets
 - `async_trait` removal
 - straightforward deterministic failure tests
 

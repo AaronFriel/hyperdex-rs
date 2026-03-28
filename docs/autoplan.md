@@ -19,8 +19,8 @@ under [archive/phase-1](/home/friel/c/aaronfriel/hyperdex-rs/docs/archive/phase-
 
 Keep the now-green HyperDex replacement baseline stable while driving the next
 real implementation phase: repository-grade validation, stronger failure
-testing, fuzzing, async cleanup, Warp-style transactions, and region-aware
-georeplication.
+testing, panic hardening, fuzzing, async cleanup, Warp-style transactions, and
+region-aware georeplication.
 
 ## Acceptance Evidence
 
@@ -30,6 +30,8 @@ georeplication.
   product surfaces instead of mainly changing planning files.
 - The repository gains stronger validation, stronger failure coverage, and the
   first bounded implementation steps for transactions and georeplication.
+- Entry points and important public surfaces are moving toward explicit
+  no-panic contracts and away from unchecked `unwrap` / `expect` usage.
 
 ## Current Priorities
 
@@ -38,6 +40,7 @@ georeplication.
 1. [validation-ci](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/validation-ci/plan.md)
 2. [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/failure-testing/plan.md)
 3. [async-modernization](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/async-modernization/plan.md)
+4. [panic-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/panic-hardening/plan.md)
 
 ### Backlog
 

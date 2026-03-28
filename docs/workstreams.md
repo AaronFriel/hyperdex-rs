@@ -24,6 +24,7 @@ Each workstream directory contains:
 - [validation-ci](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/validation-ci/plan.md)
 - [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/failure-testing/plan.md)
 - [async-modernization](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/async-modernization/plan.md)
+- [panic-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/panic-hardening/plan.md)
 
 ## Backlog
 
