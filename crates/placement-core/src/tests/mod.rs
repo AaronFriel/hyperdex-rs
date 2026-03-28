@@ -1,5 +1,7 @@
 use super::*;
 
+mod hegel;
+
 #[test]
 fn rendezvous_returns_requested_replica_count() {
     let layout = ClusterLayout {
