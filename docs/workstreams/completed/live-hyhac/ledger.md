@@ -1524,7 +1524,7 @@
   original contiguous `hyperdex::partition(...)` hash intervals so the client
   can route ordinary keys before it prepares the first atomic write.
 - Owner: resumed forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane`
+  `worktrees/live-hyhac-data-plane`
 - Start commit: `be0cb38`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on
