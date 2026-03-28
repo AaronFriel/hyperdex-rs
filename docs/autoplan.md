@@ -38,9 +38,8 @@ georeplication.
 ### Active
 
 1. [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/failure-testing/plan.md)
-2. [panic-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/panic-hardening/plan.md)
-3. [fuzzing-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/fuzzing-hardening/plan.md)
-4. [nextest-fast-feedback](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/nextest-fast-feedback/plan.md)
+2. [simulation-applicability](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/simulation-applicability/plan.md)
+3. [recovery-ordering](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/recovery-ordering/plan.md)
 
 ### Backlog
 
@@ -58,15 +57,13 @@ georeplication.
 
 ## Current Root Focus
 
-Keep the green HyperDex replacement baseline honest while driving four active
-product workstreams in parallel: the next adversarial distributed proof, the
-next panic/no-panic and lint-ratchet pass on public boundaries, the first real
-fuzz targets for the highest-risk protocol decoders, and a `cargo nextest`
-fast-feedback path that keeps the core suite reliably within roughly 30
-seconds.
+Keep the green HyperDex replacement baseline honest while shifting simulation
+work from scattered point proofs to stronger system-level evidence: re-evaluate
+the parked ownership-convergence patch, identify where Turmoil, Madsim, and
+Hegel can say more about recovery and ordering, and land the next proof that
+actually strengthens distributed guarantees.
 
 ## Next Root Move
 
-Keep the watchdog armed, preregister the next failure-testing,
-panic-hardening, fuzzing, and nextest passes, and launch those four
-product-only workstreams from the updated active board.
+Rearm the watchdog against the new active set and launch the next
+simulation-focused passes from the corrected board.

@@ -274,3 +274,31 @@
     behavior
   - a product fix if the proof exposes a bug
   - one bounded commit ready for reconciliation
+
+### Entry `flt-008` - Outcome
+
+- Timestamp: `2026-03-29 19:05Z`
+- Kind: `outcome`
+- End commit: `3ad0c32`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/failure-testing`
+  - `crates/transport-core/src/lib.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/simulation-harness/src/tests/mod.rs`
+- Evidence summary:
+  - Added an internode `ValidatePrimary` request.
+  - Before applying local-primary `Put`, `ConditionalPut`, or `Delete`, the
+    runtime now asks peers to confirm that this node is still primary for the
+    key.
+  - Added a deterministic simulation proof that a stale old primary cannot
+    accept a local mutation after another node has the newer ownership view.
+  - Validation passed in the worktree with:
+    `cargo test -p simulation-harness turmoil_rejects_local_mutation_when_peer_has_newer_primary_view -- --nocapture`,
+    `cargo test -p simulation-harness`, and `cargo test -p server`.
+- Conclusion: the result is ready and looks valuable, but it is currently
+  parked because the root checkout has unrelated live edits in the same
+  `server` and `simulation-harness` files, so a safe merge needs a later
+  reconciliation pass.
+- Disposition: `reframe`
+- Next move: re-evaluate this patch against the future root state once the
+  unrelated overlapping edits are resolved or integrated.

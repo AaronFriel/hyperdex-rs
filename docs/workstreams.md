@@ -22,9 +22,8 @@ Each workstream directory contains:
 ## Active
 
 - [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/failure-testing/plan.md)
-- [panic-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/panic-hardening/plan.md)
-- [fuzzing-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/fuzzing-hardening/plan.md)
-- [nextest-fast-feedback](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/nextest-fast-feedback/plan.md)
+- [simulation-applicability](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/simulation-applicability/plan.md)
+- [recovery-ordering](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/recovery-ordering/plan.md)
 
 ## Backlog
 
@@ -44,3 +43,6 @@ Each workstream directory contains:
 - [coordinator-config-evidence](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/coordinator-config-evidence/plan.md)
 - [validation-ci](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/validation-ci/plan.md)
 - [async-modernization](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/async-modernization/plan.md)
+- [panic-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/panic-hardening/plan.md)
+- [fuzzing-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/fuzzing-hardening/plan.md)
+- [nextest-fast-feedback](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/nextest-fast-feedback/plan.md)
