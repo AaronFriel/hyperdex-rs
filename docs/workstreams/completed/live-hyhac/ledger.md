@@ -433,8 +433,8 @@
 - End commit: `e3253b4`
 - Artifact location:
   - read-only implementation map against
-    `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-    and `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/main.rs`
+    `crates/server/src/lib.rs`
+    and `crates/server/src/main.rs`
 - Evidence summary:
   - the coordinator listener insertion point is the `coordinator` branch in
     `crates/server/src/main.rs`
