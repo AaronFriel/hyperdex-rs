@@ -67,28 +67,32 @@ in an explicit later bucket.
 - [x] (2026-03-28 19:18Z) Promoted `history-scrub` to the active root board.
 - [x] (2026-03-28 19:18Z) Added the repository-root-relative path rule to
   `AGENTS.md`.
-- [ ] Create the dedicated `history-scrub` worktree and preregister the first
-  owned implementation pass.
-- [ ] Land the scan-and-rewrite tooling.
-- [ ] Remove the easy repository-local home-directory references.
-- [ ] Report the remaining deferred external-local bucket.
+- [x] (2026-03-28 19:23Z) Created the dedicated `history-scrub` worktree and
+  used it for the first owned implementation pass.
+- [x] (2026-03-28 19:26Z) Landed the scan-and-rewrite tooling under
+  `scripts/history-scrub/`.
+- [x] (2026-03-28 19:25Z) Removed the easy repository-local home-directory
+  references from the current tree.
+- [x] (2026-03-28 19:31Z) Reported the deferred external-local bucket and the
+  rewritten-history reduction.
 
 ## Current Hypothesis
 
-Most of the remaining current-tree home-directory paths are repository-authored
-markdown links and workstream records that can be converted mechanically to
-root-relative paths. The hard part is not finding them; it is making the
-cleanup repeatable and safe enough to apply as a history rewrite later.
+The easy repository-local bucket is now gone from the current tree. The
+remaining work is no longer broad search-and-replace; it is a narrower pass
+over the deferred external-local bucket, especially HyperDex and `hyhac`
+sibling-repo references in historical ledgers and the two live test-fixture
+paths in `crates/server/tests/dist_multiprocess_harness.rs`.
 
 ## Next Bounded Step
 
-Create the dedicated worktree, preregister the first owned implementation
-pass, and land the initial history-scrub toolchain:
+Pick one external-local sub-bucket and remove it cleanly:
 
-- a current-tree counter
-- a history counter
-- a throwaway rewrite runner that autosquashes fixups and reports the
-  post-rewrite count
+- either convert the two live test-fixture paths in
+  `crates/server/tests/dist_multiprocess_harness.rs` to environment-driven or
+  repository-relative discovery
+- or reduce the historical HyperDex and `hyhac` command/source references in
+  archived ledgers without damaging their evidence value
 
 ## Surprises & Discoveries
 
@@ -111,4 +115,14 @@ pass, and land the initial history-scrub toolchain:
 
 ## Outcomes & Retrospective
 
-- Pending.
+- The first pass delivered real leverage instead of another grep-only note:
+  - `scripts/history-scrub/count-home-friel.sh` measures the current tree and
+    history
+  - `scripts/history-scrub/make-fixups.sh` creates absorb-based fixups
+  - `scripts/history-scrub/rewrite-and-count.sh` rehearses a throwaway
+    autosquash plus history rewrite
+  - `scripts/history-scrub/scrub-easy-paths.py` performs the mechanical easy
+    cleanup
+- The current-tree easy bucket dropped from `273` repo-local references to `0`.
+- The remaining current-tree references are all in the deferred external-local
+  bucket.
