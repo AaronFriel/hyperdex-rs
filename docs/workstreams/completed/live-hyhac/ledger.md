@@ -487,7 +487,7 @@
 - Owner: dedicated worker in `worktrees/admin-server`
 - Start commit: `489de25`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - `worktrees/admin-server`
 - Mutable surface:
   - `crates/server/**`
   - `crates/hyperdex-admin-protocol/**` only for small integration glue if
