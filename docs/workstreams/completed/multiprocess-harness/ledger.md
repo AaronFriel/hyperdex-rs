@@ -11,7 +11,7 @@
 - Start commit: `2e6490e`
 - Worktree / branch:
   - root checkout dirty state
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness`
+  - `worktrees/dist-multiprocess-harness`
 - Mutable surface:
   - `Cargo.toml`
   - `crates/server/Cargo.toml`
