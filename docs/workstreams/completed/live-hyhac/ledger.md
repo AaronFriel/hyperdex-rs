@@ -783,7 +783,7 @@
 - End commit: `962c5dd`
 - Artifact location:
   - no code changes in
-    `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-decoder`
+    `worktrees/admin-decoder`
   - no code changes in
     `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
 - Evidence summary:
