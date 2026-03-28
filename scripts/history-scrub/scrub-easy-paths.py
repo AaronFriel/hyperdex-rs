@@ -31,6 +31,7 @@ REPLACEMENTS = (
     (f"{HOME_PREFIX}/.codex/", "$CODEX_HOME/"),
 )
 EXCLUDED_PREFIXES = ("docs/research/",)
+DOCS_HOME_TOKEN = "home-directory"
 
 
 def tracked_files() -> list[Path]:
@@ -44,7 +45,12 @@ def scrub_text(path_str: str, text: str) -> str:
     for old, new in REPLACEMENTS:
         text = text.replace(old, new)
     if path_str.startswith("scripts/history-scrub/"):
+        text = text.replace(f'b"{TARGET}"', "TARGET.encode()")
+        text = text.replace(f"b'{TARGET}'", "TARGET.encode()")
         text = text.replace(f'"{TARGET}"', '"/" + "home" + "/" + "friel"')
+    elif path_str.startswith("docs/"):
+        text = text.replace(f"{TARGET}/", f"{DOCS_HOME_TOKEN}/")
+        text = text.replace(TARGET, DOCS_HOME_TOKEN)
     return text
 
 
