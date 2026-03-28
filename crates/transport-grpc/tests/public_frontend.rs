@@ -38,6 +38,16 @@ fn profiles_schema() -> String {
         .to_owned()
 }
 
+fn replicated_profiles_schema() -> String {
+    "space profiles\n\
+     key username\n\
+     attributes\n\
+        string first,\n\
+        int profile_views\n\
+     tolerate 1 failures\n"
+        .to_owned()
+}
+
 async fn serve_runtime(runtime: Arc<ClusterRuntime>, listener: TcpListener) -> oneshot::Sender<()> {
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     let admin_svc = HyperdexAdminGrpc::new(runtime.clone());
@@ -296,13 +306,13 @@ async fn legacy_atomic_public_path_forwards_to_remote_primary_runtime() {
 
     HyperdexAdminService::handle(
         runtime1.as_ref(),
-        AdminRequest::CreateSpaceDsl(profiles_schema()),
+        AdminRequest::CreateSpaceDsl(replicated_profiles_schema()),
     )
     .await
     .unwrap();
     HyperdexAdminService::handle(
         runtime2.as_ref(),
-        AdminRequest::CreateSpaceDsl(profiles_schema()),
+        AdminRequest::CreateSpaceDsl(replicated_profiles_schema()),
     )
     .await
     .unwrap();
@@ -864,13 +874,13 @@ async fn legacy_atomic_replicates_to_secondary_runtime() {
 
     HyperdexAdminService::handle(
         runtime1.as_ref(),
-        AdminRequest::CreateSpaceDsl(profiles_schema()),
+        AdminRequest::CreateSpaceDsl(replicated_profiles_schema()),
     )
     .await
     .unwrap();
     HyperdexAdminService::handle(
         runtime2.as_ref(),
-        AdminRequest::CreateSpaceDsl(profiles_schema()),
+        AdminRequest::CreateSpaceDsl(replicated_profiles_schema()),
     )
     .await
     .unwrap();
@@ -997,13 +1007,13 @@ async fn distributed_delete_removes_replicated_state_from_secondary_runtime() {
 
     HyperdexAdminService::handle(
         runtime1.as_ref(),
-        AdminRequest::CreateSpaceDsl(profiles_schema()),
+        AdminRequest::CreateSpaceDsl(replicated_profiles_schema()),
     )
     .await
     .unwrap();
     HyperdexAdminService::handle(
         runtime2.as_ref(),
-        AdminRequest::CreateSpaceDsl(profiles_schema()),
+        AdminRequest::CreateSpaceDsl(replicated_profiles_schema()),
     )
     .await
     .unwrap();
@@ -1107,13 +1117,13 @@ async fn distributed_delete_group_removes_matching_records_from_all_replicas() {
 
     HyperdexAdminService::handle(
         runtime1.as_ref(),
-        AdminRequest::CreateSpaceDsl(profiles_schema()),
+        AdminRequest::CreateSpaceDsl(replicated_profiles_schema()),
     )
     .await
     .unwrap();
     HyperdexAdminService::handle(
         runtime2.as_ref(),
-        AdminRequest::CreateSpaceDsl(profiles_schema()),
+        AdminRequest::CreateSpaceDsl(replicated_profiles_schema()),
     )
     .await
     .unwrap();
@@ -1232,13 +1242,13 @@ async fn distributed_search_dedupes_replicated_records_across_runtimes() {
 
     HyperdexAdminService::handle(
         runtime1.as_ref(),
-        AdminRequest::CreateSpaceDsl(profiles_schema()),
+        AdminRequest::CreateSpaceDsl(replicated_profiles_schema()),
     )
     .await
     .unwrap();
     HyperdexAdminService::handle(
         runtime2.as_ref(),
-        AdminRequest::CreateSpaceDsl(profiles_schema()),
+        AdminRequest::CreateSpaceDsl(replicated_profiles_schema()),
     )
     .await
     .unwrap();
@@ -1450,13 +1460,13 @@ async fn distributed_get_falls_back_to_local_replica_when_primary_grpc_is_down()
 
     HyperdexAdminService::handle(
         runtime1.as_ref(),
-        AdminRequest::CreateSpaceDsl(profiles_schema()),
+        AdminRequest::CreateSpaceDsl(replicated_profiles_schema()),
     )
     .await
     .unwrap();
     HyperdexAdminService::handle(
         runtime2.as_ref(),
-        AdminRequest::CreateSpaceDsl(profiles_schema()),
+        AdminRequest::CreateSpaceDsl(replicated_profiles_schema()),
     )
     .await
     .unwrap();
@@ -1569,13 +1579,13 @@ async fn distributed_search_and_count_survive_one_daemon_shutdown() {
 
     HyperdexAdminService::handle(
         runtime1.as_ref(),
-        AdminRequest::CreateSpaceDsl(profiles_schema()),
+        AdminRequest::CreateSpaceDsl(replicated_profiles_schema()),
     )
     .await
     .unwrap();
     HyperdexAdminService::handle(
         runtime2.as_ref(),
-        AdminRequest::CreateSpaceDsl(profiles_schema()),
+        AdminRequest::CreateSpaceDsl(replicated_profiles_schema()),
     )
     .await
     .unwrap();
