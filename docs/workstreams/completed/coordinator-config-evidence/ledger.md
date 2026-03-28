@@ -271,7 +271,7 @@
   - `/home/friel/c/aaronfriel/HyperDex/common/datatype_string.cc`
   - `/home/friel/c/aaronfriel/HyperDex/common/configuration.cc`
   - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - the failing key is `"large"` in the `hyhac` large-object tests
   - `CityHash64("large") = 0xe2d4d8f959c0215c`, which maps to primary region
