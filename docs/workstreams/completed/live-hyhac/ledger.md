@@ -1590,7 +1590,7 @@
   `worktrees/live-hyhac-config-body`
 - Start commit: `1d6093c`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-config-body` on
+  - `worktrees/live-hyhac-config-body` on
     `live-hyhac-config-body`
 - Mutable surface:
   - `crates/legacy-protocol/**`
