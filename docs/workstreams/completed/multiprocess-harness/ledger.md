@@ -253,7 +253,7 @@
   `worktrees/clientgarbage-wire`
 - Start commit: `d12c23c`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on
+  - `worktrees/clientgarbage-wire` on
     `clientgarbage-wire`
 - Mutable surface:
   - `Cargo.toml`
