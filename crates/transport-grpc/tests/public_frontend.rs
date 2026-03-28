@@ -71,7 +71,7 @@ async fn serve_runtime(runtime: Arc<ClusterRuntime>, listener: TcpListener) -> o
 
 #[tokio::test]
 async fn grpc_create_space_put_get_roundtrip() {
-    let runtime = Arc::new(bootstrap_runtime());
+    let runtime = Arc::new(bootstrap_runtime().unwrap());
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 

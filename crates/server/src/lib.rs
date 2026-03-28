@@ -4486,8 +4486,8 @@ fn should_skip_distributed_read_replica(err: &anyhow::Error) -> bool {
     msg.contains("unknown space") || msg.contains("space ") && msg.contains("does not exist")
 }
 
-pub fn bootstrap_runtime() -> ClusterRuntime {
-    ClusterRuntime::single_node(ClusterConfig::default()).expect("default cluster config is valid")
+pub fn bootstrap_runtime() -> Result<ClusterRuntime> {
+    ClusterRuntime::single_node(ClusterConfig::default())
 }
 
 pub fn coordinator_cluster_config() -> ClusterConfig {

@@ -22,6 +22,10 @@ use legacy_protocol::{
 use std::sync::Arc;
 use std::time::Duration;
 
+fn bootstrap_runtime() -> ClusterRuntime {
+    super::bootstrap_runtime().unwrap()
+}
+
 fn legacy_request_body(nonce: u64, body: Vec<u8>) -> Vec<u8> {
     let mut request = nonce.to_be_bytes().to_vec();
     request.extend_from_slice(&body);

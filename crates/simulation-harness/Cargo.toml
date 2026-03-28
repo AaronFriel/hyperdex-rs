@@ -23,7 +23,6 @@ turmoil.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
-async-trait.workspace = true
 hegel = { package = "hegeltest", version = "0.2.6" }
 hyperdex-admin-protocol = { path = "../hyperdex-admin-protocol" }
 hyperdex-client-protocol = { path = "../hyperdex-client-protocol" }

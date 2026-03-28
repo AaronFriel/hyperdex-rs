@@ -30,7 +30,6 @@ repository = "https://example.invalid/hyperdex-rs"
 
 [workspace.dependencies]
 anyhow = "1.0"
-async-trait = "0.1"
 bytes = { version = "1.7", features = ["serde"] }
 futures = "0.3"
 omnipaxos = { version = "0.2.2", default-features = false }
