@@ -442,3 +442,54 @@
   - no product-code drift outside the harness-owned surface
   - one bounded harness commit ready for reconciliation if the shorter repro is
     worth keeping
+
+### Entry `mph-009` - Outcome
+
+- Timestamp: `2026-03-28 00:46Z`
+- Kind: `outcome`
+- End commit: `df25106`
+- Artifact location:
+  - no reconciled code result
+  - clean worktree at `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro`
+- Evidence summary:
+  - the worker returned root-status narration instead of performing harness work
+  - `git status` in the worktree remained clean
+  - there is no new repro reduction or proof from this attempt
+- Conclusion: the assignment is still useful, but the execution shape was bad.
+  The retry should use a fresh-context worker with a self-contained prompt so
+  it cannot confuse root state with harness ownership.
+- Disposition: `retry`
+- Next move: relaunch the same bounded harness step from the same clean
+  worktree with a fresh-context prompt.
+
+### Entry `mph-010` - Preregistration
+
+- Timestamp: `2026-03-28 00:46Z`
+- Kind: `preregister`
+- Hypothesis: the harness step will make progress if it is relaunched as a
+  fresh-context worker with a self-contained prompt and the same clean
+  worktree.
+- Owner: next fresh-context worker in
+  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro`
+- Start commit: `df25106`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro` on
+    `post-success-repro`
+- Mutable surface:
+  - `Cargo.toml`
+  - `crates/server/Cargo.toml`
+  - `crates/server/tests/**`
+  - `/home/friel/c/aaronfriel/hyhac/scripts/**` only if a tiny focused helper
+    is strictly necessary for the repro
+- Validator:
+  - fastest useful check:
+    `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture`
+  - expected narrower truthful checks added by the worker if they materially
+    shorten the loop
+  - strong checks:
+    - `cargo test -p server --test dist_multiprocess_harness -- --nocapture`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - a smaller truthful post-success probe, or a clean proof that the current
+    honest probe is already the smallest worthwhile loop
+  - no product-code drift outside the harness-owned surface
