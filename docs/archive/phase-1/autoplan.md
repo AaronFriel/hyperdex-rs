@@ -154,8 +154,8 @@ These workstreams are completed and moved under
 
 ### Group 2: Feature Expansion
 
-1. [warp-transactions](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/warp-transactions/plan.md)
-2. [georeplication](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/georeplication/plan.md)
+1. [warp-transactions](docs/workstreams/warp-transactions/plan.md)
+2. [georeplication](docs/workstreams/georeplication/plan.md)
 
 ## Workstream Board
 
