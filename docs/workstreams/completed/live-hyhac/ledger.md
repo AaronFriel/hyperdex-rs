@@ -2416,7 +2416,7 @@
   remaining truthful pooled atomic failure on the full-schema live path and
   move the honest compatibility boundary forward again.
 - Owner: delegated worker `019d31dc-cffe-7840-83a8-73e01c839261` (`Archimedes`)
-  in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-atomic-fix`
+  in `worktrees/live-hyhac-atomic-fix`
 - Start commit: `1e12978`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-atomic-fix` on
