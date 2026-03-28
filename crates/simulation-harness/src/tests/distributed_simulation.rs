@@ -314,6 +314,64 @@ fn turmoil_delete_group_rejects_divergent_replica_snapshots() {
 }
 
 #[test]
+fn turmoil_search_and_count_reject_divergent_replica_values_for_same_key() {
+    let mut sim = turmoil::Builder::new().build();
+
+    sim.client("cluster", async move {
+        let (_, runtime1, runtime2) =
+            distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
+
+        let key = (0..65536)
+            .map(|i| format!("divergent-search-{i}"))
+            .find(|candidate| runtime1.route_primary(candidate.as_bytes()).unwrap() == 1)
+            .expect("expected a key routed to node 1");
+
+        direct_replicated_put(runtime1.as_ref(), &key, 61).await;
+        direct_replicated_put(runtime2.as_ref(), &key, 88).await;
+
+        let search = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Search {
+                space: "profiles".to_owned(),
+                checks: vec![Check {
+                    attribute: "profile_views".to_owned(),
+                    predicate: Predicate::GreaterThanOrEqual,
+                    value: Value::Int(0),
+                }],
+            },
+        )
+        .await;
+        let search_err = search.expect_err("expected divergent replica values to abort search");
+        assert!(
+            search_err.to_string().contains("replica divergence"),
+            "unexpected search error: {search_err:#}"
+        );
+
+        let count = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Count {
+                space: "profiles".to_owned(),
+                checks: vec![Check {
+                    attribute: "profile_views".to_owned(),
+                    predicate: Predicate::GreaterThanOrEqual,
+                    value: Value::Int(0),
+                }],
+            },
+        )
+        .await;
+        let count_err = count.expect_err("expected divergent replica values to abort count");
+        assert!(
+            count_err.to_string().contains("replica divergence"),
+            "unexpected count error: {count_err:#}"
+        );
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[test]
 fn turmoil_delete_group_rolls_back_when_replica_snapshot_coverage_is_incomplete() {
     let mut sim = turmoil::Builder::new().build();
 

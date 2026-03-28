@@ -829,7 +829,7 @@ impl ClusterRuntime {
         space: String,
         checks: Vec<Check>,
     ) -> Result<Vec<Record>> {
-        let mut records_by_key = BTreeMap::new();
+        let mut records_by_key = BTreeMap::<Bytes, (u64, Record)>::new();
         let mut successful_replicas = 0usize;
         let mut skipped_replicas = Vec::new();
 
@@ -880,7 +880,20 @@ impl ClusterRuntime {
             };
 
             for record in records {
-                records_by_key.entry(record.key.clone()).or_insert(record);
+                match records_by_key.get(&record.key) {
+                    Some((existing_node_id, existing_record)) if existing_record != &record => {
+                        anyhow::bail!(
+                            "distributed search detected replica divergence for space `{space}` key {:?} between replicas {} and {}",
+                            record.key,
+                            existing_node_id,
+                            node_id
+                        );
+                    }
+                    Some(_) => {}
+                    None => {
+                        records_by_key.insert(record.key.clone(), (node_id, record));
+                    }
+                }
             }
         }
 
@@ -891,7 +904,10 @@ impl ClusterRuntime {
             );
         }
 
-        Ok(records_by_key.into_values().collect())
+        Ok(records_by_key
+            .into_values()
+            .map(|(_, record)| record)
+            .collect())
     }
 
     async fn execute_distributed_count(&self, space: String, checks: Vec<Check>) -> Result<u64> {
