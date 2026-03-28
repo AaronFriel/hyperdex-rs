@@ -1450,7 +1450,7 @@
   failure, or return the next exact coordinator-side mismatch with code and
   validators.
 - Owner: next forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane`
+  `worktrees/live-hyhac-data-plane`
 - Start commit: `8871797`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on
