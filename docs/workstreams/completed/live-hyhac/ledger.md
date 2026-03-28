@@ -1655,7 +1655,7 @@
   multiprocess `early eof` process-level path exposed after `hyh-036`, which is
   now the next concrete blocker for trustworthy live-cluster validation.
 - Owner: next forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-process-eof`
+  `worktrees/live-hyhac-process-eof`
 - Start commit: `acfdcdc`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-process-eof` on
