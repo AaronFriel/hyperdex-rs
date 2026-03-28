@@ -1818,6 +1818,12 @@ async fn read_busybee_frame_from_stream(
     if total_len < hyperdex_admin_protocol::BUSYBEE_HEADER_SIZE {
         anyhow::bail!("busybee frame size {total_len} is too small");
     }
+    if total_len > hyperdex_admin_protocol::MAX_BUSYBEE_FRAME_SIZE {
+        anyhow::bail!(
+            "busybee frame size {total_len} exceeds max {}",
+            hyperdex_admin_protocol::MAX_BUSYBEE_FRAME_SIZE
+        );
+    }
 
     let mut encoded = Vec::with_capacity(total_len);
     encoded.extend_from_slice(&header);

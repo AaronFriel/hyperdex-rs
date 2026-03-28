@@ -2,6 +2,7 @@ use thiserror::Error;
 
 pub const BUSYBEE_HEADER_SIZE: usize = 4;
 pub const BUSYBEE_HEADER_IDENTIFY: u32 = 0x8000_0000;
+pub const MAX_BUSYBEE_FRAME_SIZE: usize = 8 * 1024 * 1024;
 pub const LEGACY_REQUEST_HEADER_SIZE: usize = BUSYBEE_HEADER_SIZE + 1 + 1 + 8 + 8 + 8;
 pub const LEGACY_RESPONSE_HEADER_SIZE: usize = BUSYBEE_HEADER_SIZE + 1 + 8 + 8;
 pub const GET_REQUEST_PREFIX_SIZE: usize = 2;

@@ -71,6 +71,44 @@ async fn serve_once_returns_config_mismatch() {
 }
 
 #[tokio::test]
+async fn request_once_rejects_oversized_busybee_response_frame() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request_prefix = [0_u8; BUSYBEE_HEADER_SIZE];
+        stream.read_exact(&mut request_prefix).await.unwrap();
+        let request_len = (u32::from_be_bytes(request_prefix) & 0x00ff_ffff) as usize;
+        let mut request_body = vec![0_u8; request_len - BUSYBEE_HEADER_SIZE];
+        stream.read_exact(&mut request_body).await.unwrap();
+
+        let oversized = ((MAX_BUSYBEE_FRAME_SIZE + 1) as u32).to_be_bytes();
+        stream.write_all(&oversized).await.unwrap();
+        stream.flush().await.unwrap();
+    });
+
+    let err = request_once(
+        address,
+        RequestHeader {
+            message_type: LegacyMessageType::ReqCount,
+            flags: 0,
+            version: 7,
+            target_virtual_server: 11,
+            nonce: 19,
+        },
+        &encode_protocol_count_request(&[]),
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+
+    server.await.unwrap();
+
+    assert!(err.contains("exceeds max"));
+}
+
+#[tokio::test]
 async fn serve_once_with_handles_count() {
     let frontend = LegacyFrontend::bind("127.0.0.1:0".parse().unwrap())
         .await

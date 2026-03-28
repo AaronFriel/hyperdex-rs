@@ -5,6 +5,7 @@ use anyhow::Result;
 use legacy_protocol::{
     config_mismatch_response, encode_identify_frame, encode_request_frame, encode_response_frame,
     RequestHeader, ResponseHeader, BUSYBEE_HEADER_IDENTIFY, BUSYBEE_HEADER_SIZE,
+    MAX_BUSYBEE_FRAME_SIZE,
     LEGACY_REQUEST_HEADER_SIZE,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -173,6 +174,9 @@ async fn read_request_frame(
         if total_len < BUSYBEE_HEADER_SIZE {
             anyhow::bail!("busybee frame size {total_len} is too small");
         }
+        if total_len > MAX_BUSYBEE_FRAME_SIZE {
+            anyhow::bail!("busybee frame size {total_len} exceeds max {MAX_BUSYBEE_FRAME_SIZE}");
+        }
 
         let mut bytes = vec![0u8; total_len];
         bytes[..BUSYBEE_HEADER_SIZE].copy_from_slice(&prefix);
@@ -241,6 +245,9 @@ pub async fn request_once(
     let total_len = (u32::from_be_bytes(prefix) & 0x00ff_ffff) as usize;
     if total_len < BUSYBEE_HEADER_SIZE {
         anyhow::bail!("busybee frame size {total_len} is too small");
+    }
+    if total_len > MAX_BUSYBEE_FRAME_SIZE {
+        anyhow::bail!("busybee frame size {total_len} exceeds max {MAX_BUSYBEE_FRAME_SIZE}");
     }
     let mut response = vec![0u8; total_len];
     response[..BUSYBEE_HEADER_SIZE].copy_from_slice(&prefix);

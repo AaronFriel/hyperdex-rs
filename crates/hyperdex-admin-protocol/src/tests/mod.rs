@@ -63,6 +63,16 @@ fn busybee_frame_decode_rejects_truncated_header_without_panicking() {
 }
 
 #[test]
+fn busybee_frame_decode_rejects_oversized_frame_without_allocating_payload() {
+    let total_len = (MAX_BUSYBEE_FRAME_SIZE + 1) as u32;
+    let encoded = total_len.to_be_bytes();
+
+    let err = BusyBeeFrame::decode(&encoded).unwrap_err().to_string();
+
+    assert!(err.contains("exceeds max"));
+}
+
+#[test]
 fn varint_slice_round_trip() {
     let payload = b"hyperdex-admin";
     let encoded = encode_varint_slice(payload);

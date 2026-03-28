@@ -7,6 +7,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 pub const BUSYBEE_HEADER_SIZE: usize = 4;
 pub const BUSYBEE_HEADER_IDENTIFY: u32 = 0x8000_0000;
 pub const BUSYBEE_HEADER_EXTENDED: u32 = 0x4000_0000;
+pub const MAX_BUSYBEE_FRAME_SIZE: usize = 8 * 1024 * 1024;
 
 const BUSYBEE_SIZE_MASK: u32 = 0x00ff_ffff;
 const REPLICANT_OBJECT_HYPERDEX: &[u8] = b"hyperdex";
@@ -313,6 +314,10 @@ impl BusyBeeFrame {
             bail!("busybee frame size {total_len} is too small");
         }
 
+        if total_len > MAX_BUSYBEE_FRAME_SIZE {
+            bail!("busybee frame size {total_len} exceeds max {MAX_BUSYBEE_FRAME_SIZE}");
+        }
+
         if total_len != bytes.len() {
             bail!(
                 "busybee frame size header says {total_len} bytes but buffer has {}",
@@ -345,6 +350,10 @@ impl BusyBeeFrame {
 
             if total_len < BUSYBEE_HEADER_SIZE {
                 bail!("busybee frame size {total_len} is too small");
+            }
+
+            if total_len > MAX_BUSYBEE_FRAME_SIZE {
+                bail!("busybee frame size {total_len} exceeds max {MAX_BUSYBEE_FRAME_SIZE}");
             }
 
             if bytes.len() < total_len {
