@@ -42,6 +42,8 @@ Each workstream directory contains:
 - [simulation-proof](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/simulation-proof/plan.md)
 - [multiprocess-harness](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/multiprocess-harness/plan.md)
 - [coordinator-config-evidence](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/coordinator-config-evidence/plan.md)
+- [simulation-applicability](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/simulation-applicability/plan.md)
+- [recovery-ordering](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/recovery-ordering/plan.md)
 - [validation-ci](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/validation-ci/plan.md)
 - [async-modernization](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/async-modernization/plan.md)
 - [panic-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/panic-hardening/plan.md)
