@@ -2658,7 +2658,7 @@
   `worktrees/live-acceptance-script`
 - Start commit: `8db4d81`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-acceptance-script` on
+  - `worktrees/live-acceptance-script` on
     `live-acceptance-script`
 - Mutable surface:
   - `scripts/**`
