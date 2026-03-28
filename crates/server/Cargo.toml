@@ -12,9 +12,9 @@ openraft = ["consensus-core/openraft"]
 
 [dependencies]
 anyhow.workspace = true
-async-trait.workspace = true
 bytes.workspace = true
 cityhasher = "0.1.0"
+grpc-api = { path = "../grpc-api" }
 prost.workspace = true
 cluster-config = { path = "../cluster-config" }
 consensus-core = { path = "../consensus-core" }
@@ -37,10 +37,6 @@ tonic.workspace = true
 transport-core = { path = "../transport-core" }
 tracing.workspace = true
 tracing-subscriber.workspace = true
-
-[build-dependencies]
-protoc-bin-vendored = "3"
-tonic-build = "0.12"
 
 [dev-dependencies]
 serial_test.workspace = true

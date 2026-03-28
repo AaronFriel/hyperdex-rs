@@ -35,9 +35,7 @@ use transport_core::{
 };
 
 pub mod grpc_api {
-    pub mod v1 {
-        tonic::include_proto!("hyperdex.v1");
-    }
+    pub use ::grpc_api::v1;
 }
 
 static MULTIPROCESS_HARNESS_LOCK: LazyLock<AsyncMutex<()>> = LazyLock::new(|| AsyncMutex::new(()));

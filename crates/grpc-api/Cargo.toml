@@ -1,0 +1,12 @@
+[package]
+name = "grpc-api"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+bytes.workspace = true
+prost.workspace = true
+tonic.workspace = true

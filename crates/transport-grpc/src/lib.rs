@@ -3,15 +3,14 @@ use std::sync::Arc;
 use anyhow::Result;
 use bytes::Bytes;
 use data_model::{Attribute as ModelAttribute, Mutation as ModelMutation, Value as ModelValue};
+use grpc_api::v1;
 use server::ClusterRuntime;
 use std::future::Future;
 use std::pin::Pin;
 use transport_core::{ClusterTransport, InternodeRequest, InternodeResponse, RemoteNode};
 
 pub mod hyperdex {
-    pub mod v1 {
-        tonic::include_proto!("hyperdex.v1");
-    }
+    pub use grpc_api::v1;
 }
 
 fn status_from_anyhow(err: anyhow::Error) -> tonic::Status {
@@ -25,10 +24,8 @@ fn status_from_anyhow(err: anyhow::Error) -> tonic::Status {
     }
 }
 
-fn model_value_from_proto(
-    value: hyperdex::v1::Value,
-) -> std::result::Result<ModelValue, tonic::Status> {
-    use hyperdex::v1::value::Kind;
+fn model_value_from_proto(value: v1::Value) -> std::result::Result<ModelValue, tonic::Status> {
+    use v1::value::Kind;
 
     let Some(kind) = value.kind else {
         return Err(tonic::Status::invalid_argument("missing value kind"));
@@ -44,11 +41,11 @@ fn model_value_from_proto(
     })
 }
 
-fn proto_value_from_model(value: ModelValue) -> hyperdex::v1::Value {
-    use hyperdex::v1::value::Kind;
+fn proto_value_from_model(value: ModelValue) -> v1::Value {
+    use v1::value::Kind;
 
     let kind = match value {
-        ModelValue::Null => Kind::NullValue(hyperdex::v1::Null {}),
+        ModelValue::Null => Kind::NullValue(v1::Null {}),
         ModelValue::Bool(v) => Kind::BoolValue(v),
         ModelValue::Int(v) => Kind::IntValue(v),
         ModelValue::Float(v) => Kind::FloatValue(v.into_inner()),
@@ -59,11 +56,11 @@ fn proto_value_from_model(value: ModelValue) -> hyperdex::v1::Value {
         ModelValue::Map(v) => Kind::StringValue(format!("{v:?}")),
     };
 
-    hyperdex::v1::Value { kind: Some(kind) }
+    v1::Value { kind: Some(kind) }
 }
 
 fn model_mutations_from_attributes(
-    attributes: Vec<hyperdex::v1::Attribute>,
+    attributes: Vec<v1::Attribute>,
 ) -> std::result::Result<Vec<ModelMutation>, tonic::Status> {
     let mut mutations = Vec::with_capacity(attributes.len());
     for attr in attributes {
@@ -90,15 +87,15 @@ impl HyperdexAdminGrpc {
     }
 }
 
-impl hyperdex::v1::hyperdex_admin_server::HyperdexAdmin for HyperdexAdminGrpc {
+impl v1::hyperdex_admin_server::HyperdexAdmin for HyperdexAdminGrpc {
     fn create_space(
         &self,
-        request: tonic::Request<hyperdex::v1::CreateSpaceRequest>,
+        request: tonic::Request<v1::CreateSpaceRequest>,
     ) -> Pin<
         Box<
             dyn Future<
                     Output = std::result::Result<
-                        tonic::Response<hyperdex::v1::CreateSpaceResponse>,
+                        tonic::Response<v1::CreateSpaceResponse>,
                         tonic::Status,
                     >,
                 > + Send,
@@ -114,7 +111,7 @@ impl hyperdex::v1::hyperdex_admin_server::HyperdexAdmin for HyperdexAdminGrpc {
             .await
             .map_err(status_from_anyhow)?;
 
-            Ok(tonic::Response::new(hyperdex::v1::CreateSpaceResponse {}))
+            Ok(tonic::Response::new(v1::CreateSpaceResponse {}))
         })
     }
 }
@@ -130,15 +127,15 @@ impl HyperdexClientGrpc {
     }
 }
 
-impl hyperdex::v1::hyperdex_client_server::HyperdexClient for HyperdexClientGrpc {
+impl v1::hyperdex_client_server::HyperdexClient for HyperdexClientGrpc {
     fn put(
         &self,
-        request: tonic::Request<hyperdex::v1::PutRequest>,
+        request: tonic::Request<v1::PutRequest>,
     ) -> Pin<
         Box<
             dyn Future<
                     Output = std::result::Result<
-                        tonic::Response<hyperdex::v1::PutResponse>,
+                        tonic::Response<v1::PutResponse>,
                         tonic::Status,
                     >,
                 > + Send,
@@ -160,18 +157,18 @@ impl hyperdex::v1::hyperdex_client_server::HyperdexClient for HyperdexClientGrpc
             .await
             .map_err(status_from_anyhow)?;
 
-            Ok(tonic::Response::new(hyperdex::v1::PutResponse {}))
+            Ok(tonic::Response::new(v1::PutResponse {}))
         })
     }
 
     fn get(
         &self,
-        request: tonic::Request<hyperdex::v1::GetRequest>,
+        request: tonic::Request<v1::GetRequest>,
     ) -> Pin<
         Box<
             dyn Future<
                     Output = std::result::Result<
-                        tonic::Response<hyperdex::v1::GetResponse>,
+                        tonic::Response<v1::GetResponse>,
                         tonic::Status,
                     >,
                 > + Send,
@@ -200,7 +197,7 @@ impl hyperdex::v1::hyperdex_client_server::HyperdexClient for HyperdexClientGrpc
             };
 
             let Some(record) = record else {
-                return Ok(tonic::Response::new(hyperdex::v1::GetResponse {
+                return Ok(tonic::Response::new(v1::GetResponse {
                     found: false,
                     attributes: Vec::new(),
                 }));
@@ -209,13 +206,13 @@ impl hyperdex::v1::hyperdex_client_server::HyperdexClient for HyperdexClientGrpc
             let attributes = record
                 .attributes
                 .into_iter()
-                .map(|(name, value)| hyperdex::v1::Attribute {
+                .map(|(name, value)| v1::Attribute {
                     name,
                     value: Some(proto_value_from_model(value)),
                 })
                 .collect();
 
-            Ok(tonic::Response::new(hyperdex::v1::GetResponse {
+            Ok(tonic::Response::new(v1::GetResponse {
                 found: true,
                 attributes,
             }))
@@ -234,15 +231,15 @@ impl InternodeGrpc {
     }
 }
 
-impl hyperdex::v1::internode_transport_server::InternodeTransport for InternodeGrpc {
+impl v1::internode_transport_server::InternodeTransport for InternodeGrpc {
     fn send(
         &self,
-        request: tonic::Request<hyperdex::v1::InternodeRpcRequest>,
+        request: tonic::Request<v1::InternodeRpcRequest>,
     ) -> Pin<
         Box<
             dyn Future<
                     Output = std::result::Result<
-                        tonic::Response<hyperdex::v1::InternodeRpcResponse>,
+                        tonic::Response<v1::InternodeRpcResponse>,
                         tonic::Status,
                     >,
                 > + Send,
@@ -259,7 +256,7 @@ impl hyperdex::v1::internode_transport_server::InternodeTransport for InternodeG
                 .await
                 .map_err(status_from_anyhow)?;
 
-            Ok(tonic::Response::new(hyperdex::v1::InternodeRpcResponse {
+            Ok(tonic::Response::new(v1::InternodeRpcResponse {
                 status: response.status as u32,
                 body: response.body.to_vec(),
             }))
@@ -279,12 +276,10 @@ impl ClusterTransport for GrpcTransportAdapter {
         Box::pin(async move {
             let endpoint = format!("http://{}:{}", node.host, node.port);
             let mut client =
-                hyperdex::v1::internode_transport_client::InternodeTransportClient::connect(
-                    endpoint,
-                )
+                v1::internode_transport_client::InternodeTransportClient::connect(endpoint)
                 .await?;
             let response = client
-                .send(hyperdex::v1::InternodeRpcRequest {
+                .send(v1::InternodeRpcRequest {
                     method: request.method,
                     body: request.body.to_vec(),
                 })

@@ -24,9 +24,7 @@ use tracing::{info, warn};
 use transport_core::{ClusterTransport, InternodeRequest, InternodeResponse, RemoteNode};
 
 pub mod grpc_api {
-    pub mod v1 {
-        tonic::include_proto!("hyperdex.v1");
-    }
+    pub use ::grpc_api::v1;
 }
 
 #[derive(Clone)]

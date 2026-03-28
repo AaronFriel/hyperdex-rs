@@ -7,6 +7,7 @@ members = [
     "crates/data-plane",
     "crates/engine-memory",
     "crates/engine-rocks",
+    "crates/grpc-api",
     "crates/hyperdex-client-protocol",
     "crates/hyperdex-admin-protocol",
     "crates/legacy-frontend",
