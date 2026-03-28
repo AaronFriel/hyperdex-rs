@@ -7,13 +7,13 @@ under [archive/phase-1](docs/archive/phase-1).
 
 ## Companion Files
 
-- Root ledger: [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/ledger.md)
-- Workstream index: [workstreams.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams.md)
-- Capability ladder: [capability-ladder.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/capability-ladder.md)
-- Future directions: [future-directions.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/future-directions.md)
-- Paper notes: [papers-and-mvp-notes.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/papers-and-mvp-notes.md)
-- Hyhac compatibility notes: [hyhac-compatibility-surface.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/hyhac-compatibility-surface.md)
-- Archived phase-1 package: [archive/phase-1](/home/friel/c/aaronfriel/hyperdex-rs/docs/archive/phase-1)
+- Root ledger: [ledger.md](docs/ledger.md)
+- Workstream index: [workstreams.md](docs/workstreams.md)
+- Capability ladder: [capability-ladder.md](docs/capability-ladder.md)
+- Future directions: [future-directions.md](docs/future-directions.md)
+- Paper notes: [papers-and-mvp-notes.md](docs/papers-and-mvp-notes.md)
+- Hyhac compatibility notes: [hyhac-compatibility-surface.md](docs/hyhac-compatibility-surface.md)
+- Archived phase-1 package: [archive/phase-1](docs/archive/phase-1)
 
 ## Goal
 
