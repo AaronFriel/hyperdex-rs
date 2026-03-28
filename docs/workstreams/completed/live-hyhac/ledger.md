@@ -755,7 +755,7 @@
 - Start commit: `51002a7`
 - Worktree / branch:
   - decoder: dedicated worktree for protocol/data-model decoding work
-  - service core: `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - service core: `worktrees/admin-server`
 - Mutable surface:
   - decoder worker:
     - `crates/hyperdex-admin-protocol/**`
