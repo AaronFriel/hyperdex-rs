@@ -2286,9 +2286,8 @@
   full-schema post-success Hyhac failure to the first later divergent
   operation, patch the responsible server or protocol behavior, and move the
   honest live baseline forward.
-- Owner: next forked product worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-roundtrip-fix`
-- Start commit: `30227c3`
+- Owner: delegated worker `019d31bc-e8da-7af3-b40a-bfa04fd8ec4b` (`Gauss`)
+- Start commit: `ace4050`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-roundtrip-fix`
     on `live-hyhac-roundtrip-fix`

@@ -418,12 +418,11 @@
 - Hypothesis: a harness-owned repro-reduction pass can shorten the honest
   full-schema Hyhac failure into a smaller truthful post-success probe without
   drifting into product implementation.
-- Owner: next forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire`
-- Start commit: `30227c3`
+- Owner: delegated worker `019d31bc-eb2a-7f40-b735-2f35a49b2c12` (`Russell`)
+- Start commit: `ace4050`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on
-    `clientgarbage-wire`
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro` on
+    `post-success-repro`
 - Mutable surface:
   - `Cargo.toml`
   - `crates/server/Cargo.toml`
