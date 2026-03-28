@@ -1814,8 +1814,8 @@
 - Kind: `outcome`
 - End commit: `working tree on main after the repeated-identify fix and probe corrections`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - `cce-013` identified repeated server identify handling on an already-
     identified anonymous BusyBee channel as the next exact mismatch after
