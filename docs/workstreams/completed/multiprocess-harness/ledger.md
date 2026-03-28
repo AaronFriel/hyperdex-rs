@@ -198,7 +198,7 @@
   the first bad legacy daemon request/response pair will give the product
   worker a stronger target than the public failure string alone.
 - Owner: forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-probe`
+  `worktrees/clientgarbage-probe`
 - Start commit: `0b2379d`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-probe` on
