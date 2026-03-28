@@ -2289,7 +2289,7 @@
 - Owner: delegated worker `019d31bc-e8da-7af3-b40a-bfa04fd8ec4b` (`Gauss`)
 - Start commit: `ace4050`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-roundtrip-fix`
+  - `worktrees/live-hyhac-roundtrip-fix`
     on `live-hyhac-roundtrip-fix`
 - Mutable surface:
   - `crates/legacy-protocol/**`
