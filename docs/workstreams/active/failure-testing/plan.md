@@ -6,7 +6,7 @@ This workstream plan is a living document. The sections `Progress`,
 proceeds.
 
 This repository does not contain its own `PLANS.md`, so this file follows the
-fallback rules at `/home/friel/.codex/skills/autoplan/references/PLANS.md`.
+fallback rules at `the installed `autoplan` skill fallback rules`.
 
 ## Purpose / Big Picture
 

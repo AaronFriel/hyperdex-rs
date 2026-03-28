@@ -10,7 +10,7 @@
 - Owner: forked worker on `failure-testing`
 - Start commit: `9104047`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/failure-testing`
+  - `worktrees/failure-testing`
   - `failure-testing`
 - Mutable surface:
   - `crates/simulation-harness/**`
@@ -94,7 +94,7 @@
 - Owner: forked worker on `failure-testing`
 - Start commit: `fb02bcc`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/failure-testing`
+  - `worktrees/failure-testing`
   - `failure-testing`
 - Mutable surface:
   - `crates/simulation-harness/**`
@@ -143,7 +143,7 @@
 - Owner: forked worker on `failure-testing`
 - Start commit: `7e79838`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/failure-testing`
+  - `worktrees/failure-testing`
   - `failure-testing`
 - Mutable surface:
   - `crates/simulation-harness/**`
@@ -190,7 +190,7 @@
 - Owner: forked worker on `failure-testing`
 - Start commit: `8da80c8`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/failure-testing`
+  - `worktrees/failure-testing`
   - `failure-testing`
 - Mutable surface:
   - `crates/simulation-harness/**`
@@ -255,7 +255,7 @@
 - Owner: next forked worker on `failure-testing`
 - Start commit: `2b7d144`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/failure-testing`
+  - `worktrees/failure-testing`
   - `failure-testing`
 - Mutable surface:
   - `crates/simulation-harness/**`
@@ -281,7 +281,7 @@
 - Kind: `outcome`
 - End commit: `3ad0c32`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/failure-testing`
+  - `worktrees/failure-testing`
   - `crates/transport-core/src/lib.rs`
   - `crates/server/src/lib.rs`
   - `crates/simulation-harness/src/tests/mod.rs`
@@ -371,7 +371,7 @@
 - Owner: next forked worker on `failure-testing`
 - Start commit: `46949a1`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/failure-testing`
+  - `worktrees/failure-testing`
   - `failure-testing`
 - Mutable surface:
   - `crates/transport-core/**`

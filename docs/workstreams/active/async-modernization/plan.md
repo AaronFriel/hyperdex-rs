@@ -6,7 +6,7 @@ This workstream plan is a living document. The sections `Progress`,
 proceeds.
 
 This repository does not contain its own `PLANS.md`, so this file follows the
-fallback rules at `/home/friel/.codex/skills/autoplan/references/PLANS.md`.
+fallback rules at `the installed `autoplan` skill fallback rules`.
 
 ## Purpose / Big Picture
 
@@ -84,7 +84,7 @@ root is satisfied with the generated-output and runtime state.
 - Observation: tonic-build 0.12.3 still generates `#[async_trait] pub trait`
   server traits for the gRPC boundary.
   Evidence:
-  `/home/friel/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-build-0.12.3/src/server.rs:223`
+  the local tonic-build 0.12.3 server generator source at `src/server.rs:223`
   emits `#[async_trait] pub trait #server_trait`, and the generated
   `target/debug/build/*/out/hyperdex.v1.rs` files contain
   `#[async_trait] pub trait HyperdexAdmin`, `HyperdexClient`, and

@@ -11,7 +11,7 @@
 - Start commit: `2e6490e`
 - Worktree / branch:
   - root checkout dirty state
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on
+  - `worktrees/sim-coverage` on
     `sim-coverage-numeric`
 - Mutable surface:
   - `crates/simulation-harness/src/lib.rs`
@@ -49,10 +49,10 @@
 - Hypothesis: making the single-node Hegel sequence model use declared
   attributes instead of the undeclared `name` field will tighten generated
   coverage without widening the mutable surface beyond `simulation-harness`.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage`
+- Owner: dedicated worker in `worktrees/sim-coverage`
 - Start commit: `6d55620`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on
+  - `worktrees/sim-coverage` on
     `sim-coverage-numeric`
 - Mutable surface:
   - `crates/simulation-harness/src/lib.rs`
@@ -91,10 +91,10 @@
   line with current distributed runtime behavior by fixing replica fallback or
   simulated transport handling inside the simulation-owned surface.
 - Owner: delegated worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/simulation-degraded-read-fix`
+  `worktrees/simulation-degraded-read-fix`
 - Start commit: `281b8cb`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/simulation-degraded-read-fix`
+  - `worktrees/simulation-degraded-read-fix`
     on `simulation-degraded-read-fix`
 - Mutable surface:
   - `crates/simulation-harness/**`

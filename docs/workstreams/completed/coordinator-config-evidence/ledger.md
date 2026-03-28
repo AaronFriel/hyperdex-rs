@@ -29,7 +29,7 @@
 - Kind: `outcome`
 - End commit: `d8ac0ad`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md`
+  - `docs/workstreams/coordinator-config-evidence/plan.md`
 - Evidence summary:
   - The captured client-side `trailing_bytes=45` stream matches a BusyBee
     `IDENTIFY` frame (`0x80000014`, 20 bytes) plus a Replicant bootstrap
@@ -110,7 +110,7 @@
     `0x0400000000000000`, and the last ends at `UINT64_MAX`
   - Rust’s `default_legacy_config_encoder` currently emits
     `lower=partition`, `upper=partition` for every region in
-    `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+    `crates/server/src/lib.rs`
   - the original HyperDex client consumes those region bounds in
     `configuration::point_leader`, so singleton bounds leave ordinary key
     hashes outside every region before the client can route and prepare the
@@ -162,7 +162,7 @@
   - `/home/friel/c/aaronfriel/HyperDex/admin/hyperspace_builder.cc`
   - `/home/friel/c/aaronfriel/HyperDex/admin/partition.cc`
   - `/home/friel/c/aaronfriel/HyperDex/common/hyperspace.cc`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - the original `profiles` layout is a one-dimensional primary subspace on
     attribute `0`
@@ -210,7 +210,7 @@
 - Kind: `outcome`
 - End commit: `1c18705`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
   - `/home/friel/c/aaronfriel/HyperDex/coordinator/coordinator.cc`
   - `/home/friel/c/aaronfriel/HyperDex/common/configuration.cc`
   - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
@@ -271,7 +271,7 @@
   - `/home/friel/c/aaronfriel/HyperDex/common/datatype_string.cc`
   - `/home/friel/c/aaronfriel/HyperDex/common/configuration.cc`
   - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - the failing key is `"large"` in the `hyhac` large-object tests
   - `CityHash64("large") = 0xe2d4d8f959c0215c`, which maps to primary region
@@ -376,8 +376,8 @@
 - Kind: `outcome`
 - End commit: `50c064c`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
   - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
   - `/home/friel/c/aaronfriel/HyperDex/common/configuration.cc`
   - `/home/friel/c/aaronfriel/HyperDex/common/mapper.cc`
@@ -433,9 +433,9 @@
   - `/home/friel/c/aaronfriel/HyperDex/client/keyop_info.cc`
   - `/home/friel/c/aaronfriel/HyperDex/common/key_change.cc`
   - `/home/friel/c/aaronfriel/HyperDex/common/funcall.cc`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/legacy-frontend/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/legacy-protocol/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/legacy-frontend/src/lib.rs`
+  - `crates/legacy-protocol/src/lib.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - original HyperDex lowers `put` to `FUNC_SET` funcalls before send
   - original daemon reads `nonce >> key_change` after the accepted header
@@ -485,7 +485,7 @@
   - `/home/friel/c/aaronfriel/HyperDex/common/funcall.cc`
   - `/home/friel/c/aaronfriel/HyperDex/common/attribute_check.cc`
   - `/home/friel/c/aaronfriel/HyperDex/client/pending_atomic.cc`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - upstream `replication_manager::client_atomic` validates `key_change`
     against the target region schema before execution
@@ -536,7 +536,7 @@
 - Artifact location:
   - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
   - `/home/friel/c/aaronfriel/HyperDex/client/pending_get_partial.cc`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
   - manual clean-baseline live-cluster probe with daemon capture cleared after
     startup
 - Evidence summary:
@@ -593,8 +593,8 @@
 - Artifact location:
   - `/home/friel/HyperDex/Replicant/client/client.cc`
   - `/home/friel/HyperDex/Replicant/daemon/daemon.cc`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/hyperdex-admin-protocol/src/lib.rs`
   - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - the new harness result on `main` shows the failing path sends and receives
@@ -643,8 +643,8 @@
 - Kind: `outcome`
 - End commit: `19fc81f`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/hyperdex-admin-protocol/src/lib.rs`
   - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - the sender-id plumbing fix landed on `main`
@@ -690,8 +690,8 @@
 - End commit: `main after the repeated-identify fix and corrected BusyBee proxy probe`
 - Artifact location:
   - `/home/friel/HyperDex/busybee/busybee.cc`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - the original BusyBee accept path sends an identify reply only on the first
     transition from anonymous to identified; later identify frames on that
@@ -789,7 +789,7 @@
 - End commit: `a618ea0`
 - Artifact location:
   - `/home/friel/c/aaronfriel/HyperDex/Replicant/client/pending_cond_follow.cc`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
   - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Ffi/Client.chs`
   - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Core.hs`
   - `/home/friel/c/aaronfriel/hyhac/src/Database/HyperDex/Internal/Handle.hs`

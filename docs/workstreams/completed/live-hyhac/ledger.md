@@ -7,7 +7,7 @@
 - Hypothesis: the first live `hyhac` failure against `hyperdex-rs` will appear
   in admin `create space` or `waitUntilStable`, before client traffic starts.
 - Owner: next forked product worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object`
+  `worktrees/live-hyhac-large-object`
 - Start commit: `98def36`
 - Worktree / branch:
   - root checkout on `main`
@@ -53,10 +53,10 @@
 - Hypothesis: implementing the legacy coordinator admin frontend for
   `add_space` and `wait_until_stable` will unblock the first `hyhac` admin test
   and the matching HyperDex admin tools.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+- Owner: dedicated worker in `worktrees/dist-control-plane`
 - Start commit: `faa6cb6`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+  - `worktrees/dist-control-plane`
 - Mutable surface:
   - `crates/server/**`
   - `crates/hyperdex-admin-protocol/**`
@@ -78,7 +78,7 @@
 - Kind: `outcome`
 - End commit: `d2c133c`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+  - no code changes in `worktrees/dist-control-plane`
 - Evidence summary:
   - the retired worker reported no file changes
   - the retired worker identified insufficient verified wire detail for the
@@ -140,10 +140,10 @@
   behavior for `space_add`, `wait_until_stable`, and request-id-plus-loop
   completion will unblock the original C admin tools and the first live `hyhac`
   admin test.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+- Owner: dedicated worker in `worktrees/dist-control-plane`
 - Start commit: `cd0d58c`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+  - `worktrees/dist-control-plane`
 - Mutable surface:
   - `crates/server/**`
   - `crates/hyperdex-admin-protocol/**`
@@ -164,7 +164,7 @@
 - Kind: `outcome`
 - End commit: `5b6b614`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+  - no code changes in `worktrees/dist-control-plane`
 - Evidence summary:
   - the replacement worker again reported no file changes
   - the replacement worker confirmed the remaining blocker is concrete
@@ -269,10 +269,10 @@
 - Hypothesis: implementing the verified BusyBee-framed, Replicant-compatible
   coordinator admin behavior in one bounded worker will unblock the legacy
   admin tools.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+- Owner: dedicated worker in `worktrees/dist-control-plane`
 - Start commit: `801d20f`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+  - `worktrees/dist-control-plane`
 - Mutable surface:
   - `crates/server/**`
   - `crates/hyperdex-admin-protocol/**`
@@ -291,7 +291,7 @@
 - Kind: `outcome`
 - End commit: `801d20f`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+  - no code changes in `worktrees/dist-control-plane`
 - Evidence summary:
   - the worker again reported no file changes
   - the worker named broad implementation design, not missing protocol facts,
@@ -353,7 +353,7 @@
 - Kind: `outcome`
 - End commit: `f2da7e5`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-codec`
+  - no code changes in `worktrees/admin-codec`
 - Evidence summary:
   - the dedicated admin-codec worker was interrupted after the worktree stayed
     clean at `801d20f`
@@ -370,7 +370,7 @@
 - Kind: `outcome`
 - End commit: `f2da7e5`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - no code changes in `worktrees/admin-server`
 - Evidence summary:
   - the dedicated server worker was interrupted after the worktree stayed clean
     at `801d20f`
@@ -389,10 +389,10 @@
 - Hypothesis: a worker with an explicit codec contract can land the pure
   BusyBee and Replicant admin frame types, varint slice helpers, and unit tests
   inside `hyperdex-admin-protocol` without depending on server behavior.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-codec`
+- Owner: dedicated worker in `worktrees/admin-codec`
 - Start commit: `f2da7e5`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-codec`
+  - `worktrees/admin-codec`
 - Mutable surface:
   - `crates/hyperdex-admin-protocol/**`
 - Validator:
@@ -433,8 +433,8 @@
 - End commit: `e3253b4`
 - Artifact location:
   - read-only implementation map against
-    `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-    and `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/main.rs`
+    `crates/server/src/lib.rs`
+    and `crates/server/src/main.rs`
 - Evidence summary:
   - the coordinator listener insertion point is the `coordinator` branch in
     `crates/server/src/main.rs`
@@ -462,7 +462,7 @@
 - Kind: `outcome`
 - End commit: `489de25`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
+  - `crates/hyperdex-admin-protocol/src/lib.rs`
 - Evidence summary:
   - the codec worker produced `ac16953` and root reconciled it as `489de25`
     (`Add legacy admin codec helpers`)
@@ -484,10 +484,10 @@
 - Hypothesis: one substantial server worker can implement the full
   coordinator-side legacy admin path now that the codec and the exact server
   insertion points are both available.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Owner: dedicated worker in `worktrees/admin-server`
 - Start commit: `489de25`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - `worktrees/admin-server`
 - Mutable surface:
   - `crates/server/**`
   - `crates/hyperdex-admin-protocol/**` only for small integration glue if
@@ -510,7 +510,7 @@
 - Kind: `outcome`
 - End commit: `928130e`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - no code changes in `worktrees/admin-server`
 - Evidence summary:
   - the full server implementation worker was interrupted
   - the `admin-server` worktree remained clean at `928130e`
@@ -530,10 +530,10 @@
 - Hypothesis: a worker told to patch the exact coordinator listener and session
   functions already identified can land the legacy admin server implementation
   without another exploratory stall.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Owner: dedicated worker in `worktrees/admin-server`
 - Start commit: `928130e`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - `worktrees/admin-server`
 - Mutable surface:
   - `crates/server/**`
   - `crates/hyperdex-admin-protocol/**` only for small integration glue if
@@ -556,7 +556,7 @@
 - Kind: `outcome`
 - End commit: `ee09ee0`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - no code changes in `worktrees/admin-server`
 - Evidence summary:
   - the explicit-patch-target retry was interrupted
   - the `admin-server` worktree remained clean at `ee09ee0`
@@ -579,7 +579,7 @@
 - Owner: root-coordinated pair
 - Start commit: `ee09ee0`
 - Worktree / branch:
-  - implementation: `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - implementation: `worktrees/admin-server`
   - reviewer: read-only, no code edits
 - Mutable surface:
   - implementation worker:
@@ -607,10 +607,10 @@
 - Kind: `outcome`
 - End commit: `2641a75`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - no code changes in `worktrees/admin-server`
   - read-only review against
-    `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/main.rs`
-    and `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+    `crates/server/src/main.rs`
+    and `crates/server/src/lib.rs`
 - Evidence summary:
   - the forked implementation worker still produced no diff
   - the reviewer established that the coordinator currently exposes only the
@@ -634,10 +634,10 @@
   transport and session layer will finally unblock the original admin tools,
   because it matches the landed codec instead of trying to reuse the JSON
   control path.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Owner: dedicated worker in `worktrees/admin-server`
 - Start commit: `2641a75`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - `worktrees/admin-server`
 - Mutable surface:
   - `crates/server/**`
   - `crates/hyperdex-admin-protocol/**` only for small integration glue if
@@ -660,7 +660,7 @@
 - Kind: `outcome`
 - End commit: `175ed25`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - no code changes in `worktrees/admin-server`
 - Evidence summary:
   - the corrected-transport worker still produced no diff
   - it returned a precise blocker report matching the reviewer: the current
@@ -682,10 +682,10 @@
 - Hypothesis: a worker focused on the coordinator BusyBee/Replicant service
   core in `crates/server/src/lib.rs` can land the transport/session machinery
   once the end-to-end framing is no longer bundled with startup wiring.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Owner: dedicated worker in `worktrees/admin-server`
 - Start commit: `175ed25`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - `worktrees/admin-server`
 - Mutable surface:
   - `crates/server/src/lib.rs`
   - `crates/hyperdex-admin-protocol/**` only for small integration glue if
@@ -705,7 +705,7 @@
 - Kind: `outcome`
 - End commit: `51002a7`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - no code changes in `worktrees/admin-server`
 - Evidence summary:
   - the service-core worker still produced no diff
   - it returned a precise blocker report: the server has no Rust decoder for
@@ -728,10 +728,10 @@
 - Hypothesis: implementing the packed `space_add` payload decoder and the
   matching service-core consumption path will unblock the coordinator
   BusyBee/Replicant service work.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Owner: dedicated worker in `worktrees/admin-server`
 - Start commit: `51002a7`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - `worktrees/admin-server`
 - Mutable surface:
   - `crates/server/src/lib.rs`
   - `crates/hyperdex-admin-protocol/**` only for small integration glue if
@@ -755,7 +755,7 @@
 - Start commit: `51002a7`
 - Worktree / branch:
   - decoder: dedicated worktree for protocol/data-model decoding work
-  - service core: `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - service core: `worktrees/admin-server`
 - Mutable surface:
   - decoder worker:
     - `crates/hyperdex-admin-protocol/**`
@@ -783,9 +783,9 @@
 - End commit: `962c5dd`
 - Artifact location:
   - no code changes in
-    `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-decoder`
+    `worktrees/admin-decoder`
   - no code changes in
-    `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+    `worktrees/admin-server`
 - Evidence summary:
   - both parallel implementation workers were interrupted with clean worktrees
   - the decoder-side blocker remained the missing packed `space_add` decoder
@@ -830,8 +830,8 @@
 - Kind: `outcome`
 - End commit: `df633ac`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/hyperdex-admin-protocol/src/lib.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - `decode_packed_hyperdex_space` now ports the original
     `hyperdex::space` binary layout into the Rust `Space` model, including
@@ -862,7 +862,7 @@
 - Owner: root reconciliation of the completed `admin-server` worktree
 - Start commit: `063d8a1`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - `worktrees/admin-server`
 - Mutable surface:
   - `crates/server/src/lib.rs`
   - `crates/hyperdex-admin-protocol/**` only for small integration fixes
@@ -880,8 +880,8 @@
 - Kind: `outcome`
 - End commit: `f26d042`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/hyperdex-admin-protocol/src/lib.rs`
 - Evidence summary:
   - `78162d5` lands `CoordinatorAdminLegacyService`, per-connection pending
     completion state, BusyBee-framed bootstrap handling, and focused server
@@ -977,8 +977,8 @@
 - Kind: `outcome`
 - End commit: `99d3922`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/main.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/main.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - `99d3922` binds one public coordinator listener, accepts connections on
     that port, peeks the first bytes, and dispatches each connection to either
@@ -1064,7 +1064,7 @@
 - Kind: `outcome`
 - End commit: `0d8d566`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - `0d8d566` replaces the JSON `config` follow payload with packed
     `hyperdex::configuration` bytes in `default_legacy_config_encoder`
@@ -1326,10 +1326,10 @@
   expose the next exact wire mismatch with stronger evidence than another
   narrow substep.
 - Owner: forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-bootstrap`
+  `worktrees/live-hyhac-bootstrap`
 - Start commit: `4ccf113`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-bootstrap` on
+  - `worktrees/live-hyhac-bootstrap` on
     `live-hyhac-bootstrap`
 - Mutable surface:
   - `crates/server/src/lib.rs`
@@ -1384,10 +1384,10 @@
   working `get`, `count`, and richer client operations, or at least return the
   next exact wire mismatch from that path.
 - Owner: forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane`
+  `worktrees/live-hyhac-data-plane`
 - Start commit: `c087f81`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on
+  - `worktrees/live-hyhac-data-plane` on
     `live-hyhac-data-plane`
 - Mutable surface:
   - `crates/legacy-protocol/**`
@@ -1415,7 +1415,7 @@
 - Kind: `outcome`
 - End commit: `8871797`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane`
+  - `worktrees/live-hyhac-data-plane`
 - Evidence summary:
   - `cargo test -p legacy-frontend -- --nocapture` passed in the worktree
   - `cargo test -p server legacy_ -- --nocapture` passed for the direct
@@ -1450,10 +1450,10 @@
   failure, or return the next exact coordinator-side mismatch with code and
   validators.
 - Owner: next forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane`
+  `worktrees/live-hyhac-data-plane`
 - Start commit: `8871797`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on
+  - `worktrees/live-hyhac-data-plane` on
     `live-hyhac-data-plane`
 - Mutable surface:
   - `crates/legacy-protocol/**`
@@ -1524,10 +1524,10 @@
   original contiguous `hyperdex::partition(...)` hash intervals so the client
   can route ordinary keys before it prepares the first atomic write.
 - Owner: resumed forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane`
+  `worktrees/live-hyhac-data-plane`
 - Start commit: `be0cb38`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-data-plane` on
+  - `worktrees/live-hyhac-data-plane` on
     `live-hyhac-data-plane`
 - Mutable surface:
   - `crates/legacy-protocol/**`
@@ -1558,7 +1558,7 @@
 - Kind: `outcome`
 - End commit: `1d6093c`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - `1d6093c` replaces singleton primary-region bounds with the original
     HyperDex partition intervals in the legacy config encoder
@@ -1587,10 +1587,10 @@
   `ClientGarbage` failure, or return the next exact coordinator-side mismatch
   with code and validators.
 - Owner: next forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-config-body`
+  `worktrees/live-hyhac-config-body`
 - Start commit: `1d6093c`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-config-body` on
+  - `worktrees/live-hyhac-config-body` on
     `live-hyhac-config-body`
 - Mutable surface:
   - `crates/legacy-protocol/**`
@@ -1621,10 +1621,10 @@
 - Kind: `outcome`
 - End commit: `475f4eb`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/main.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/legacy-frontend/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/legacy-protocol/src/lib.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/server/src/main.rs`
+  - `crates/legacy-frontend/src/lib.rs`
+  - `crates/legacy-protocol/src/lib.rs`
 - Evidence summary:
   - added upstream-style post-decode atomic validation with explicit
     `RespAtomic/BadDimensionSpec` replies
@@ -1655,10 +1655,10 @@
   multiprocess `early eof` process-level path exposed after `hyh-036`, which is
   now the next concrete blocker for trustworthy live-cluster validation.
 - Owner: next forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-process-eof`
+  `worktrees/live-hyhac-process-eof`
 - Start commit: `acfdcdc`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-process-eof` on
+  - `worktrees/live-hyhac-process-eof` on
     `live-hyhac-process-eof`
 - Mutable surface:
   - `crates/server/**`
@@ -1686,8 +1686,8 @@
 - Kind: `outcome`
 - End commit: `9afb11a`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - taught the legacy daemon frontend to accept both newer protocol bodies and
     older named-body requests on the public data path
@@ -1718,10 +1718,10 @@
   eof` failures are gone, or reduce it to the next exact daemon-side mismatch
   with code and validators.
 - Owner: next forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object`
+  `worktrees/live-hyhac-large-object`
 - Start commit: `5879fab`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object` on
+  - `worktrees/live-hyhac-large-object` on
     `live-hyhac-large-object`
 - Mutable surface:
   - `crates/server/**`
@@ -1750,8 +1750,8 @@
 - End commit: `live-hyhac-large-object` worktree after `57a23a0`, `5a8eac4`, and the
   session-owned sender-id edits
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object/crates/server/tests/dist_multiprocess_harness.rs`
+  - `worktrees/live-hyhac-large-object/crates/server/src/lib.rs`
+  - `worktrees/live-hyhac-large-object/crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - the coordinator admin session now owns one sender id and reuses it across
     BusyBee identify, bootstrap `server.id`, and the bootstrap config server
@@ -1785,10 +1785,10 @@
   failure is the next non-wire bootstrap acceptance mismatch between the
   original Replicant client and the handcrafted Rust BusyBee session behavior.
 - Owner: next forked product worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object`
+  `worktrees/live-hyhac-large-object`
 - Start commit: `19fc81f`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object`
+  - `worktrees/live-hyhac-large-object`
     on `live-hyhac-large-object`
 - Mutable surface:
   - `crates/server/**`
@@ -1814,8 +1814,8 @@
 - Kind: `outcome`
 - End commit: `working tree on main after the repeated-identify fix and probe corrections`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - `cce-013` identified repeated server identify handling on an already-
     identified anonymous BusyBee channel as the next exact mismatch after
@@ -1855,7 +1855,7 @@
 - Owner: delegated worker `019d316c-56ed-7b83-ade6-f5f83c32c7d9` (`Pauli`)
 - Start commit: `64104e7`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
+  - `worktrees/live-hyhac-post-follow`
     on `live-hyhac-post-follow`
 - Mutable surface:
   - `crates/server/**`
@@ -1878,7 +1878,7 @@
 - Kind: `outcome`
 - End commit: `2fb432c`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
+  - no code changes in `worktrees/live-hyhac-post-follow`
 - Evidence summary:
   - the delegated product fork returned only a root-status restatement
   - the fresh post-follow worktree remained clean
@@ -1902,7 +1902,7 @@
 - Owner: delegated worker `019d316f-5ffb-7f62-885c-e7eddcc6345f` (`Confucius`)
 - Start commit: `2fb432c`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
+  - `worktrees/live-hyhac-post-follow`
     on `live-hyhac-post-follow`
 - Mutable surface:
   - `crates/server/**`
@@ -1926,7 +1926,7 @@
 - Kind: `outcome`
 - End commit: `5e2224a`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - `5e2224a` adds a focused daemon-capture harness for the failing large-object
     Hyhac subset and clears startup readiness probe noise before asserting on
@@ -1956,7 +1956,7 @@
 - Owner: delegated worker `019d3180-ba84-7443-9a62-8de2faaeb9c1` (`Parfit`)
 - Start commit: `a618ea0`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
+  - `worktrees/live-hyhac-post-follow`
     on `live-hyhac-post-follow`
 - Mutable surface:
   - `crates/server/**`
@@ -1981,7 +1981,7 @@
 - Kind: `outcome`
 - End commit: `eb6d093`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - `eb6d093` adds a tighter differential probe that captures the immediate
     `hyperdex_client_put` handle and status from both Hyhac and a native C
@@ -2058,7 +2058,7 @@
 - Owner: delegated worker `019d318e-8775-74a0-864e-a67fdd23eb49` (`Fermat`)
 - Start commit: `eb6d093`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
+  - `worktrees/live-hyhac-post-follow`
     on `live-hyhac-post-follow`
 - Mutable surface:
   - `crates/server/**`
@@ -2127,7 +2127,7 @@
 - Kind: `outcome`
 - End commit: `589ce4f`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - `589ce4f` adds
     `legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup`
@@ -2221,7 +2221,7 @@
 - Kind: `outcome`
 - End commit: `007bdf1`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
+  - `crates/hyperdex-admin-protocol/src/lib.rs`
 - Evidence summary:
   - `007bdf1` restores secret-attribute validation for `__secret` and rejects
     secret key attributes
@@ -2247,7 +2247,7 @@
 - End commit: `30227c3`
 - Artifact location:
   - no reconciled code result
-  - stale worktree state in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
+  - stale worktree state in `worktrees/live-hyhac-post-follow`
 - Evidence summary:
   - all subagents were stopped before the work completed
   - the old `live-hyhac-post-follow` worktree is not a clean basis for the
@@ -2289,7 +2289,7 @@
 - Owner: delegated worker `019d31bc-e8da-7af3-b40a-bfa04fd8ec4b` (`Gauss`)
 - Start commit: `ace4050`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-roundtrip-fix`
+  - `worktrees/live-hyhac-roundtrip-fix`
     on `live-hyhac-roundtrip-fix`
 - Mutable surface:
   - `crates/legacy-protocol/**`
@@ -2319,7 +2319,7 @@
 - Kind: `outcome`
 - End commit: `3c72516`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/legacy-frontend/src/lib.rs`
+  - `crates/legacy-frontend/src/lib.rs`
 - Evidence summary:
   - `3c72516` changes `LegacyFrontend::serve_forever_with` so each accepted
     client connection is handled in its own task instead of blocking accept
@@ -2347,10 +2347,10 @@
   full-schema post-large-object pooled failure, where `roundtrip` returns
   `ClientReconfigure`, and move the honest live baseline forward again.
 - Owner: delegated worker `019d31ce-097e-7e51-bc7d-03b86e2996f6` (`Descartes`)
-  in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-get-reconfigure`
+  in `worktrees/live-hyhac-get-reconfigure`
 - Start commit: `94b13c5`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-get-reconfigure`
+  - `worktrees/live-hyhac-get-reconfigure`
     on `live-hyhac-get-reconfigure`
 - Mutable surface:
   - `crates/legacy-protocol/**`
@@ -2384,7 +2384,7 @@
 - Kind: `outcome`
 - End commit: `b23458c`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
 - Evidence summary:
   - `b23458c` fills legacy default values for missing attributes when encoding
     sparse records back through the legacy `get` path
@@ -2416,10 +2416,10 @@
   remaining truthful pooled atomic failure on the full-schema live path and
   move the honest compatibility boundary forward again.
 - Owner: delegated worker `019d31dc-cffe-7840-83a8-73e01c839261` (`Archimedes`)
-  in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-atomic-fix`
+  in `worktrees/live-hyhac-atomic-fix`
 - Start commit: `1e12978`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-atomic-fix` on
+  - `worktrees/live-hyhac-atomic-fix` on
     `live-hyhac-atomic-fix`
 - Mutable surface:
   - `crates/legacy-protocol/**`
@@ -2449,8 +2449,8 @@
 - Kind: `outcome`
 - End commit: `83e6003`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - `83e6003` is on `main`
   - `cargo test -p server legacy_atomic_integer_div_and_mod_follow_hyperdex_signed_semantics -- --nocapture`
@@ -2482,10 +2482,10 @@
   map-valued numeric and bitwise updates instead of rejecting them with
   `ClientServererror`.
 - Owner: delegated worker `019d31f4-8bce-7b72-a250-9526b3b31743` (`Pascal`)
-  in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-numeric`
+  in `worktrees/map-atomic-numeric`
 - Start commit: `83e6003`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-numeric` on
+  - `worktrees/map-atomic-numeric` on
     `map-atomic-numeric`
 - Mutable surface:
   - `crates/server/**`
@@ -2513,10 +2513,10 @@
   atomic path to apply map string prepend/append and other string-map updates
   instead of rejecting them with `ClientServererror`.
 - Owner: delegated worker `019d31f4-8e23-7b81-8879-c089630de0dc` (`Franklin`)
-  in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-string`
+  in `worktrees/map-atomic-string`
 - Start commit: `83e6003`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-string` on
+  - `worktrees/map-atomic-string` on
     `map-atomic-string`
 - Mutable surface:
   - `crates/server/**`
@@ -2626,10 +2626,10 @@
   live public proof beyond the split single-daemon cluster by proving the same
   Hyhac-facing surface against a real two-daemon cluster.
 - Owner: delegated worker on
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-two-daemon`
+  `worktrees/live-hyhac-two-daemon`
 - Start commit: `8db4d81`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-two-daemon` on
+  - `worktrees/live-hyhac-two-daemon` on
     `live-hyhac-two-daemon`
 - Mutable surface:
   - `crates/server/tests/**`
@@ -2655,10 +2655,10 @@
   into a reusable repository-local verifier so the acceptance path is runnable
   without remembering cargo-test filters or ad hoc shell commands.
 - Owner: delegated worker on
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-acceptance-script`
+  `worktrees/live-acceptance-script`
 - Start commit: `8db4d81`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-acceptance-script` on
+  - `worktrees/live-acceptance-script` on
     `live-acceptance-script`
 - Mutable surface:
   - `scripts/**`

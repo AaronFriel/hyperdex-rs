@@ -11,7 +11,7 @@
 - Start commit: `2e6490e`
 - Worktree / branch:
   - root checkout dirty state
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness`
+  - `worktrees/dist-multiprocess-harness`
 - Mutable surface:
   - `Cargo.toml`
   - `crates/server/Cargo.toml`
@@ -49,10 +49,10 @@
 - Hypothesis: replacing ephemeral port reuse and log-text waits with
   protocol-based readiness checks will keep the multiprocess harness stable
   without further broad serialization.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness`
+- Owner: dedicated worker in `worktrees/dist-multiprocess-harness`
 - Start commit: `98def36`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness`
+  - `worktrees/dist-multiprocess-harness`
 - Mutable surface:
   - `crates/server/tests/dist_multiprocess_harness.rs`
   - `crates/server/src/main.rs` only if the harness truly needs a small startup
@@ -93,10 +93,10 @@
   signal than the current manual free-port probe sequence, without touching
   product code.
 - Owner: forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-probe-harness`
+  `worktrees/admin-probe-harness`
 - Start commit: `4ccf113`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-probe-harness` on
+  - `worktrees/admin-probe-harness` on
     `admin-probe-harness`
 - Mutable surface:
   - `Cargo.toml`
@@ -146,10 +146,10 @@
   the new daemon-side `ClientGarbage` failure can shorten the feedback loop
   materially compared with the current selected `hyhac` command.
 - Owner: forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-probe-harness`
+  `worktrees/admin-probe-harness`
 - Start commit: `c087f81`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-probe-harness` on
+  - `worktrees/admin-probe-harness` on
     `admin-probe-harness`
 - Mutable surface:
   - `Cargo.toml`
@@ -198,10 +198,10 @@
   the first bad legacy daemon request/response pair will give the product
   worker a stronger target than the public failure string alone.
 - Owner: forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-probe`
+  `worktrees/clientgarbage-probe`
 - Start commit: `0b2379d`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-probe` on
+  - `worktrees/clientgarbage-probe` on
     `clientgarbage-probe`
 - Mutable surface:
   - `Cargo.toml`
@@ -226,7 +226,7 @@
 - Kind: `outcome`
 - End commit: `d12c23c`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-probe`
+  - `worktrees/clientgarbage-probe`
 - Evidence summary:
   - the interrupted worker is no longer active
   - `git status --short --branch` in the old worktree shows unrelated edits in
@@ -250,10 +250,10 @@
   clean worktree will produce bounded harness evidence without polluting
   product files outside the harness-owned surface.
 - Owner: forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire`
+  `worktrees/clientgarbage-wire`
 - Start commit: `d12c23c`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on
+  - `worktrees/clientgarbage-wire` on
     `clientgarbage-wire`
 - Mutable surface:
   - `Cargo.toml`
@@ -277,7 +277,7 @@
 - Kind: `outcome`
 - End commit: `ad458f1`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire`
+  - no code changes in `worktrees/clientgarbage-wire`
 - Evidence summary:
   - the completed worker verified that `main` is at `ad458f1`
   - the completed worker rechecked the fast validator and confirmed the same
@@ -300,10 +300,10 @@
   decodes it will give the product worker actionable wire evidence without
   touching product code.
 - Owner: next forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire`
+  `worktrees/clientgarbage-wire`
 - Start commit: `ad458f1`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on
+  - `worktrees/clientgarbage-wire` on
     `clientgarbage-wire`
 - Mutable surface:
   - `Cargo.toml`
@@ -360,10 +360,10 @@
   `legacy_hyhac_large_object_probe_hits_clientgarbage_fast` without touching
   product code.
 - Owner: next forked worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire`
+  `worktrees/clientgarbage-wire`
 - Start commit: `4902f03`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/clientgarbage-wire` on
+  - `worktrees/clientgarbage-wire` on
     `clientgarbage-wire`
 - Mutable surface:
   - `Cargo.toml`
@@ -421,7 +421,7 @@
 - Owner: delegated worker `019d31bc-eb2a-7f40-b735-2f35a49b2c12` (`Russell`)
 - Start commit: `ace4050`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro` on
+  - `worktrees/post-success-repro` on
     `post-success-repro`
 - Mutable surface:
   - `Cargo.toml`
@@ -450,7 +450,7 @@
 - End commit: `df25106`
 - Artifact location:
   - no reconciled code result
-  - clean worktree at `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro`
+  - clean worktree at `worktrees/post-success-repro`
 - Evidence summary:
   - the worker returned root-status narration instead of performing harness work
   - `git status` in the worktree remained clean
@@ -470,10 +470,10 @@
   fresh-context worker with a self-contained prompt and the same clean
   worktree.
 - Owner: next fresh-context worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro`
+  `worktrees/post-success-repro`
 - Start commit: `df25106`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro` on
+  - `worktrees/post-success-repro` on
     `post-success-repro`
 - Mutable surface:
   - `Cargo.toml`
@@ -524,10 +524,10 @@
   full-schema pooled atomic failure to a smaller truthful repro without
   drifting into product implementation.
 - Owner: delegated worker `019d31ce-0ba4-7d51-bb1a-347bd18dad3d` (`Bernoulli`)
-  in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/full-schema-roundtrip-repro`
+  in `worktrees/full-schema-roundtrip-repro`
 - Start commit: `94b13c5`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/full-schema-roundtrip-repro`
+  - `worktrees/full-schema-roundtrip-repro`
     on `full-schema-roundtrip-repro`
 - Mutable surface:
   - `Cargo.toml`

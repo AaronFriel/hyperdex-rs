@@ -10,7 +10,7 @@
 - Owner: forked worker on `panic-hardening`
 - Start commit: `9104047`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/panic-hardening`
+  - `worktrees/panic-hardening`
   - `panic-hardening`
 - Mutable surface:
   - `crates/server/**`
@@ -76,7 +76,7 @@
 - Owner: forked worker on `panic-hardening`
 - Start commit: `fb02bcc`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/panic-hardening`
+  - `worktrees/panic-hardening`
   - `panic-hardening`
 - Mutable surface:
   - `crates/legacy-frontend/**`
@@ -130,7 +130,7 @@
 - Owner: forked worker on `panic-hardening`
 - Start commit: `7e79838`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/panic-hardening`
+  - `worktrees/panic-hardening`
   - `panic-hardening`
 - Mutable surface:
   - `crates/server/src/main.rs`
@@ -183,7 +183,7 @@
 - Owner: forked worker on `panic-hardening`
 - Start commit: `db696ce`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/panic-hardening`
+  - `worktrees/panic-hardening`
   - `panic-hardening`
 - Mutable surface:
   - `crates/server/src/lib.rs`
@@ -234,7 +234,7 @@
 - Owner: next forked worker on `panic-hardening`
 - Start commit: `2b7d144`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/panic-hardening`
+  - `worktrees/panic-hardening`
   - `panic-hardening`
 - Mutable surface:
   - `crates/hyperdex-admin-protocol/**`

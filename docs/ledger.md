@@ -3,7 +3,7 @@
 This is the active root ledger for the current phase of `hyperdex-rs`.
 
 Earlier orchestration history is archived under
-[archive/phase-1/ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/archive/phase-1/ledger.md).
+[archive/phase-1/ledger.md](docs/archive/phase-1/ledger.md).
 
 | Iteration | Timestamp (UTC) | Action | Evidence | Disposition | Next root move |
 | --- | --- | --- | --- | --- | --- |

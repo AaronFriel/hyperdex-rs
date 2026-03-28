@@ -11,7 +11,7 @@
 - Owner: next forked worker on `fuzzing-hardening`
 - Start commit: `2b7d144`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/fuzzing-hardening`
+  - `worktrees/fuzzing-hardening`
   - `fuzzing-hardening`
 - Mutable surface:
   - `fuzz/**`

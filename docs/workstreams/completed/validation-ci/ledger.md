@@ -11,7 +11,7 @@
 - Owner: forked worker on `validation-ci`
 - Start commit: `9104047`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/validation-ci`
+  - `worktrees/validation-ci`
   - `validation-ci`
 - Mutable surface:
   - `.github/workflows/**`

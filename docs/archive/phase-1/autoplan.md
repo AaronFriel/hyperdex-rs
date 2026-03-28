@@ -2,7 +2,7 @@
 
 This file is archived. It preserves the phase-1 root AutoPlan from the Hyhac
 compatibility and distributed-baseline effort. The active root AutoPlan is now
-[docs/autoplan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/autoplan.md).
+[docs/autoplan.md](docs/autoplan.md).
 Some internal links below still reflect the phase-1 layout and should be read
 as historical context rather than the current filesystem contract.
 
@@ -13,14 +13,14 @@ must be kept current as work proceeds.
 
 This repository does not contain its own `PLANS.md` or `AUTOPLANS.md`. This
 document follows the fallback rules at
-`/home/friel/.codex/skills/autoplan/references/PLANS.md` and
-`/home/friel/.codex/skills/autoplan/references/AUTOPLANS.md`.
+`the installed `autoplan` skill fallback rules` and
+`the installed `autoplan` skill fallback rules`.
 
 ## Companion Files
 
-- Archived phase-1 ledger: [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/archive/phase-1/ledger.md)
-- Current root AutoPlan: [autoplan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/autoplan.md)
-- Current workstream index: [workstreams.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams.md)
+- Archived phase-1 ledger: [ledger.md](docs/archive/phase-1/ledger.md)
+- Current root AutoPlan: [autoplan.md](docs/autoplan.md)
+- Current workstream index: [workstreams.md](docs/workstreams.md)
 
 ## Purpose / Big Picture
 
@@ -33,7 +33,7 @@ live failures meaningful instead of noisy.
 ## Goal
 
 Create a pure-Rust HyperDex replacement at
-`/home/friel/c/aaronfriel/hyperdex-rs` that preserves separate coordinator and
+`this repository` that preserves separate coordinator and
 daemon processes, exposes both a legacy HyperDex-compatible frontend and a
 modern gRPC frontend, forms a real distributed cluster, passes the `hyhac`
 test suite against a live deployment, and then keeps expanding the system with
@@ -64,7 +64,7 @@ Deterministic
 
 ## Mutable Surface
 
-- `/home/friel/c/aaronfriel/hyperdex-rs/**`
+- `**`
 - `/home/friel/c/aaronfriel/hyhac/scripts/**` only when launcher or harness
   wiring must point at `hyperdex-rs`
 - Active worktrees listed in the `Workstream Board`
@@ -128,18 +128,18 @@ split, sequencing, or validators need to change.
 ### Phase 1: Compatibility And Distributed Baseline
 
 These workstreams are completed and moved under
-[completed](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed):
+[completed](docs/workstreams/completed):
 
-- [live-hyhac](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/live-hyhac/plan.md):
+- [live-hyhac](docs/workstreams/completed/live-hyhac/plan.md):
   the public Hyhac-facing compatibility surface is green on both single-daemon
   and two-daemon live clusters, and the reusable verifier exists.
-- [simulation-proof](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/simulation-proof/plan.md):
+- [simulation-proof](docs/workstreams/completed/simulation-proof/plan.md):
   deterministic degraded-read proof drift is fixed and the simulation harness
   is back on a green baseline.
-- [multiprocess-harness](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/multiprocess-harness/plan.md):
+- [multiprocess-harness](docs/workstreams/completed/multiprocess-harness/plan.md):
   the real-process harness is stable enough to support product work without
   pretending to be the product.
-- [coordinator-config-evidence](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/coordinator-config-evidence/plan.md):
+- [coordinator-config-evidence](docs/workstreams/completed/coordinator-config-evidence/plan.md):
   the read-only comparison work turned the early compatibility unknowns into
   concrete fixes and is no longer on the critical path.
 
@@ -147,26 +147,26 @@ These workstreams are completed and moved under
 
 ### Group 1: Hardening And Execution Speed
 
-1. [validation-ci](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/validation-ci/plan.md)
-2. [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/failure-testing/plan.md)
-3. [fuzzing-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/fuzzing-hardening/plan.md)
-4. [async-modernization](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/async-modernization/plan.md)
+1. [validation-ci](docs/workstreams/validation-ci/plan.md)
+2. [failure-testing](docs/workstreams/failure-testing/plan.md)
+3. [fuzzing-hardening](docs/workstreams/fuzzing-hardening/plan.md)
+4. [async-modernization](docs/workstreams/async-modernization/plan.md)
 
 ### Group 2: Feature Expansion
 
-1. [warp-transactions](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/warp-transactions/plan.md)
-2. [georeplication](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/georeplication/plan.md)
+1. [warp-transactions](docs/workstreams/warp-transactions/plan.md)
+2. [georeplication](docs/workstreams/georeplication/plan.md)
 
 ## Workstream Board
 
 | Workstream | Status | Owner | Dependencies / Blockers | Plan | Ledger | Worktree / Branch | Fastest Useful Check | Next Step | Latest Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `validation-ci` | active | root | No blocker. The repository has no `.github/workflows` yet, so this starts from a clear gap. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/validation-ci/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/validation-ci/ledger.md) | worktree to be launched | `find .github/workflows -maxdepth 1 -type f | sort` | Land a first GitHub Actions set that covers formatting, clippy, workspace tests, and the reusable live acceptance verifier shape. | `advance` |
-| `failure-testing` | active | root | No blocker. The runtime and proof harnesses are green enough to start adversarial testing from a real baseline. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/failure-testing/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/failure-testing/ledger.md) | worktree to be launched | `cargo test -p simulation-harness turmoil_preserves_degraded_read_correctness_after_one_node_loss -- --nocapture` | Land the next failure-oriented Turmoil or Madsim proof that intentionally breaks a live assumption instead of only re-proving the current happy path. | `advance` |
-| `async-modernization` | active | root | No blocker. `async_trait` is still present across consensus, transport, protocol, and server surfaces. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/async-modernization/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/async-modernization/ledger.md) | worktree to be launched | `rg -n \"async_trait|\\#\\[async_trait\\]\" crates Cargo.toml` | Remove `async_trait` from at least one meaningful cross-crate surface without regressing behavior. | `advance` |
-| `fuzzing-hardening` | ready | root | Depends on choosing the first high-value targets, but not on other active workstreams completing. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/fuzzing-hardening/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/fuzzing-hardening/ledger.md) | none yet | `rg -n \"decode|encode|parse|frame|request|response\" crates` | Start with protocol and parser targets after the first CI and failure-test passes are underway. | `advance` |
-| `warp-transactions` | ready | root | Depends on preserving the now-green baseline while designing and landing transaction semantics on top of it. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/warp-transactions/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/warp-transactions/ledger.md) | none yet | `rg -n \"ConditionalPut|DeleteGroup|Search|Count|consensus|placement\" crates` | Turn the paper notes into a bounded transaction design and first implementation step over current coordinator and daemon roles. | `advance` |
-| `georeplication` | ready | root | Depends on current placement and replication contracts being stable enough to extend with region-aware grouping. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/georeplication/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/georeplication/ledger.md) | none yet | `rg -n \"NodeConfig|placement|replica|control-plane|region|cluster\" crates` | Add the first bounded design and implementation step for region-aware placement and replication. | `advance` |
+| `validation-ci` | active | root | No blocker. The repository has no `.github/workflows` yet, so this starts from a clear gap. | [plan.md](docs/workstreams/validation-ci/plan.md) | [ledger.md](docs/workstreams/validation-ci/ledger.md) | worktree to be launched | `find .github/workflows -maxdepth 1 -type f | sort` | Land a first GitHub Actions set that covers formatting, clippy, workspace tests, and the reusable live acceptance verifier shape. | `advance` |
+| `failure-testing` | active | root | No blocker. The runtime and proof harnesses are green enough to start adversarial testing from a real baseline. | [plan.md](docs/workstreams/failure-testing/plan.md) | [ledger.md](docs/workstreams/failure-testing/ledger.md) | worktree to be launched | `cargo test -p simulation-harness turmoil_preserves_degraded_read_correctness_after_one_node_loss -- --nocapture` | Land the next failure-oriented Turmoil or Madsim proof that intentionally breaks a live assumption instead of only re-proving the current happy path. | `advance` |
+| `async-modernization` | active | root | No blocker. `async_trait` is still present across consensus, transport, protocol, and server surfaces. | [plan.md](docs/workstreams/async-modernization/plan.md) | [ledger.md](docs/workstreams/async-modernization/ledger.md) | worktree to be launched | `rg -n \"async_trait|\\#\\[async_trait\\]\" crates Cargo.toml` | Remove `async_trait` from at least one meaningful cross-crate surface without regressing behavior. | `advance` |
+| `fuzzing-hardening` | ready | root | Depends on choosing the first high-value targets, but not on other active workstreams completing. | [plan.md](docs/workstreams/fuzzing-hardening/plan.md) | [ledger.md](docs/workstreams/fuzzing-hardening/ledger.md) | none yet | `rg -n \"decode|encode|parse|frame|request|response\" crates` | Start with protocol and parser targets after the first CI and failure-test passes are underway. | `advance` |
+| `warp-transactions` | ready | root | Depends on preserving the now-green baseline while designing and landing transaction semantics on top of it. | [plan.md](docs/workstreams/warp-transactions/plan.md) | [ledger.md](docs/workstreams/warp-transactions/ledger.md) | none yet | `rg -n \"ConditionalPut|DeleteGroup|Search|Count|consensus|placement\" crates` | Turn the paper notes into a bounded transaction design and first implementation step over current coordinator and daemon roles. | `advance` |
+| `georeplication` | ready | root | Depends on current placement and replication contracts being stable enough to extend with region-aware grouping. | [plan.md](docs/workstreams/georeplication/plan.md) | [ledger.md](docs/workstreams/georeplication/ledger.md) | none yet | `rg -n \"NodeConfig|placement|replica|control-plane|region|cluster\" crates` | Add the first bounded design and implementation step for region-aware placement and replication. | `advance` |
 
 ## Progress
 

@@ -3,17 +3,17 @@
 This is the active root AutoPlan for `hyperdex-rs`.
 
 Use this file for current priorities only. Earlier planning state is archived
-under [archive/phase-1](/home/friel/c/aaronfriel/hyperdex-rs/docs/archive/phase-1).
+under [archive/phase-1](docs/archive/phase-1).
 
 ## Companion Files
 
-- Root ledger: [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/ledger.md)
-- Workstream index: [workstreams.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams.md)
-- Capability ladder: [capability-ladder.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/capability-ladder.md)
-- Future directions: [future-directions.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/future-directions.md)
-- Paper notes: [papers-and-mvp-notes.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/papers-and-mvp-notes.md)
-- Hyhac compatibility notes: [hyhac-compatibility-surface.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/hyhac-compatibility-surface.md)
-- Archived phase-1 package: [archive/phase-1](/home/friel/c/aaronfriel/hyperdex-rs/docs/archive/phase-1)
+- Root ledger: [ledger.md](docs/ledger.md)
+- Workstream index: [workstreams.md](docs/workstreams.md)
+- Capability ladder: [capability-ladder.md](docs/capability-ladder.md)
+- Future directions: [future-directions.md](docs/future-directions.md)
+- Paper notes: [papers-and-mvp-notes.md](docs/papers-and-mvp-notes.md)
+- Hyhac compatibility notes: [hyhac-compatibility-surface.md](docs/hyhac-compatibility-surface.md)
+- Archived phase-1 package: [archive/phase-1](docs/archive/phase-1)
 
 ## Goal
 
@@ -37,24 +37,24 @@ georeplication.
 
 ### Active
 
-1. [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/failure-testing/plan.md)
-2. [distributed-simulation](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/distributed-simulation/plan.md)
-3. [hegel-properties](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/hegel-properties/plan.md)
-4. [history-scrub](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/history-scrub/plan.md)
+1. [failure-testing](docs/workstreams/active/failure-testing/plan.md)
+2. [distributed-simulation](docs/workstreams/active/distributed-simulation/plan.md)
+3. [hegel-properties](docs/workstreams/active/hegel-properties/plan.md)
+4. [history-scrub](docs/workstreams/active/history-scrub/plan.md)
 
 ### Backlog
 
-1. [warp-transactions](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/warp-transactions/plan.md)
-2. [georeplication](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/georeplication/plan.md)
-3. [programmability](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/programmability/plan.md)
-4. [graph-vector-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/graph-vector-layer/plan.md)
-5. [temporal-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/temporal-layer/plan.md)
-6. [object-storage-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/object-storage-layer/plan.md)
-7. [database-corpus](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/database-corpus/plan.md)
+1. [warp-transactions](docs/workstreams/backlog/warp-transactions/plan.md)
+2. [georeplication](docs/workstreams/backlog/georeplication/plan.md)
+3. [programmability](docs/workstreams/backlog/programmability/plan.md)
+4. [graph-vector-layer](docs/workstreams/backlog/graph-vector-layer/plan.md)
+5. [temporal-layer](docs/workstreams/backlog/temporal-layer/plan.md)
+6. [object-storage-layer](docs/workstreams/backlog/object-storage-layer/plan.md)
+7. [database-corpus](docs/workstreams/backlog/database-corpus/plan.md)
 
 ### Completed Baseline
 
-- [completed](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed)
+- [completed](docs/workstreams/completed)
 
 ## Current Root Focus
 
@@ -62,7 +62,7 @@ Keep the green HyperDex replacement baseline honest while making proof work
 more deliberate: keep failure-oriented bug-finding active, treat Turmoil and
 Madsim as the distributed-failure and recovery tool family, and give Hegel its
 own property-testing track with broader state-space coverage than a single test
-or a single crate. In parallel, remove machine-specific `/home/friel` paths
+or a single crate. In parallel, remove machine-specific home-directory paths
 from the repository and prepare a repeatable history rewrite so the repository
 can be pushed safely.
 
