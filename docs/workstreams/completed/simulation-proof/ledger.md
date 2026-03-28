@@ -52,7 +52,7 @@
 - Owner: dedicated worker in `worktrees/sim-coverage`
 - Start commit: `6d55620`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on
+  - `worktrees/sim-coverage` on
     `sim-coverage-numeric`
 - Mutable surface:
   - `crates/simulation-harness/src/lib.rs`
