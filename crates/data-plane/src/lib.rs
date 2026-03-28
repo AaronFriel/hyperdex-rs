@@ -80,6 +80,6 @@ impl DataPlane {
 
     fn route(&self, _space: &str, key: &[u8]) -> Result<u64> {
         let layout = self.catalog.layout()?;
-        Ok(self.placement.locate(key, &layout).primary)
+        Ok(self.placement.locate(key, &layout)?.primary)
     }
 }

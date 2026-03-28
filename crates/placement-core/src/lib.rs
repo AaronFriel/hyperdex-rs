@@ -1,8 +1,10 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
+use std::result::Result as StdResult;
 
 use data_model::NodeId;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClusterLayout {
@@ -18,8 +20,16 @@ pub struct PlacementDecision {
     pub replicas: Vec<NodeId>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
+pub enum PlacementError {
+    #[error("placement layout has no nodes")]
+    EmptyLayout,
+}
+
+pub type Result<T> = StdResult<T, PlacementError>;
+
 pub trait PlacementStrategy: Send + Sync {
-    fn locate(&self, key: &[u8], layout: &ClusterLayout) -> PlacementDecision;
+    fn locate(&self, key: &[u8], layout: &ClusterLayout) -> Result<PlacementDecision>;
     fn name(&self) -> &'static str;
 }
 
@@ -46,7 +56,7 @@ impl HyperSpacePlacement {
 }
 
 impl PlacementStrategy for RendezvousPlacement {
-    fn locate(&self, key: &[u8], layout: &ClusterLayout) -> PlacementDecision {
+    fn locate(&self, key: &[u8], layout: &ClusterLayout) -> Result<PlacementDecision> {
         let mut ranked = layout.nodes.clone();
         ranked.sort_by(|a, b| {
             let sa = rendezvous_score(key, *a);
@@ -62,8 +72,11 @@ impl PlacementStrategy for RendezvousPlacement {
 }
 
 impl PlacementStrategy for HyperSpacePlacement {
-    fn locate(&self, key: &[u8], layout: &ClusterLayout) -> PlacementDecision {
+    fn locate(&self, key: &[u8], layout: &ClusterLayout) -> Result<PlacementDecision> {
         let ring = build_hyperspace_ring(&layout.nodes, self.tokens_per_node);
+        if ring.is_empty() {
+            return Err(PlacementError::EmptyLayout);
+        }
         let key_pos = hyperspace_key_pos(key);
         let start = hyperspace_ring_start(&ring, key_pos);
 
@@ -81,18 +94,12 @@ impl PlacementStrategy for HyperSpacePlacement {
             }
         }
 
-        if replicas.is_empty() {
-            // All callers in this workspace currently treat an empty layout as a bug.
-            // Keep behavior explicit instead of returning a dummy node id.
-            panic!("hyperspace placement requires at least one node");
-        }
-
-        PlacementDecision {
+        Ok(PlacementDecision {
             partition: start,
             partitions: ring.len(),
             primary: replicas[0],
             replicas,
-        }
+        })
     }
 
     fn name(&self) -> &'static str {
@@ -105,15 +112,18 @@ fn build_decision(
     partitions: usize,
     ranked: Vec<NodeId>,
     replicas: usize,
-) -> PlacementDecision {
+) -> Result<PlacementDecision> {
+    if ranked.is_empty() {
+        return Err(PlacementError::EmptyLayout);
+    }
     let desired = replicas.max(1).min(ranked.len().max(1));
     let replicas: Vec<NodeId> = ranked.into_iter().take(desired).collect();
-    PlacementDecision {
+    Ok(PlacementDecision {
         partition,
         partitions,
         primary: replicas[0],
         replicas,
-    }
+    })
 }
 
 fn rendezvous_score(key: &[u8], node: NodeId) -> u64 {

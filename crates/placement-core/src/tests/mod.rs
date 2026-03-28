@@ -7,7 +7,7 @@ fn rendezvous_returns_requested_replica_count() {
         nodes: vec![1, 2, 3],
     };
 
-    let decision = RendezvousPlacement.locate(b"alpha", &layout);
+    let decision = RendezvousPlacement.locate(b"alpha", &layout).unwrap();
 
     assert_eq!(decision.replicas.len(), 2);
     assert_eq!(decision.primary, decision.replicas[0]);
@@ -27,8 +27,8 @@ fn hyperspace_is_independent_of_node_input_order() {
         nodes: vec![40, 10, 30, 20],
     };
 
-    let da = placement.locate(key, &a);
-    let db = placement.locate(key, &b);
+    let da = placement.locate(key, &a).unwrap();
+    let db = placement.locate(key, &b).unwrap();
 
     assert_eq!(da.primary, db.primary);
     assert_eq!(da.replicas, db.replicas);
@@ -44,7 +44,7 @@ fn hyperspace_partition_and_replicas_match_ring_successors() {
     };
     let key = b"beta";
 
-    let decision = placement.locate(key, &layout);
+    let decision = placement.locate(key, &layout).unwrap();
     assert_eq!(decision.replicas.len(), 3);
     assert_eq!(decision.primary, decision.replicas[0]);
 
@@ -95,8 +95,22 @@ fn hyperspace_wraps_at_end_of_ring() {
     }
     let wrap_key = wrap_key.expect("expected to find a wrap key quickly");
 
-    let decision = placement.locate(wrap_key.as_bytes(), &layout);
+    let decision = placement.locate(wrap_key.as_bytes(), &layout).unwrap();
     assert!(decision.partition < decision.partitions);
     assert_eq!(decision.partition, 0);
     assert_eq!(decision.replicas.len(), 1);
+}
+
+#[test]
+fn hyperspace_rejects_empty_layout() {
+    let layout = ClusterLayout {
+        replicas: 1,
+        nodes: Vec::new(),
+    };
+
+    let err = HyperSpacePlacement::default()
+        .locate(b"alpha", &layout)
+        .unwrap_err();
+
+    assert_eq!(err, PlacementError::EmptyLayout);
 }

@@ -932,7 +932,7 @@ fn locate_key_in_space(
     ) {
         return legacy_locate_string_key(layout, space, key);
     }
-    Ok(placement_strategy.locate(key, layout))
+    Ok(placement_strategy.locate(key, layout)?)
 }
 
 fn legacy_key_kind(space: &Space) -> Result<&ValueKind> {
