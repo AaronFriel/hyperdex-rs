@@ -634,7 +634,7 @@
   transport and session layer will finally unblock the original admin tools,
   because it matches the landed codec instead of trying to reuse the JSON
   control path.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+- Owner: dedicated worker in `worktrees/admin-server`
 - Start commit: `2641a75`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
