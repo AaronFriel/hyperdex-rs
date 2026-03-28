@@ -2482,7 +2482,7 @@
   map-valued numeric and bitwise updates instead of rejecting them with
   `ClientServererror`.
 - Owner: delegated worker `019d31f4-8bce-7b72-a250-9526b3b31743` (`Pascal`)
-  in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-numeric`
+  in `worktrees/map-atomic-numeric`
 - Start commit: `83e6003`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-numeric` on
