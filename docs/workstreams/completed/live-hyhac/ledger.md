@@ -2449,8 +2449,8 @@
 - Kind: `outcome`
 - End commit: `83e6003`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - `83e6003` is on `main`
   - `cargo test -p server legacy_atomic_integer_div_and_mod_follow_hyperdex_signed_semantics -- --nocapture`
