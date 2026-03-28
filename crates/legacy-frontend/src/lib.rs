@@ -33,6 +33,18 @@ fn capture_hex_prefix(bytes: &[u8], width: usize) -> String {
         .join(" ")
 }
 
+fn decode_identify_remote_server_id(bytes: &[u8]) -> Option<u64> {
+    let identify_end = BUSYBEE_HEADER_SIZE + 16;
+    if bytes.len() < identify_end {
+        return None;
+    }
+
+    let remote_server_id = [
+        bytes[12], bytes[13], bytes[14], bytes[15], bytes[16], bytes[17], bytes[18], bytes[19],
+    ];
+    Some(u64::from_be_bytes(remote_server_id))
+}
+
 pub struct LegacyFrontend {
     listener: TcpListener,
     local_server_id: u64,
@@ -174,11 +186,7 @@ async fn read_request_frame(
         ));
 
         if raw_header & BUSYBEE_HEADER_IDENTIFY != 0 {
-            let remote_server_id = if bytes.len() >= BUSYBEE_HEADER_SIZE + 16 {
-                u64::from_be_bytes(bytes[12..20].try_into().expect("fixed-width slice"))
-            } else {
-                0
-            };
+            let remote_server_id = decode_identify_remote_server_id(&bytes).unwrap_or(0);
             stream
                 .write_all(&encode_identify_frame(local_server_id, remote_server_id))
                 .await?;

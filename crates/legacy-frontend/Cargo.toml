@@ -10,4 +10,3 @@ repository.workspace = true
 anyhow.workspace = true
 legacy-protocol = { path = "../legacy-protocol" }
 tokio.workspace = true
-
