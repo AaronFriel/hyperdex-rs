@@ -32,18 +32,18 @@ use legacy_protocol::{
     decode_protocol_get_request, decode_protocol_search_continue, decode_protocol_search_start,
     encode_protocol_atomic_response, encode_protocol_count_response, encode_protocol_get_response,
     encode_protocol_search_done, encode_protocol_search_item, AtomicRequest, CountRequest,
-    GetAttribute, GetRequest, GetResponse, GetValue, LegacyCheck, LegacyFuncall,
-    LegacyFuncallName, LegacyMessageType, LegacyPredicate, LegacyReturnCode, ProtocolAttributeCheck,
-    ProtocolFuncall, ProtocolGetResponse, ProtocolKeyChange, ProtocolSearchItem,
-    SearchDoneResponse, SearchItemResponse, SearchStartRequest, RequestHeader, ResponseHeader,
-    FUNC_LIST_LPUSH, FUNC_LIST_RPUSH, FUNC_MAP_ADD, FUNC_MAP_REMOVE, FUNC_NUM_ADD, FUNC_NUM_AND,
-    FUNC_NUM_DIV, FUNC_NUM_MAX, FUNC_NUM_MIN, FUNC_NUM_MOD, FUNC_NUM_MUL, FUNC_NUM_OR,
-    FUNC_NUM_SUB, FUNC_NUM_XOR, FUNC_SET, FUNC_SET_ADD, FUNC_SET_INTERSECT, FUNC_SET_REMOVE,
-    FUNC_SET_UNION, FUNC_STRING_APPEND, FUNC_STRING_LTRIM, FUNC_STRING_PREPEND,
-    FUNC_STRING_RTRIM, HYPERDATATYPE_FLOAT, HYPERDATATYPE_INT64, HYPERDATATYPE_LIST_GENERIC,
-    HYPERDATATYPE_MAP_GENERIC, HYPERDATATYPE_SET_GENERIC, HYPERDATATYPE_STRING,
-    HYPERPREDICATE_EQUALS, HYPERPREDICATE_GREATER_EQUAL, HYPERPREDICATE_GREATER_THAN,
-    HYPERPREDICATE_LESS_EQUAL, HYPERPREDICATE_LESS_THAN,
+    GetAttribute, GetRequest, GetResponse, GetValue, LegacyCheck, LegacyFuncall, LegacyFuncallName,
+    LegacyMessageType, LegacyPredicate, LegacyReturnCode, ProtocolAttributeCheck, ProtocolFuncall,
+    ProtocolGetResponse, ProtocolKeyChange, ProtocolSearchItem, RequestHeader, ResponseHeader,
+    SearchDoneResponse, SearchItemResponse, SearchStartRequest, FUNC_LIST_LPUSH, FUNC_LIST_RPUSH,
+    FUNC_MAP_ADD, FUNC_MAP_REMOVE, FUNC_NUM_ADD, FUNC_NUM_AND, FUNC_NUM_DIV, FUNC_NUM_MAX,
+    FUNC_NUM_MIN, FUNC_NUM_MOD, FUNC_NUM_MUL, FUNC_NUM_OR, FUNC_NUM_SUB, FUNC_NUM_XOR, FUNC_SET,
+    FUNC_SET_ADD, FUNC_SET_INTERSECT, FUNC_SET_REMOVE, FUNC_SET_UNION, FUNC_STRING_APPEND,
+    FUNC_STRING_LTRIM, FUNC_STRING_PREPEND, FUNC_STRING_RTRIM, HYPERDATATYPE_FLOAT,
+    HYPERDATATYPE_INT64, HYPERDATATYPE_LIST_GENERIC, HYPERDATATYPE_MAP_GENERIC,
+    HYPERDATATYPE_SET_GENERIC, HYPERDATATYPE_STRING, HYPERPREDICATE_EQUALS,
+    HYPERPREDICATE_GREATER_EQUAL, HYPERPREDICATE_GREATER_THAN, HYPERPREDICATE_LESS_EQUAL,
+    HYPERPREDICATE_LESS_THAN,
 };
 use placement_core::{
     HyperSpacePlacement, PlacementDecision, PlacementStrategy, RendezvousPlacement,
@@ -1326,8 +1326,14 @@ fn encode_legacy_subspace(
 }
 
 fn legacy_partition_regions(num_attrs: usize, partitions: u32) -> Vec<(Vec<u64>, Vec<u64>)> {
-    assert!(num_attrs > 0, "legacy partitioning requires at least one attribute");
-    assert!(partitions > 0, "legacy partitioning requires at least one partition");
+    assert!(
+        num_attrs > 0,
+        "legacy partitioning requires at least one attribute"
+    );
+    assert!(
+        partitions > 0,
+        "legacy partitioning requires at least one partition"
+    );
 
     let mut attrs_per_dimension = f64::from(partitions);
     attrs_per_dimension = attrs_per_dimension.powf(1.0 / num_attrs as f64);
@@ -1673,9 +1679,7 @@ async fn handle_coordinator_admin_frame(
 ) -> Result<()> {
     if frame.flags & hyperdex_admin_protocol::BUSYBEE_HEADER_IDENTIFY != 0 {
         if frame.payload.len() != 2 * std::mem::size_of::<u64>() {
-            anyhow::bail!(
-                "legacy admin identify frame must contain exactly two u64 values"
-            );
+            anyhow::bail!("legacy admin identify frame must contain exactly two u64 values");
         }
         let peer_local_id = u64::from_be_bytes(frame.payload[..8].try_into().unwrap());
         let peer_remote_id = u64::from_be_bytes(frame.payload[8..16].try_into().unwrap());
@@ -2052,9 +2056,7 @@ pub async fn handle_legacy_request(
                 legacy_named_atomic_request(&space, &AtomicRequest::decode_body(request_body)?)?
             };
             if let Err(err) = legacy_validate_atomic_request(&space, &request) {
-                tracing::warn!(
-                    "rejecting legacy atomic request with bad dimension spec: {err:#}"
-                );
+                tracing::warn!("rejecting legacy atomic request with bad dimension spec: {err:#}");
                 return Ok(legacy_atomic_response(
                     header.target_virtual_server,
                     nonce,
@@ -2082,23 +2084,22 @@ pub async fn handle_legacy_request(
             } else if request.fail_if_not_found && !exists {
                 LegacyReturnCode::NotFound
             } else if !request.erase {
-                let response = if legacy_atomic_can_use_runtime_mutations(&request.funcalls) {
-                    let mutations = match legacy_mutations_from_protocol_funcalls(
-                        &space,
-                        &request.funcalls,
-                    ) {
-                        Ok(mutations) => mutations,
-                        Err(err) => {
-                            tracing::warn!(
+                let response = if legacy_atomic_can_use_runtime_mutations(&space, &request.funcalls)
+                {
+                    let mutations =
+                        match legacy_mutations_from_protocol_funcalls(&space, &request.funcalls) {
+                            Ok(mutations) => mutations,
+                            Err(err) => {
+                                tracing::warn!(
                                 "rejecting legacy atomic funcalls with bad dimension spec: {err:#}"
                             );
-                            return Ok(legacy_atomic_response(
-                                header.target_virtual_server,
-                                nonce,
-                                LegacyReturnCode::BadDimensionSpec,
-                            ));
-                        }
-                    };
+                                return Ok(legacy_atomic_response(
+                                    header.target_virtual_server,
+                                    nonce,
+                                    LegacyReturnCode::BadDimensionSpec,
+                                ));
+                            }
+                        };
                     if checks.is_empty() {
                         HyperdexClientService::handle(
                             runtime,
@@ -2122,8 +2123,13 @@ pub async fn handle_legacy_request(
                         .await?
                     }
                 } else {
-                    match legacy_apply_atomic_direct(runtime, &space, request.clone(), checks.clone())
-                        .await
+                    match legacy_apply_atomic_direct(
+                        runtime,
+                        &space,
+                        request.clone(),
+                        checks.clone(),
+                    )
+                    .await
                     {
                         Ok(response) => response,
                         Err(err) => {
@@ -2464,9 +2470,12 @@ fn legacy_named_funcall_to_protocol(
             }
         },
         LegacyFuncallName::MapRemove => match attribute_kind {
-            ValueKind::Map { key, .. } => {
-                (FUNC_MAP_REMOVE, None, Some(key.as_ref()), Some(&funcall.arg1))
-            }
+            ValueKind::Map { key, .. } => (
+                FUNC_MAP_REMOVE,
+                None,
+                Some(key.as_ref()),
+                Some(&funcall.arg1),
+            ),
             other => {
                 return Err(anyhow!(
                     "legacy map remove requires a map attribute, found {other:?}"
@@ -2507,7 +2516,10 @@ fn legacy_named_funcall_to_protocol(
     })
 }
 
-fn legacy_named_atomic_request(space: &Space, request: &AtomicRequest) -> Result<ProtocolKeyChange> {
+fn legacy_named_atomic_request(
+    space: &Space,
+    request: &AtomicRequest,
+) -> Result<ProtocolKeyChange> {
     Ok(ProtocolKeyChange {
         key: request.key.clone(),
         erase: request.flags & legacy_protocol::LEGACY_ATOMIC_FLAG_WRITE == 0,
@@ -2532,7 +2544,10 @@ fn legacy_get_request_key(request_body: &[u8]) -> Result<(Vec<u8>, LegacyBodyFor
         return Ok((key, LegacyBodyFormat::Protocol));
     }
 
-    Ok((GetRequest::decode_body(request_body)?.key, LegacyBodyFormat::Named))
+    Ok((
+        GetRequest::decode_body(request_body)?.key,
+        LegacyBodyFormat::Named,
+    ))
 }
 
 fn legacy_search_start(
@@ -2572,7 +2587,9 @@ fn legacy_named_value_from_record(value: &Value) -> Result<GetValue> {
         Value::Int(value) => Ok(GetValue::Int(*value)),
         Value::Bytes(value) => Ok(GetValue::Bytes(value.to_vec())),
         Value::String(value) => Ok(GetValue::String(value.clone())),
-        other => Err(anyhow!("legacy named response does not support {other:?} yet")),
+        other => Err(anyhow!(
+            "legacy named response does not support {other:?} yet"
+        )),
     }
 }
 
@@ -2586,9 +2603,9 @@ fn legacy_default_value_for_kind(kind: &ValueKind) -> Result<Value> {
         ValueKind::List(_) => Ok(Value::List(Vec::new())),
         ValueKind::Set(_) => Ok(Value::Set(BTreeSet::new())),
         ValueKind::Map { .. } => Ok(Value::Map(BTreeMap::new())),
-        ValueKind::Bool | ValueKind::Timestamp(_) => {
-            Err(anyhow!("legacy daemon protocol does not support {kind:?} yet"))
-        }
+        ValueKind::Bool | ValueKind::Timestamp(_) => Err(anyhow!(
+            "legacy daemon protocol does not support {kind:?} yet"
+        )),
     }
 }
 
@@ -2602,7 +2619,10 @@ fn legacy_record_value<'a>(
     }
 }
 
-fn legacy_named_attributes_from_record(space: &Space, record: &Record) -> Result<Vec<GetAttribute>> {
+fn legacy_named_attributes_from_record(
+    space: &Space,
+    record: &Record,
+) -> Result<Vec<GetAttribute>> {
     space
         .attributes
         .iter()
@@ -2780,16 +2800,8 @@ fn legacy_validate_protocol_funcall(space: &Space, funcall: &ProtocolFuncall) ->
             }
             let _ = legacy_value_from_protocol(funcall.arg1_datatype, &funcall.arg1)?;
         }
-        FUNC_NUM_ADD
-        | FUNC_NUM_SUB
-        | FUNC_NUM_MUL
-        | FUNC_NUM_DIV
-        | FUNC_NUM_MOD
-        | FUNC_NUM_AND
-        | FUNC_NUM_OR
-        | FUNC_NUM_XOR
-        | FUNC_NUM_MAX
-        | FUNC_NUM_MIN => {
+        FUNC_NUM_ADD | FUNC_NUM_SUB | FUNC_NUM_MUL | FUNC_NUM_DIV | FUNC_NUM_MOD | FUNC_NUM_AND
+        | FUNC_NUM_OR | FUNC_NUM_XOR | FUNC_NUM_MAX | FUNC_NUM_MIN => {
             let expected = match attribute_kind {
                 ValueKind::Int => HYPERDATATYPE_INT64,
                 ValueKind::Float => HYPERDATATYPE_FLOAT,
@@ -2952,7 +2964,10 @@ fn legacy_non_key_attribute<'a>(space: &'a Space, attr: u16) -> Result<(&'a str,
     Ok((&attribute.name, &attribute.kind))
 }
 
-fn legacy_checks_from_protocol(space: &Space, checks: &[ProtocolAttributeCheck]) -> Result<Vec<Check>> {
+fn legacy_checks_from_protocol(
+    space: &Space,
+    checks: &[ProtocolAttributeCheck],
+) -> Result<Vec<Check>> {
     checks
         .iter()
         .map(|check| {
@@ -2977,20 +2992,20 @@ fn legacy_protocol_predicate(predicate: u16) -> Result<Predicate> {
     }
 }
 
-fn legacy_atomic_can_use_runtime_mutations(funcalls: &[ProtocolFuncall]) -> bool {
+fn legacy_atomic_can_use_runtime_mutations(space: &Space, funcalls: &[ProtocolFuncall]) -> bool {
     funcalls.iter().all(|funcall| {
-        matches!(
-            funcall.name,
-            FUNC_SET
-                | FUNC_NUM_ADD
-                | FUNC_NUM_SUB
-                | FUNC_NUM_MUL
-                | FUNC_NUM_DIV
-                | FUNC_NUM_MOD
-                | FUNC_NUM_AND
-                | FUNC_NUM_OR
-                | FUNC_NUM_XOR
-        ) && funcall.arg2.is_empty()
+        if !funcall.arg2.is_empty() {
+            return false;
+        }
+
+        match funcall.name {
+            FUNC_SET => true,
+            FUNC_NUM_ADD | FUNC_NUM_SUB | FUNC_NUM_MUL | FUNC_NUM_AND | FUNC_NUM_OR
+            | FUNC_NUM_XOR => legacy_non_key_attribute(space, funcall.attr)
+                .map(|(_, kind)| matches!(kind, ValueKind::Int))
+                .unwrap_or(false),
+            _ => false,
+        }
     })
 }
 
@@ -3008,14 +3023,8 @@ fn legacy_mutations_from_protocol_funcalls(
                     value: legacy_value_from_protocol(funcall.arg1_datatype, &funcall.arg1)?,
                 }))
             }
-            FUNC_NUM_ADD
-            | FUNC_NUM_SUB
-            | FUNC_NUM_MUL
-            | FUNC_NUM_DIV
-            | FUNC_NUM_MOD
-            | FUNC_NUM_AND
-            | FUNC_NUM_OR
-            | FUNC_NUM_XOR => {
+            FUNC_NUM_ADD | FUNC_NUM_SUB | FUNC_NUM_MUL | FUNC_NUM_DIV | FUNC_NUM_MOD
+            | FUNC_NUM_AND | FUNC_NUM_OR | FUNC_NUM_XOR => {
                 let (attribute, _) = legacy_non_key_attribute(space, funcall.attr)?;
                 Ok(Mutation::Numeric {
                     attribute: attribute.to_owned(),
@@ -3129,16 +3138,8 @@ fn legacy_apply_protocol_funcall(
                 .attributes
                 .insert(attribute_name.to_owned(), Value::Bytes(updated.into()));
         }
-        FUNC_NUM_ADD
-        | FUNC_NUM_SUB
-        | FUNC_NUM_MUL
-        | FUNC_NUM_DIV
-        | FUNC_NUM_MOD
-        | FUNC_NUM_AND
-        | FUNC_NUM_OR
-        | FUNC_NUM_XOR
-        | FUNC_NUM_MAX
-        | FUNC_NUM_MIN => match attribute_kind {
+        FUNC_NUM_ADD | FUNC_NUM_SUB | FUNC_NUM_MUL | FUNC_NUM_DIV | FUNC_NUM_MOD | FUNC_NUM_AND
+        | FUNC_NUM_OR | FUNC_NUM_XOR | FUNC_NUM_MAX | FUNC_NUM_MIN => match attribute_kind {
             ValueKind::Float => {
                 let current = legacy_existing_f64(record, attribute_name)?;
                 let operand = legacy_decode_f64(&funcall.arg1)?;
@@ -3151,10 +3152,9 @@ fn legacy_apply_protocol_funcall(
                     FUNC_NUM_MIN => current.min(operand),
                     other => anyhow::bail!("legacy float funcall {other} is not implemented"),
                 };
-                record.attributes.insert(
-                    attribute_name.to_owned(),
-                    Value::Float(updated.into()),
-                );
+                record
+                    .attributes
+                    .insert(attribute_name.to_owned(), Value::Float(updated.into()));
             }
             _ => {
                 let current = legacy_existing_i64(record, attribute_name)?;
@@ -3163,8 +3163,8 @@ fn legacy_apply_protocol_funcall(
                     FUNC_NUM_ADD => current.saturating_add(operand),
                     FUNC_NUM_SUB => current.saturating_sub(operand),
                     FUNC_NUM_MUL => current.saturating_mul(operand),
-                    FUNC_NUM_DIV => current / operand,
-                    FUNC_NUM_MOD => current % operand,
+                    FUNC_NUM_DIV => legacy_div_i64(current, operand)?,
+                    FUNC_NUM_MOD => legacy_mod_i64(current, operand)?,
                     FUNC_NUM_AND => current & operand,
                     FUNC_NUM_OR => current | operand,
                     FUNC_NUM_XOR => current ^ operand,
@@ -3180,7 +3180,9 @@ fn legacy_apply_protocol_funcall(
         FUNC_LIST_LPUSH | FUNC_LIST_RPUSH => {
             let mut list = match record.attributes.remove(attribute_name) {
                 Some(Value::List(values)) => values,
-                Some(other) => anyhow::bail!("expected list attribute {attribute_name}, got {other:?}"),
+                Some(other) => {
+                    anyhow::bail!("expected list attribute {attribute_name}, got {other:?}")
+                }
                 None => Vec::new(),
             };
             let elem_kind = match attribute_kind {
@@ -3200,7 +3202,9 @@ fn legacy_apply_protocol_funcall(
         FUNC_SET_ADD | FUNC_SET_REMOVE => {
             let mut set = match record.attributes.remove(attribute_name) {
                 Some(Value::Set(values)) => values,
-                Some(other) => anyhow::bail!("expected set attribute {attribute_name}, got {other:?}"),
+                Some(other) => {
+                    anyhow::bail!("expected set attribute {attribute_name}, got {other:?}")
+                }
                 None => Default::default(),
             };
             let elem_kind = match attribute_kind {
@@ -3220,7 +3224,9 @@ fn legacy_apply_protocol_funcall(
         FUNC_SET_INTERSECT | FUNC_SET_UNION => {
             let current = match record.attributes.remove(attribute_name) {
                 Some(Value::Set(values)) => values,
-                Some(other) => anyhow::bail!("expected set attribute {attribute_name}, got {other:?}"),
+                Some(other) => {
+                    anyhow::bail!("expected set attribute {attribute_name}, got {other:?}")
+                }
                 None => Default::default(),
             };
             let operand = match legacy_value_from_protocol(funcall.arg1_datatype, &funcall.arg1)? {
@@ -3239,7 +3245,9 @@ fn legacy_apply_protocol_funcall(
         FUNC_MAP_ADD => {
             let mut map = match record.attributes.remove(attribute_name) {
                 Some(Value::Map(values)) => values,
-                Some(other) => anyhow::bail!("expected map attribute {attribute_name}, got {other:?}"),
+                Some(other) => {
+                    anyhow::bail!("expected map attribute {attribute_name}, got {other:?}")
+                }
                 None => Default::default(),
             };
             let (key_kind, value_kind) = match attribute_kind {
@@ -3256,7 +3264,9 @@ fn legacy_apply_protocol_funcall(
         FUNC_MAP_REMOVE => {
             let mut map = match record.attributes.remove(attribute_name) {
                 Some(Value::Map(values)) => values,
-                Some(other) => anyhow::bail!("expected map attribute {attribute_name}, got {other:?}"),
+                Some(other) => {
+                    anyhow::bail!("expected map attribute {attribute_name}, got {other:?}")
+                }
                 None => Default::default(),
             };
             let key_kind = match attribute_kind {
@@ -3317,7 +3327,10 @@ fn legacy_protocol_value_from_kind(kind: &ValueKind, value: &Value) -> Result<Ve
             }
             Ok(out)
         }
-        ValueKind::Map { key, value: map_value } => {
+        ValueKind::Map {
+            key,
+            value: map_value,
+        } => {
             let Value::Map(values) = value else {
                 return Err(anyhow!("cannot encode {value:?} as legacy map"));
             };
@@ -3328,9 +3341,9 @@ fn legacy_protocol_value_from_kind(kind: &ValueKind, value: &Value) -> Result<Ve
             }
             Ok(out)
         }
-        ValueKind::Bool | ValueKind::Timestamp(_) => {
-            Err(anyhow!("legacy daemon protocol does not support {kind:?} yet"))
-        }
+        ValueKind::Bool | ValueKind::Timestamp(_) => Err(anyhow!(
+            "legacy daemon protocol does not support {kind:?} yet"
+        )),
     }
 }
 
@@ -3379,9 +3392,9 @@ fn legacy_value_from_kind_bytes(kind: &ValueKind, bytes: &[u8]) -> Result<Value>
             }
             Ok(Value::Map(map))
         }
-        ValueKind::Bool | ValueKind::Timestamp(_) => {
-            Err(anyhow!("legacy daemon protocol does not support {kind:?} yet"))
-        }
+        ValueKind::Bool | ValueKind::Timestamp(_) => Err(anyhow!(
+            "legacy daemon protocol does not support {kind:?} yet"
+        )),
     }
 }
 
@@ -3410,7 +3423,9 @@ fn legacy_primitive_kind(code: u16) -> Result<ValueKind> {
         1 => Ok(ValueKind::String),
         2 => Ok(ValueKind::Int),
         3 => Ok(ValueKind::Float),
-        other => Err(anyhow!("legacy primitive datatype code {other} is not implemented")),
+        other => Err(anyhow!(
+            "legacy primitive datatype code {other} is not implemented"
+        )),
     }
 }
 
@@ -3420,7 +3435,8 @@ fn legacy_decode_container_value(kind: &ValueKind, bytes: &[u8]) -> Result<(Valu
             if bytes.len() < 4 {
                 anyhow::bail!("legacy container string element is truncated");
             }
-            let len = u32::from_le_bytes(bytes[..4].try_into().expect("fixed-width slice")) as usize;
+            let len =
+                u32::from_le_bytes(bytes[..4].try_into().expect("fixed-width slice")) as usize;
             if bytes.len() < 4 + len {
                 anyhow::bail!("legacy container string element is truncated");
             }
@@ -3441,7 +3457,9 @@ fn legacy_decode_container_value(kind: &ValueKind, bytes: &[u8]) -> Result<(Valu
             }
             Ok((Value::Float(legacy_decode_f64(bytes)?.into()), 8))
         }
-        other => Err(anyhow!("legacy container element kind {other:?} is not supported")),
+        other => Err(anyhow!(
+            "legacy container element kind {other:?} is not supported"
+        )),
     }
 }
 
@@ -3449,7 +3467,8 @@ fn legacy_encode_container_value(kind: &ValueKind, value: &Value) -> Result<Vec<
     match kind {
         ValueKind::Bytes | ValueKind::String | ValueKind::Document => {
             let bytes = legacy_value_as_bytes(value)?;
-            let len = u32::try_from(bytes.len()).map_err(|_| anyhow!("legacy string element exceeds u32"))?;
+            let len = u32::try_from(bytes.len())
+                .map_err(|_| anyhow!("legacy string element exceeds u32"))?;
             let mut out = Vec::with_capacity(4 + bytes.len());
             out.extend_from_slice(&len.to_le_bytes());
             out.extend_from_slice(&bytes);
@@ -3463,7 +3482,9 @@ fn legacy_encode_container_value(kind: &ValueKind, value: &Value) -> Result<Vec<
             Value::Float(number) => Ok(number.into_inner().to_le_bytes().to_vec()),
             other => Err(anyhow!("cannot encode {other:?} as legacy float element")),
         },
-        other => Err(anyhow!("legacy container element kind {other:?} is not supported")),
+        other => Err(anyhow!(
+            "legacy container element kind {other:?} is not supported"
+        )),
     }
 }
 
@@ -3472,6 +3493,31 @@ fn legacy_existing_bytes(record: &Record, attribute: &str) -> Vec<u8> {
         Some(Value::Bytes(bytes)) => bytes.to_vec(),
         Some(Value::String(text)) => text.as_bytes().to_vec(),
         Some(_) | None => Vec::new(),
+    }
+}
+
+fn legacy_div_i64(current: i64, operand: i64) -> Result<i64> {
+    Ok(legacy_signed_div_mod_i64(current, operand)?.0)
+}
+
+fn legacy_mod_i64(current: i64, operand: i64) -> Result<i64> {
+    Ok(legacy_signed_div_mod_i64(current, operand)?.1)
+}
+
+fn legacy_signed_div_mod_i64(current: i64, operand: i64) -> Result<(i64, i64)> {
+    anyhow::ensure!(operand != 0, "legacy integer division by zero");
+
+    if current == i64::MIN && operand == -1 {
+        return Ok((i64::MIN, 0));
+    }
+
+    let truncated_quotient = current / operand;
+    let truncated_remainder = current % operand;
+
+    if truncated_remainder != 0 && truncated_remainder.signum() != operand.signum() {
+        Ok((truncated_quotient - 1, truncated_remainder + operand))
+    } else {
+        Ok((truncated_quotient, truncated_remainder))
     }
 }
 
@@ -3486,7 +3532,9 @@ fn legacy_existing_i64(record: &Record, attribute: &str) -> Result<i64> {
 fn legacy_existing_f64(record: &Record, attribute: &str) -> Result<f64> {
     match record.attributes.get(attribute) {
         Some(Value::Float(number)) => Ok(number.into_inner()),
-        Some(other) => Err(anyhow!("expected float attribute {attribute}, got {other:?}")),
+        Some(other) => Err(anyhow!(
+            "expected float attribute {attribute}, got {other:?}"
+        )),
         None => Ok(0.0),
     }
 }
@@ -3503,14 +3551,18 @@ fn legacy_decode_i64(bytes: &[u8]) -> Result<i64> {
     if bytes.len() < 8 {
         anyhow::bail!("legacy int payload is truncated");
     }
-    Ok(i64::from_le_bytes(bytes[..8].try_into().expect("fixed-width slice")))
+    Ok(i64::from_le_bytes(
+        bytes[..8].try_into().expect("fixed-width slice"),
+    ))
 }
 
 fn legacy_decode_f64(bytes: &[u8]) -> Result<f64> {
     if bytes.len() < 8 {
         anyhow::bail!("legacy float payload is truncated");
     }
-    Ok(f64::from_le_bytes(bytes[..8].try_into().expect("fixed-width slice")))
+    Ok(f64::from_le_bytes(
+        bytes[..8].try_into().expect("fixed-width slice"),
+    ))
 }
 
 pub async fn handle_coordinator_admin_request(
@@ -4799,7 +4851,10 @@ mod tests {
 
         assert_eq!(completion.nonce, 7);
         assert_eq!(completion.status, ReplicantReturnCode::Success);
-        assert_eq!(completion.state, legacy_condition_state(runtime.stable_version()));
+        assert_eq!(
+            completion.state,
+            legacy_condition_state(runtime.stable_version())
+        );
         assert!(completion.data.is_empty());
     }
 
@@ -4841,13 +4896,11 @@ mod tests {
 
         let sender_id = LEGACY_COORDINATOR_SERVER_ID;
         assert_eq!(sender_id, response.server.id);
-        assert!(
-            response
-                .configuration
-                .servers
-                .iter()
-                .any(|server| server.id == response.server.id)
-        );
+        assert!(response
+            .configuration
+            .servers
+            .iter()
+            .any(|server| server.id == response.server.id));
     }
 
     #[tokio::test]
@@ -5336,13 +5389,11 @@ mod tests {
             identify.flags & hyperdex_admin_protocol::BUSYBEE_HEADER_IDENTIFY,
             hyperdex_admin_protocol::BUSYBEE_HEADER_IDENTIFY
         );
-        let bootstrap_request = BusyBeeFrame::new(vec![ReplicantNetworkMsgtype::Bootstrap.encode()])
-            .encode()
-            .unwrap();
-        legacy_stream
-            .write_all(&bootstrap_request)
-            .await
-            .unwrap();
+        let bootstrap_request =
+            BusyBeeFrame::new(vec![ReplicantNetworkMsgtype::Bootstrap.encode()])
+                .encode()
+                .unwrap();
+        legacy_stream.write_all(&bootstrap_request).await.unwrap();
         legacy_stream.flush().await.unwrap();
 
         let initial = read_admin_response_frame(&mut legacy_stream).await;
@@ -5410,13 +5461,11 @@ mod tests {
         assert_eq!(decode_u64(&identify.payload, &mut identify_cursor), 19);
         assert_eq!(decode_u64(&identify.payload, &mut identify_cursor), 7);
         assert_eq!(identify_cursor, identify.payload.len());
-        let bootstrap_request = BusyBeeFrame::new(vec![ReplicantNetworkMsgtype::Bootstrap.encode()])
-            .encode()
-            .unwrap();
-        stream
-            .write_all(&bootstrap_request)
-            .await
-            .unwrap();
+        let bootstrap_request =
+            BusyBeeFrame::new(vec![ReplicantNetworkMsgtype::Bootstrap.encode()])
+                .encode()
+                .unwrap();
+        stream.write_all(&bootstrap_request).await.unwrap();
         stream.flush().await.unwrap();
 
         let frame = read_admin_response_frame(&mut stream).await;
@@ -5426,10 +5475,10 @@ mod tests {
         assert_eq!(bootstrap.configuration.cluster_id, 1);
         assert_eq!(bootstrap.configuration.version, 1);
         assert_eq!(bootstrap.configuration.first_slot, 1);
-        assert_eq!(bootstrap.configuration.servers, vec![ReplicantBootstrapServer {
-            id: 19,
-            address,
-        }]);
+        assert_eq!(
+            bootstrap.configuration.servers,
+            vec![ReplicantBootstrapServer { id: 19, address }]
+        );
 
         drop(stream);
         server.await.unwrap();
@@ -5484,13 +5533,11 @@ mod tests {
             "repeated identify should not trigger another identify reply"
         );
 
-        let bootstrap_request = BusyBeeFrame::new(vec![ReplicantNetworkMsgtype::Bootstrap.encode()])
-            .encode()
-            .unwrap();
-        stream
-            .write_all(&bootstrap_request)
-            .await
-            .unwrap();
+        let bootstrap_request =
+            BusyBeeFrame::new(vec![ReplicantNetworkMsgtype::Bootstrap.encode()])
+                .encode()
+                .unwrap();
+        stream.write_all(&bootstrap_request).await.unwrap();
         stream.flush().await.unwrap();
 
         let bootstrap = read_admin_response_frame(&mut stream).await;
@@ -5527,13 +5574,11 @@ mod tests {
             identify.flags & hyperdex_admin_protocol::BUSYBEE_HEADER_IDENTIFY,
             hyperdex_admin_protocol::BUSYBEE_HEADER_IDENTIFY
         );
-        let bootstrap_request = BusyBeeFrame::new(vec![ReplicantNetworkMsgtype::Bootstrap.encode()])
-            .encode()
-            .unwrap();
-        stream
-            .write_all(&bootstrap_request)
-            .await
-            .unwrap();
+        let bootstrap_request =
+            BusyBeeFrame::new(vec![ReplicantNetworkMsgtype::Bootstrap.encode()])
+                .encode()
+                .unwrap();
+        stream.write_all(&bootstrap_request).await.unwrap();
         stream.flush().await.unwrap();
         let bootstrap = read_admin_response_frame(&mut stream).await;
         let bootstrap = ReplicantBootstrapResponse::decode(&bootstrap.payload).unwrap();
@@ -5695,11 +5740,26 @@ mod tests {
                         "pending_requests".to_owned(),
                         LEGACY_HYPERDATATYPE_LIST_GENERIC | 0x0001,
                     ),
-                    ("rankings".to_owned(), LEGACY_HYPERDATATYPE_LIST_GENERIC | 0x0003),
-                    ("todolist".to_owned(), LEGACY_HYPERDATATYPE_LIST_GENERIC | 0x0002),
-                    ("hobbies".to_owned(), LEGACY_HYPERDATATYPE_SET_GENERIC | 0x0001),
-                    ("imonafloat".to_owned(), LEGACY_HYPERDATATYPE_SET_GENERIC | 0x0003),
-                    ("friendids".to_owned(), LEGACY_HYPERDATATYPE_SET_GENERIC | 0x0002),
+                    (
+                        "rankings".to_owned(),
+                        LEGACY_HYPERDATATYPE_LIST_GENERIC | 0x0003
+                    ),
+                    (
+                        "todolist".to_owned(),
+                        LEGACY_HYPERDATATYPE_LIST_GENERIC | 0x0002
+                    ),
+                    (
+                        "hobbies".to_owned(),
+                        LEGACY_HYPERDATATYPE_SET_GENERIC | 0x0001
+                    ),
+                    (
+                        "imonafloat".to_owned(),
+                        LEGACY_HYPERDATATYPE_SET_GENERIC | 0x0003
+                    ),
+                    (
+                        "friendids".to_owned(),
+                        LEGACY_HYPERDATATYPE_SET_GENERIC | 0x0002
+                    ),
                     (
                         "unread_messages".to_owned(),
                         LEGACY_HYPERDATATYPE_MAP_GENERIC | (0x0001 << 3) | 0x0002,
@@ -6121,7 +6181,10 @@ mod tests {
         assert_eq!(header.message_type, LegacyMessageType::RespGet);
         let response = decode_protocol_get_response(&body).unwrap();
         assert_eq!(response.status, LegacyReturnCode::Success as u16);
-        assert_eq!(response.values, vec![b"Ada".to_vec(), 5_i64.to_le_bytes().to_vec()]);
+        assert_eq!(
+            response.values,
+            vec![b"Ada".to_vec(), 5_i64.to_le_bytes().to_vec()]
+        );
     }
 
     #[tokio::test]
@@ -6221,31 +6284,34 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &legacy_request_body(19, encode_protocol_atomic_request(&ProtocolKeyChange {
-                key: b"ada".to_vec(),
-                erase: false,
-                fail_if_not_found: false,
-                fail_if_found: false,
-                checks: Vec::new(),
-                funcalls: vec![
-                    ProtocolFuncall {
-                        attr: 1,
-                        name: FUNC_SET,
-                        arg1: b"Ada".to_vec(),
-                        arg1_datatype: HYPERDATATYPE_STRING,
-                        arg2: Vec::new(),
-                        arg2_datatype: 0,
-                    },
-                    ProtocolFuncall {
-                        attr: 2,
-                        name: FUNC_SET,
-                        arg1: 5_i64.to_le_bytes().to_vec(),
-                        arg1_datatype: HYPERDATATYPE_INT64,
-                        arg2: Vec::new(),
-                        arg2_datatype: 0,
-                    },
-                ],
-            })),
+            &legacy_request_body(
+                19,
+                encode_protocol_atomic_request(&ProtocolKeyChange {
+                    key: b"ada".to_vec(),
+                    erase: false,
+                    fail_if_not_found: false,
+                    fail_if_found: false,
+                    checks: Vec::new(),
+                    funcalls: vec![
+                        ProtocolFuncall {
+                            attr: 1,
+                            name: FUNC_SET,
+                            arg1: b"Ada".to_vec(),
+                            arg1_datatype: HYPERDATATYPE_STRING,
+                            arg2: Vec::new(),
+                            arg2_datatype: 0,
+                        },
+                        ProtocolFuncall {
+                            attr: 2,
+                            name: FUNC_SET,
+                            arg1: 5_i64.to_le_bytes().to_vec(),
+                            arg1_datatype: HYPERDATATYPE_INT64,
+                            arg2: Vec::new(),
+                            arg2_datatype: 0,
+                        },
+                    ],
+                }),
+            ),
         )
         .await
         .unwrap();
@@ -6317,21 +6383,24 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &legacy_request_body(19, encode_protocol_atomic_request(&ProtocolKeyChange {
-                key: b"ada".to_vec(),
-                erase: false,
-                fail_if_not_found: false,
-                fail_if_found: true,
-                checks: Vec::new(),
-                funcalls: vec![ProtocolFuncall {
-                    attr: 1,
-                    name: FUNC_SET,
-                    arg1: b"Grace".to_vec(),
-                    arg1_datatype: HYPERDATATYPE_STRING,
-                    arg2: Vec::new(),
-                    arg2_datatype: 0,
-                }],
-            })),
+            &legacy_request_body(
+                19,
+                encode_protocol_atomic_request(&ProtocolKeyChange {
+                    key: b"ada".to_vec(),
+                    erase: false,
+                    fail_if_not_found: false,
+                    fail_if_found: true,
+                    checks: Vec::new(),
+                    funcalls: vec![ProtocolFuncall {
+                        attr: 1,
+                        name: FUNC_SET,
+                        arg1: b"Grace".to_vec(),
+                        arg1_datatype: HYPERDATATYPE_STRING,
+                        arg2: Vec::new(),
+                        arg2_datatype: 0,
+                    }],
+                }),
+            ),
         )
         .await
         .unwrap();
@@ -6389,26 +6458,29 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &legacy_request_body(19, encode_protocol_atomic_request(&ProtocolKeyChange {
-                key: b"ada".to_vec(),
-                erase: false,
-                fail_if_not_found: false,
-                fail_if_found: false,
-                checks: vec![ProtocolAttributeCheck {
-                    attr: 2,
-                    value: 5_i64.to_le_bytes().to_vec(),
-                    datatype: HYPERDATATYPE_INT64,
-                    predicate: HYPERPREDICATE_GREATER_EQUAL,
-                }],
-                funcalls: vec![ProtocolFuncall {
-                    attr: 1,
-                    name: FUNC_SET,
-                    arg1: b"Grace".to_vec(),
-                    arg1_datatype: HYPERDATATYPE_STRING,
-                    arg2: Vec::new(),
-                    arg2_datatype: 0,
-                }],
-            })),
+            &legacy_request_body(
+                19,
+                encode_protocol_atomic_request(&ProtocolKeyChange {
+                    key: b"ada".to_vec(),
+                    erase: false,
+                    fail_if_not_found: false,
+                    fail_if_found: false,
+                    checks: vec![ProtocolAttributeCheck {
+                        attr: 2,
+                        value: 5_i64.to_le_bytes().to_vec(),
+                        datatype: HYPERDATATYPE_INT64,
+                        predicate: HYPERPREDICATE_GREATER_EQUAL,
+                    }],
+                    funcalls: vec![ProtocolFuncall {
+                        attr: 1,
+                        name: FUNC_SET,
+                        arg1: b"Grace".to_vec(),
+                        arg1_datatype: HYPERDATATYPE_STRING,
+                        arg2: Vec::new(),
+                        arg2_datatype: 0,
+                    }],
+                }),
+            ),
         )
         .await
         .unwrap();
@@ -6464,21 +6536,24 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &legacy_request_body(19, encode_protocol_atomic_request(&ProtocolKeyChange {
-                key: b"ada".to_vec(),
-                erase: false,
-                fail_if_not_found: false,
-                fail_if_found: false,
-                checks: Vec::new(),
-                funcalls: vec![ProtocolFuncall {
-                    attr: 1,
-                    name: FUNC_SET,
-                    arg1: b"wrong".to_vec(),
-                    arg1_datatype: HYPERDATATYPE_STRING,
-                    arg2: Vec::new(),
-                    arg2_datatype: 0,
-                }],
-            })),
+            &legacy_request_body(
+                19,
+                encode_protocol_atomic_request(&ProtocolKeyChange {
+                    key: b"ada".to_vec(),
+                    erase: false,
+                    fail_if_not_found: false,
+                    fail_if_found: false,
+                    checks: Vec::new(),
+                    funcalls: vec![ProtocolFuncall {
+                        attr: 1,
+                        name: FUNC_SET,
+                        arg1: b"wrong".to_vec(),
+                        arg1_datatype: HYPERDATATYPE_STRING,
+                        arg2: Vec::new(),
+                        arg2_datatype: 0,
+                    }],
+                }),
+            ),
         )
         .await
         .unwrap();
@@ -6516,21 +6591,24 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &legacy_request_body(19, encode_protocol_atomic_request(&ProtocolKeyChange {
-                key: b"ada".to_vec(),
-                erase: true,
-                fail_if_not_found: false,
-                fail_if_found: false,
-                checks: Vec::new(),
-                funcalls: vec![ProtocolFuncall {
-                    attr: 1,
-                    name: FUNC_SET,
-                    arg1: b"Ada".to_vec(),
-                    arg1_datatype: HYPERDATATYPE_STRING,
-                    arg2: Vec::new(),
-                    arg2_datatype: 0,
-                }],
-            })),
+            &legacy_request_body(
+                19,
+                encode_protocol_atomic_request(&ProtocolKeyChange {
+                    key: b"ada".to_vec(),
+                    erase: true,
+                    fail_if_not_found: false,
+                    fail_if_found: false,
+                    checks: Vec::new(),
+                    funcalls: vec![ProtocolFuncall {
+                        attr: 1,
+                        name: FUNC_SET,
+                        arg1: b"Ada".to_vec(),
+                        arg1_datatype: HYPERDATATYPE_STRING,
+                        arg2: Vec::new(),
+                        arg2_datatype: 0,
+                    }],
+                }),
+            ),
         )
         .await
         .unwrap();
@@ -6582,21 +6660,24 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &legacy_request_body(19, encode_protocol_atomic_request(&ProtocolKeyChange {
-                key: b"ada".to_vec(),
-                erase: false,
-                fail_if_not_found: false,
-                fail_if_found: false,
-                checks: Vec::new(),
-                funcalls: vec![ProtocolFuncall {
-                    attr: 1,
-                    name: FUNC_NUM_ADD,
-                    arg1: 3_i64.to_le_bytes().to_vec(),
-                    arg1_datatype: HYPERDATATYPE_INT64,
-                    arg2: Vec::new(),
-                    arg2_datatype: 0,
-                }],
-            })),
+            &legacy_request_body(
+                19,
+                encode_protocol_atomic_request(&ProtocolKeyChange {
+                    key: b"ada".to_vec(),
+                    erase: false,
+                    fail_if_not_found: false,
+                    fail_if_found: false,
+                    checks: Vec::new(),
+                    funcalls: vec![ProtocolFuncall {
+                        attr: 1,
+                        name: FUNC_NUM_ADD,
+                        arg1: 3_i64.to_le_bytes().to_vec(),
+                        arg1_datatype: HYPERDATATYPE_INT64,
+                        arg2: Vec::new(),
+                        arg2_datatype: 0,
+                    }],
+                }),
+            ),
         )
         .await
         .unwrap();
@@ -6621,6 +6702,143 @@ mod tests {
         };
 
         assert_eq!(record.attributes.get("profile_views"), Some(&Value::Int(5)));
+    }
+
+    #[tokio::test]
+    async fn legacy_atomic_integer_div_and_mod_follow_hyperdex_signed_semantics() {
+        let runtime = bootstrap_runtime();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    int profile_views\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(7),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+
+        let (_, div_body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqAtomic,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 19,
+            },
+            &legacy_request_body(
+                19,
+                encode_protocol_atomic_request(&ProtocolKeyChange {
+                    key: b"ada".to_vec(),
+                    erase: false,
+                    fail_if_not_found: false,
+                    fail_if_found: false,
+                    checks: Vec::new(),
+                    funcalls: vec![ProtocolFuncall {
+                        attr: 1,
+                        name: FUNC_NUM_DIV,
+                        arg1: (-3_i64).to_le_bytes().to_vec(),
+                        arg1_datatype: HYPERDATATYPE_INT64,
+                        arg2: Vec::new(),
+                        arg2_datatype: 0,
+                    }],
+                }),
+            ),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            decode_protocol_atomic_response(&div_body).unwrap(),
+            LegacyReturnCode::Success as u16
+        );
+
+        let response = HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+            },
+        )
+        .await
+        .unwrap();
+
+        let ClientResponse::Record(Some(record)) = response else {
+            panic!("expected stored record after div");
+        };
+        assert_eq!(
+            record.attributes.get("profile_views"),
+            Some(&Value::Int(-3))
+        );
+
+        let (_, mod_body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqAtomic,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 20,
+            },
+            &legacy_request_body(
+                20,
+                encode_protocol_atomic_request(&ProtocolKeyChange {
+                    key: b"ada".to_vec(),
+                    erase: false,
+                    fail_if_not_found: false,
+                    fail_if_found: false,
+                    checks: Vec::new(),
+                    funcalls: vec![ProtocolFuncall {
+                        attr: 1,
+                        name: FUNC_NUM_MOD,
+                        arg1: (2_i64).to_le_bytes().to_vec(),
+                        arg1_datatype: HYPERDATATYPE_INT64,
+                        arg2: Vec::new(),
+                        arg2_datatype: 0,
+                    }],
+                }),
+            ),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            decode_protocol_atomic_response(&mod_body).unwrap(),
+            LegacyReturnCode::Success as u16
+        );
+
+        let response = HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+            },
+        )
+        .await
+        .unwrap();
+
+        let ClientResponse::Record(Some(record)) = response else {
+            panic!("expected stored record after mod");
+        };
+        assert_eq!(record.attributes.get("profile_views"), Some(&Value::Int(1)));
     }
 
     #[tokio::test]
@@ -6748,15 +6966,18 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &legacy_request_body(19, encode_protocol_search_start(&ProtocolSearchStart {
-                search_id: 41,
-                checks: vec![ProtocolAttributeCheck {
-                    attr: 2,
-                    value: 3_i64.to_le_bytes().to_vec(),
-                    datatype: HYPERDATATYPE_INT64,
-                    predicate: HYPERPREDICATE_GREATER_EQUAL,
-                }],
-            })),
+            &legacy_request_body(
+                19,
+                encode_protocol_search_start(&ProtocolSearchStart {
+                    search_id: 41,
+                    checks: vec![ProtocolAttributeCheck {
+                        attr: 2,
+                        value: 3_i64.to_le_bytes().to_vec(),
+                        datatype: HYPERDATATYPE_INT64,
+                        predicate: HYPERPREDICATE_GREATER_EQUAL,
+                    }],
+                }),
+            ),
         )
         .await
         .unwrap();
@@ -6808,10 +7029,13 @@ mod tests {
                 target_virtual_server: 11,
                 nonce: 19,
             },
-            &legacy_request_body(19, encode_protocol_search_start(&ProtocolSearchStart {
-                search_id: 99,
-                checks: Vec::new(),
-            })),
+            &legacy_request_body(
+                19,
+                encode_protocol_search_start(&ProtocolSearchStart {
+                    search_id: 99,
+                    checks: Vec::new(),
+                }),
+            ),
         )
         .await
         .unwrap();
@@ -6830,7 +7054,10 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(header.message_type, LegacyMessageType::RespSearchItem);
-        assert_eq!(decode_protocol_search_item(&body).unwrap().key, b"grace".to_vec());
+        assert_eq!(
+            decode_protocol_search_item(&body).unwrap().key,
+            b"grace".to_vec()
+        );
 
         let (header, body) = handle_legacy_request(
             &runtime,
@@ -6846,7 +7073,10 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(header.message_type, LegacyMessageType::RespSearchDone);
-        assert_eq!(SearchDoneResponse::decode_body(&body).unwrap().search_id, 99);
+        assert_eq!(
+            SearchDoneResponse::decode_body(&body).unwrap().search_id,
+            99
+        );
     }
 
     #[test]

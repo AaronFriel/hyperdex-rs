@@ -2987,8 +2987,8 @@ async fn legacy_hyhac_large_object_probe_reports_coordinator_busybee_sequence() 
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_pooled_probe_reaches_integer_div_failure_after_full_profiles_setup(
-) -> Result<()> {
+async fn legacy_hyhac_pooled_probe_reaches_map_atomic_failure_after_integer_boundary() -> Result<()>
+{
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
     let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
@@ -3004,18 +3004,9 @@ async fn legacy_hyhac_pooled_probe_reaches_integer_div_failure_after_full_profil
         "hyhac full-profiles pooled probe: add_exit={add_exit_status:?} add_stdout=`{add_stdout}` add_stderr=`{add_stderr}` stable_exit={stable_exit_status:?} stable_stdout=`{stable_stdout}` stable_stderr=`{stable_stderr}` exit_status={exit_status:?} stdout=`{stdout}` stderr=`{stderr}`"
     );
 
-    let search_idx = stdout
-        .find("search: [OK, passed 100 tests]")
-        .context("pooled hyhac probe did not report a green search boundary")?;
-    let count_idx = stdout
-        .find("count: [OK, passed 100 tests]")
-        .context("pooled hyhac probe did not report a green count boundary")?;
-    let div_idx = stdout
-        .find("div: [Failed]")
-        .context("pooled hyhac probe did not reach integer div failure")?;
-    let mod_idx = stdout
-        .find("mod: [Failed]")
-        .context("pooled hyhac probe did not reach integer mod failure")?;
+    let map_section_idx = stdout
+        .find("        map:\n          int-int:\n            union: [OK, passed 100 tests]")
+        .context("pooled hyhac probe did not preserve map int-int union success")?;
 
     assert_eq!(add_exit_status.map(|status| status.code()), Some(Some(0)));
     assert_eq!(
@@ -3035,20 +3026,40 @@ async fn legacy_hyhac_pooled_probe_reaches_integer_div_failure_after_full_profil
         "expected the pooled conditional boundary to stay green"
     );
     assert!(
-        search_idx < count_idx && count_idx < div_idx && div_idx < mod_idx,
-        "expected search/count to pass before the first pooled integer atomic failures"
+        stdout.contains("search: [OK, passed 100 tests]"),
+        "expected the pooled search boundary to stay green"
     );
     assert!(
-        stdout.contains("Failed to store value:\n  test name: \"div\""),
-        "expected the pooled div failure details to be present"
+        stdout.contains("count: [OK, passed 100 tests]"),
+        "expected the pooled count boundary to stay green"
     );
     assert!(
-        stdout.contains("  output:"),
-        "expected the pooled div failure to report the observed daemon result"
+        stdout.contains(
+            "        integer:\n          add: [OK, passed 100 tests]\n          sub: [OK, passed 100 tests]\n          mul: [OK, passed 100 tests]\n          div: [OK, passed 100 tests]\n          mod: [OK, passed 100 tests]"
+        ),
+        "expected the pooled integer atomic section to stay green through div and mod"
     );
     assert!(
-        stdout.contains("  expected:"),
-        "expected the pooled div failure to report the Haskell expectation"
+        stdout.contains(
+            "        float:\n          add: [OK, passed 100 tests]\n          sub: [OK, passed 100 tests]\n          mul: [OK, passed 100 tests]\n          div: [OK, passed 100 tests]"
+        ),
+        "expected the pooled float atomic section to stay green"
+    );
+    assert!(
+        stdout[map_section_idx..].contains("            add: [Failed]"),
+        "expected the pooled probe to reach map add failure after map int-int union"
+    );
+    assert!(
+        stdout.contains("Failed in running atomic op:\n  test name: \"add\""),
+        "expected the pooled map add failure details to be present"
+    );
+    assert!(
+        stdout.contains("  error:     ClientServererror"),
+        "expected the pooled map add failure to report the current server error"
+    );
+    assert!(
+        stdout.contains("          div: [OK, passed 100 tests]"),
+        "expected the integer div boundary to stay green"
     );
     assert!(
         exit_status.is_some(),
@@ -3060,7 +3071,7 @@ async fn legacy_hyhac_pooled_probe_reaches_integer_div_failure_after_full_profil
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_integer_div_probe_fails_after_full_profiles_setup() -> Result<()> {
+async fn legacy_hyhac_integer_div_probe_turns_green_after_full_profiles_setup() -> Result<()> {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
     let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
@@ -3086,20 +3097,20 @@ async fn legacy_hyhac_integer_div_probe_fails_after_full_profiles_setup() -> Res
         "expected the focused probe to stay inside the pooled integer atomic group"
     );
     assert!(
-        stdout.contains("div: [Failed]"),
-        "expected the focused probe to fail in integer div"
+        stdout.contains("div: [OK, passed 100 tests]"),
+        "expected the focused probe to show integer div success"
     );
     assert!(
-        stdout.contains("Failed to store value:\n  test name: \"div\""),
-        "expected the focused probe to report the integer div failure details"
+        !stdout.contains("[Failed]"),
+        "expected the focused probe to avoid any remaining failures"
     );
     assert!(
-        stdout.contains("  output:"),
-        "expected the focused probe to report the observed daemon result"
+        !stdout.contains("ClientReconfigure"),
+        "expected the focused probe to avoid the prior client reconfigure path"
     );
     assert!(
-        stdout.contains("  expected:"),
-        "expected the focused probe to report the Haskell div expectation"
+        !stdout.contains("Failed in running atomic op:"),
+        "expected the focused probe to avoid the prior atomic failure details"
     );
     assert!(
         !stdout.contains("search: ["),
@@ -3112,6 +3123,57 @@ async fn legacy_hyhac_integer_div_probe_fails_after_full_profiles_setup() -> Res
     assert!(
         !stdout.contains("mod: ["),
         "expected the focused probe to isolate div instead of later atomic failures"
+    );
+    assert!(
+        exit_status.is_some(),
+        "expected the focused probe to finish before the deadline"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn legacy_hyhac_map_int_int_add_probe_fails_after_full_profiles_setup() -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+    let cluster = spawn_single_daemon_cluster().await?;
+    let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
+        setup_full_profiles_schema(cluster.coordinator_address).await?;
+
+    let (exit_status, stdout, stderr) = run_hyhac_selected_tests_direct(
+        cluster.coordinator_address,
+        "*pooled*/*atomic*/*map*/*int-int*/*add",
+        Duration::from_secs(15),
+    )
+    .await?;
+    eprintln!(
+        "hyhac full-profiles map-int-int-add probe: add_exit={add_exit_status:?} add_stdout=`{add_stdout}` add_stderr=`{add_stderr}` stable_exit={stable_exit_status:?} stable_stdout=`{stable_stdout}` stable_stderr=`{stable_stderr}` exit_status={exit_status:?} stdout=`{stdout}` stderr=`{stderr}`"
+    );
+
+    assert_eq!(add_exit_status.map(|status| status.code()), Some(Some(0)));
+    assert_eq!(
+        stable_exit_status.map(|status| status.code()),
+        Some(Some(0))
+    );
+    assert!(
+        stdout.contains("pooled:\n      atomic:\n        map:\n          int-int:"),
+        "expected the focused probe to stay inside the pooled map int-int atomic group"
+    );
+    assert!(
+        stdout.contains("add: [Failed]"),
+        "expected the focused probe to reach the current map add failure"
+    );
+    assert!(
+        stdout.contains("Failed in running atomic op:\n  test name: \"add\""),
+        "expected the focused probe to report the map add failure details"
+    );
+    assert!(
+        stdout.contains("  error:     ClientServererror"),
+        "expected the focused probe to report the current server error"
+    );
+    assert!(
+        !stdout.contains("integer:\n"),
+        "expected the focused probe to avoid rerunning the earlier integer group"
     );
     assert!(
         exit_status.is_some(),
