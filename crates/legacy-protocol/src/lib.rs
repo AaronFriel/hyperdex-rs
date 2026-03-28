@@ -14,6 +14,10 @@ pub const SEARCH_START_REQUEST_PREFIX_SIZE: usize = 2 + 8 + 2;
 pub const SEARCH_CONTINUE_REQUEST_SIZE: usize = 8;
 pub const ATOMIC_REQUEST_PREFIX_SIZE: usize = 2 + 1 + 2 + 2;
 pub const ATOMIC_RESPONSE_BODY_SIZE: usize = 2;
+const MIN_PROTOCOL_SLICE_BYTES: usize = 1;
+const MIN_PROTOCOL_CHECK_BYTES: usize = 2 + MIN_PROTOCOL_SLICE_BYTES + 2 + 2;
+const MIN_PROTOCOL_FUNCALL_BYTES: usize =
+    2 + 1 + MIN_PROTOCOL_SLICE_BYTES + 2 + MIN_PROTOCOL_SLICE_BYTES + 2;
 pub const LEGACY_ATOMIC_FLAG_WRITE: u8 = 0x80;
 pub const LEGACY_ATOMIC_FLAG_FAIL_IF_NOT_FOUND: u8 = 0x01;
 pub const LEGACY_ATOMIC_FLAG_FAIL_IF_FOUND: u8 = 0x02;
@@ -890,11 +894,14 @@ pub fn encode_protocol_slice(bytes: &[u8]) -> Vec<u8> {
 
 pub fn decode_protocol_slice(bytes: &[u8]) -> Result<(Vec<u8>, usize), LegacyProtocolError> {
     let (size, used) = decode_varint(bytes)?;
-    let size = size as usize;
-    if bytes.len() < used + size {
+    let size = usize::try_from(size).map_err(|_| LegacyProtocolError::ShortBuffer)?;
+    let end = used
+        .checked_add(size)
+        .ok_or(LegacyProtocolError::ShortBuffer)?;
+    if bytes.len() < end {
         return Err(LegacyProtocolError::ShortBuffer);
     }
-    Ok((bytes[used..used + size].to_vec(), used + size))
+    Ok((bytes[used..end].to_vec(), end))
 }
 
 pub fn encode_protocol_get_request(key: &[u8]) -> Vec<u8> {
@@ -1096,7 +1103,12 @@ fn decode_protocol_checks(
     bytes: &[u8],
 ) -> Result<(Vec<ProtocolAttributeCheck>, usize), LegacyProtocolError> {
     let (count, mut used) = decode_varint(bytes)?;
-    let mut checks = Vec::with_capacity(count as usize);
+    let count = decode_bounded_protocol_count(
+        count,
+        bytes.len().saturating_sub(used),
+        MIN_PROTOCOL_CHECK_BYTES,
+    )?;
+    let mut checks = Vec::with_capacity(count);
     for _ in 0..count {
         if bytes.len() < used + 2 {
             return Err(LegacyProtocolError::ShortBuffer);
@@ -1138,7 +1150,12 @@ fn decode_protocol_funcalls(
     bytes: &[u8],
 ) -> Result<(Vec<ProtocolFuncall>, usize), LegacyProtocolError> {
     let (count, mut used) = decode_varint(bytes)?;
-    let mut funcalls = Vec::with_capacity(count as usize);
+    let count = decode_bounded_protocol_count(
+        count,
+        bytes.len().saturating_sub(used),
+        MIN_PROTOCOL_FUNCALL_BYTES,
+    )?;
+    let mut funcalls = Vec::with_capacity(count);
     for _ in 0..count {
         if bytes.len() < used + 3 {
             return Err(LegacyProtocolError::ShortBuffer);
@@ -1182,7 +1199,12 @@ fn encode_protocol_slices(values: &[Vec<u8>]) -> Vec<u8> {
 
 fn decode_protocol_slices(bytes: &[u8]) -> Result<(Vec<Vec<u8>>, usize), LegacyProtocolError> {
     let (count, mut used) = decode_varint(bytes)?;
-    let mut values = Vec::with_capacity(count as usize);
+    let count = decode_bounded_protocol_count(
+        count,
+        bytes.len().saturating_sub(used),
+        MIN_PROTOCOL_SLICE_BYTES,
+    )?;
+    let mut values = Vec::with_capacity(count);
     for _ in 0..count {
         let (value, value_used) = decode_protocol_slice(&bytes[used..])?;
         used += value_used;
@@ -1221,6 +1243,18 @@ fn decode_varint(bytes: &[u8]) -> Result<(u64, usize), LegacyProtocolError> {
         }
     }
     Err(LegacyProtocolError::InvalidVarint)
+}
+
+fn decode_bounded_protocol_count(
+    count: u64,
+    remaining_bytes: usize,
+    min_item_bytes: usize,
+) -> Result<usize, LegacyProtocolError> {
+    let count = usize::try_from(count).map_err(|_| LegacyProtocolError::ShortBuffer)?;
+    if count > remaining_bytes / min_item_bytes {
+        return Err(LegacyProtocolError::ShortBuffer);
+    }
+    Ok(count)
 }
 
 fn decode_message_type(value: u8) -> Result<LegacyMessageType, LegacyProtocolError> {

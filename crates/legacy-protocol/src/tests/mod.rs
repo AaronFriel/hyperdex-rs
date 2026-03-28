@@ -236,6 +236,15 @@ fn atomic_request_round_trips() {
 }
 
 #[test]
+fn atomic_request_decode_rejects_oom_fuzz_input() {
+    let bytes = [206, 182, 182, 206, 106, 207];
+    assert!(matches!(
+        decode_protocol_atomic_request(&bytes),
+        Err(LegacyProtocolError::ShortBuffer)
+    ));
+}
+
+#[test]
 fn atomic_response_round_trips() {
     let response = AtomicResponse {
         status: LegacyReturnCode::Success,

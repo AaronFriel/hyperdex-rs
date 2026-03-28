@@ -1,0 +1,33 @@
+[package]
+name = "hyperdex-rs-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.hyperdex-admin-protocol]
+path = "../crates/hyperdex-admin-protocol"
+
+[dependencies.legacy-protocol]
+path = "../crates/legacy-protocol"
+
+[[bin]]
+name = "busybee_frame_decode"
+path = "fuzz_targets/busybee_frame_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "legacy_request_decode"
+path = "fuzz_targets/legacy_request_decode.rs"
+test = false
+doc = false
+bench = false
