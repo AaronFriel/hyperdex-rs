@@ -1785,7 +1785,7 @@
   failure is the next non-wire bootstrap acceptance mismatch between the
   original Replicant client and the handcrafted Rust BusyBee session behavior.
 - Owner: next forked product worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object`
+  `worktrees/live-hyhac-large-object`
 - Start commit: `19fc81f`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-large-object`
