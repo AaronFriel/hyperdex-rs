@@ -2,7 +2,7 @@
 
 This file is archived. It preserves the phase-1 root AutoPlan from the Hyhac
 compatibility and distributed-baseline effort. The active root AutoPlan is now
-[docs/autoplan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/autoplan.md).
+[docs/autoplan.md](docs/autoplan.md).
 Some internal links below still reflect the phase-1 layout and should be read
 as historical context rather than the current filesystem contract.
 
