@@ -450,7 +450,7 @@
 - End commit: `df25106`
 - Artifact location:
   - no reconciled code result
-  - clean worktree at `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/post-success-repro`
+  - clean worktree at `worktrees/post-success-repro`
 - Evidence summary:
   - the worker returned root-status narration instead of performing harness work
   - `git status` in the worktree remained clean
