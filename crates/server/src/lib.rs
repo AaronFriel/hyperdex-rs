@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
+use cityhasher::hash as cityhash64;
 use cluster_config::{
     ClusterConfig, ClusterNode, ConsensusBackend, PlacementBackend, StorageBackend,
     TransportBackend,
@@ -321,12 +322,28 @@ impl ClusterRuntime {
     }
 
     pub fn route_primary(&self, key: &[u8]) -> Result<u64> {
-        Ok(self.locate_key(key)?.primary)
+        let spaces = self.catalog.list_spaces()?;
+        let Some(space_name) = spaces.first() else {
+            anyhow::bail!("route_primary requires at least one space");
+        };
+        self.route_primary_for_space(space_name, key)
     }
 
-    fn locate_key(&self, key: &[u8]) -> Result<PlacementDecision> {
+    pub fn route_primary_for_space(&self, space_name: &str, key: &[u8]) -> Result<u64> {
+        Ok(self.locate_key(space_name, key)?.primary)
+    }
+
+    pub fn route_primary_for_space_definition(&self, space: &Space, key: &[u8]) -> Result<u64> {
         let layout = self.catalog.layout()?;
-        Ok(self.placement_strategy.locate(key, &layout))
+        Ok(locate_key_in_space(&layout, &*self.placement_strategy, space, key)?.primary)
+    }
+
+    fn locate_key(&self, space_name: &str, key: &[u8]) -> Result<PlacementDecision> {
+        let layout = self.catalog.layout()?;
+        let Some(space) = self.catalog.get_space(space_name)? else {
+            anyhow::bail!("unknown space `{space_name}`");
+        };
+        locate_key_in_space(&layout, &*self.placement_strategy, &space, key)
     }
 
     async fn forward_data_request(
@@ -387,7 +404,7 @@ impl ClusterRuntime {
         space: String,
         key: bytes::Bytes,
     ) -> Result<Option<Record>> {
-        let decision = self.locate_key(&key)?;
+        let decision = self.locate_key(&space, &key)?;
         let mut last_remote_error = None;
 
         for replica in decision.replicas {
@@ -418,7 +435,7 @@ impl ClusterRuntime {
         key: &bytes::Bytes,
         mutations: &[Mutation],
     ) -> Result<()> {
-        let decision = self.locate_key(key)?;
+        let decision = self.locate_key(space, key)?;
         for replica in decision.replicas {
             if replica == self.local_node_id {
                 continue;
@@ -447,7 +464,7 @@ impl ClusterRuntime {
     }
 
     async fn replicate_delete_to_secondaries(&self, space: &str, key: &bytes::Bytes) -> Result<()> {
-        let decision = self.locate_key(key)?;
+        let decision = self.locate_key(space, key)?;
         for replica in decision.replicas {
             if replica == self.local_node_id {
                 continue;
@@ -853,6 +870,62 @@ impl ClusterRuntime {
     }
 }
 
+fn locate_key_in_space(
+    layout: &placement_core::ClusterLayout,
+    placement_strategy: &dyn PlacementStrategy,
+    space: &Space,
+    key: &[u8],
+) -> Result<PlacementDecision> {
+    if matches!(
+        legacy_key_kind(space)?,
+        ValueKind::Bytes | ValueKind::String | ValueKind::Document
+    ) {
+        return legacy_locate_string_key(layout, space, key);
+    }
+    Ok(placement_strategy.locate(key, layout))
+}
+
+fn legacy_key_kind(space: &Space) -> Result<&ValueKind> {
+    let _ = space;
+    Ok(&ValueKind::String)
+}
+
+fn legacy_locate_string_key(
+    layout: &placement_core::ClusterLayout,
+    space: &Space,
+    key: &[u8],
+) -> Result<PlacementDecision> {
+    if layout.nodes.is_empty() {
+        anyhow::bail!("space `{}` has no registered nodes", space.name);
+    }
+
+    let replica_count = layout
+        .nodes
+        .len()
+        .min(space.options.fault_tolerance.saturating_add(1) as usize)
+        .max(1);
+    let replica_sets = legacy_replica_sets(&layout.nodes, replica_count, space.options.partitions);
+    if replica_sets.is_empty() {
+        anyhow::bail!("space `{}` has no legacy replica sets", space.name);
+    }
+
+    let partition = legacy_region_for_hash(cityhash64::<u64>(key), space.options.partitions);
+    let replica_set_idx = (partition * replica_sets.len()) / space.options.partitions as usize;
+    let replicas = replica_sets[replica_set_idx].clone();
+
+    Ok(PlacementDecision {
+        partition,
+        partitions: space.options.partitions as usize,
+        primary: replicas[0],
+        replicas,
+    })
+}
+
+fn legacy_region_for_hash(hash: u64, partitions: u32) -> usize {
+    let partitions = partitions.max(1) as usize;
+    ((u128::from(hash) * partitions as u128) / (u128::from(u64::MAX) + 1)) as usize
+}
+
 impl CoordinatorAdminSession {
     fn new() -> Self {
         Self {
@@ -1248,8 +1321,9 @@ fn encode_legacy_space(
             .min(space.options.fault_tolerance.saturating_add(1) as usize)
             .max(1)
     };
+    let replica_sets = legacy_replica_sets(server_ids, replica_count, space.options.partitions);
 
-    encode_legacy_subspace(out, &[0], partitions, &server_ids[..replica_count], ids)?;
+    encode_legacy_subspace(out, &[0], partitions, &replica_sets, ids)?;
 
     for subspace in &space.subspaces {
         let mut attr_indexes = Vec::with_capacity(subspace.dimensions.len());
@@ -1266,7 +1340,7 @@ fn encode_legacy_space(
             out,
             &attr_indexes,
             partitions,
-            &server_ids[..replica_count],
+            &replica_sets,
             ids,
         )?;
     }
@@ -1278,12 +1352,13 @@ fn encode_legacy_subspace(
     out: &mut Vec<u8>,
     attr_indexes: &[u16],
     partitions: u32,
-    server_ids: &[u64],
+    replica_sets: &[Vec<u64>],
     ids: &mut LegacyConfigIds,
 ) -> Result<()> {
     let regions = legacy_partition_regions(attr_indexes.len(), partitions);
     let subspace_id = ids.allocate();
     let region_ids = regions.iter().map(|_| ids.allocate()).collect::<Vec<_>>();
+    let region_count = regions.len();
 
     encode_u64_be(out, subspace_id);
     encode_u16_be(
@@ -1299,7 +1374,15 @@ fn encode_legacy_subspace(
         encode_u16_be(out, *attr_index);
     }
 
-    for ((lower_coord, upper_coord), region_id) in regions.into_iter().zip(region_ids) {
+    for (region_idx, ((lower_coord, upper_coord), region_id)) in
+        regions.into_iter().zip(region_ids).enumerate()
+    {
+        let replica_set: &[u64] = if replica_sets.is_empty() {
+            &[]
+        } else {
+            let replica_set_idx = (region_idx * replica_sets.len()) / region_count;
+            replica_sets[replica_set_idx].as_slice()
+        };
         encode_u64_be(out, region_id);
         encode_u16_be(
             out,
@@ -1307,7 +1390,7 @@ fn encode_legacy_subspace(
         );
         encode_u8(
             out,
-            u8::try_from(server_ids.len())
+            u8::try_from(replica_set.len())
                 .map_err(|_| anyhow!("legacy replica count exceeds u8"))?,
         );
 
@@ -1316,13 +1399,52 @@ fn encode_legacy_subspace(
             encode_u64_be(out, *upper_hash);
         }
 
-        for server_id in server_ids {
+        for server_id in replica_set {
             encode_u64_be(out, *server_id);
             encode_u64_be(out, ids.allocate());
         }
     }
 
     Ok(())
+}
+
+fn legacy_replica_sets(server_ids: &[u64], replicas: usize, partitions: u32) -> Vec<Vec<u64>> {
+    if server_ids.is_empty() || replicas == 0 {
+        return Vec::new();
+    }
+
+    if server_ids.len() <= replicas {
+        let mut replica_sets = Vec::with_capacity(server_ids.len());
+        for start in 0..server_ids.len() {
+            let mut replica_set = Vec::with_capacity(server_ids.len());
+            for offset in 0..server_ids.len() {
+                let idx = (start + offset) % server_ids.len();
+                replica_set.push(server_ids[idx]);
+            }
+            replica_sets.push(replica_set);
+        }
+        return replica_sets;
+    }
+
+    let partitions = partitions.max(1) as usize;
+    let mut replica_sets = Vec::new();
+
+    for start in 0..server_ids.len() {
+        for stride in 1..=partitions {
+            if start + stride * (replicas - 1) >= server_ids.len() {
+                break;
+            }
+
+            let mut replica_set = Vec::with_capacity(replicas);
+            for replica in 0..replicas {
+                let idx = start + stride * replica;
+                replica_set.push(server_ids[idx]);
+            }
+            replica_sets.push(replica_set);
+        }
+    }
+
+    replica_sets
 }
 
 fn legacy_partition_regions(num_attrs: usize, partitions: u32) -> Vec<(Vec<u64>, Vec<u64>)> {
@@ -4142,7 +4264,7 @@ impl HyperdexClientService for ClusterRuntime {
                 key,
                 mutations,
             } => {
-                let primary = self.route_primary(&key)?;
+                let primary = self.route_primary_for_space(&space, &key)?;
                 if primary == self.local_node_id {
                     Ok(match self.apply_primary_put(space, key, mutations).await? {
                         DataPlaneResponse::Unit => ClientResponse::Unit,
@@ -4181,7 +4303,7 @@ impl HyperdexClientService for ClusterRuntime {
                 self.execute_get_with_replica_fallback(space, key).await?,
             )),
             ClientRequest::Delete { space, key } => {
-                let primary = self.route_primary(&key)?;
+                let primary = self.route_primary_for_space(&space, &key)?;
                 if primary == self.local_node_id {
                     Ok(match self.apply_primary_delete(space, key).await? {
                         DataPlaneResponse::Unit => ClientResponse::Unit,
@@ -4215,7 +4337,7 @@ impl HyperdexClientService for ClusterRuntime {
                 checks,
                 mutations,
             } => {
-                let primary = self.route_primary(&key)?;
+                let primary = self.route_primary_for_space(&space, &key)?;
                 if primary == self.local_node_id {
                     Ok(
                         match self
@@ -6146,6 +6268,157 @@ mod tests {
         assert_eq!(subspace_id, 2);
         assert_eq!(region_id, 3);
         assert_eq!(first_virtual_server_id, 67);
+    }
+
+    #[test]
+    fn legacy_config_distributes_key_regions_across_two_servers() {
+        let view = ConfigView {
+            version: 1,
+            stable_through: 1,
+            cluster: ClusterConfig {
+                nodes: vec![
+                    ClusterNode {
+                        id: 1,
+                        host: "127.0.0.1".to_owned(),
+                        control_port: 1982,
+                        data_port: 2012,
+                    },
+                    ClusterNode {
+                        id: 2,
+                        host: "127.0.0.1".to_owned(),
+                        control_port: 1983,
+                        data_port: 2013,
+                    },
+                ],
+                replicas: 1,
+                ..ClusterConfig::default()
+            },
+            spaces: vec![parse_hyperdex_space(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    string first,\n\
+                    int profile_views\n\
+                 tolerate 0 failures\n",
+            )
+            .unwrap()],
+        };
+
+        let encoded = default_legacy_config_encoder(&view).unwrap();
+        let mut cursor = 0;
+        let _cluster = decode_u64(&encoded, &mut cursor);
+        let _version = decode_u64(&encoded, &mut cursor);
+        let _flags = decode_u64(&encoded, &mut cursor);
+        let servers_len = decode_u64(&encoded, &mut cursor) as usize;
+        let spaces_len = decode_u64(&encoded, &mut cursor) as usize;
+        let _transfers_len = decode_u64(&encoded, &mut cursor) as usize;
+
+        assert_eq!(servers_len, 2);
+        assert_eq!(spaces_len, 1);
+
+        for _ in 0..servers_len {
+            let _state = decode_u8(&encoded, &mut cursor);
+            let _server_id = decode_u64(&encoded, &mut cursor);
+            skip_legacy_location(&encoded, &mut cursor);
+        }
+
+        let _space_id = decode_u64(&encoded, &mut cursor);
+        let _space_name = decode_varint_string(&encoded, &mut cursor);
+        let _fault_tolerance = decode_u64(&encoded, &mut cursor);
+        let attrs_len = decode_u16(&encoded, &mut cursor) as usize;
+        let subspaces_len = decode_u16(&encoded, &mut cursor) as usize;
+        let _indices_len = decode_u16(&encoded, &mut cursor) as usize;
+
+        assert_eq!(subspaces_len, 1);
+
+        for _ in 0..attrs_len {
+            let _attr_name = decode_varint_string(&encoded, &mut cursor);
+            let _datatype = decode_u16(&encoded, &mut cursor);
+        }
+
+        let _subspace_id = decode_u64(&encoded, &mut cursor);
+        let attrs_in_subspace = decode_u16(&encoded, &mut cursor) as usize;
+        let regions_len = decode_u32(&encoded, &mut cursor) as usize;
+
+        for _ in 0..attrs_in_subspace {
+            let _attr = decode_u16(&encoded, &mut cursor);
+        }
+
+        let mut first_replica_server_ids = Vec::with_capacity(regions_len);
+
+        for _ in 0..regions_len {
+            let _region_id = decode_u64(&encoded, &mut cursor);
+            let bounds_len = decode_u16(&encoded, &mut cursor) as usize;
+            let replicas_len = decode_u8(&encoded, &mut cursor) as usize;
+
+            for _ in 0..bounds_len {
+                let _lower = decode_u64(&encoded, &mut cursor);
+                let _upper = decode_u64(&encoded, &mut cursor);
+            }
+
+            let first_replica_server_id = decode_u64(&encoded, &mut cursor);
+            let _first_virtual_server_id = decode_u64(&encoded, &mut cursor);
+            first_replica_server_ids.push(first_replica_server_id);
+
+            for _ in 1..replicas_len {
+                let _server_id = decode_u64(&encoded, &mut cursor);
+                let _virtual_server_id = decode_u64(&encoded, &mut cursor);
+            }
+        }
+
+        assert_eq!(regions_len, 64);
+        assert_eq!(first_replica_server_ids.len(), 64);
+        assert!(first_replica_server_ids[..32].iter().all(|server_id| *server_id == 1));
+        assert!(first_replica_server_ids[32..].iter().all(|server_id| *server_id == 2));
+    }
+
+    #[test]
+    fn legacy_string_key_hash_matches_hyperdex_cityhash64() {
+        assert_eq!(cityhash64::<u64>(b"a"), 12_917_804_110_809_363_939);
+        assert_eq!(cityhash64::<u64>(b"K"), 17_790_691_183_158_543_131);
+        assert_eq!(cityhash64::<u64>(b"K\x0b"), 17_582_107_272_978_808_922);
+        assert_eq!(cityhash64::<u64>(b"K\x0b\\"), 13_859_931_219_248_667_929);
+        assert_eq!(
+            cityhash64::<u64>(b"H\x1fUS-K\x0bv\\"),
+            14_723_391_480_779_626_874
+        );
+    }
+
+    #[test]
+    fn legacy_string_point_routing_matches_encoded_two_node_regions() {
+        let config = ClusterConfig {
+            nodes: vec![
+                ClusterNode {
+                    id: 1,
+                    host: "127.0.0.1".to_owned(),
+                    control_port: 1982,
+                    data_port: 2012,
+                },
+                ClusterNode {
+                    id: 2,
+                    host: "127.0.0.1".to_owned(),
+                    control_port: 1983,
+                    data_port: 2013,
+                },
+            ],
+            replicas: 1,
+            ..ClusterConfig::default()
+        };
+        let runtime = ClusterRuntime::single_node(config).unwrap();
+        let space = parse_hyperdex_space(
+            "space profiles\n\
+             key username\n\
+             attributes\n\
+                string first,\n\
+                int profile_views\n\
+             tolerate 0 failures\n",
+        )
+        .unwrap();
+        runtime.catalog.create_space(space).unwrap();
+
+        for key in [b"a".as_slice(), b"K", b"K\x0b", b"K\x0b\\", b"H\x1fUS-K\x0bv\\"] {
+            assert_eq!(runtime.route_primary_for_space("profiles", key).unwrap(), 2);
+        }
     }
 
     #[test]

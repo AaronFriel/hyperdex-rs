@@ -60,6 +60,16 @@ struct SingleDaemonCluster {
     coordinator_address: SocketAddr,
 }
 
+struct TwoDaemonCluster {
+    _tempdir: TempDir,
+    _coordinator: ChildProcess,
+    _daemon_one: ChildProcess,
+    _daemon_two: ChildProcess,
+    coordinator_address: SocketAddr,
+    daemon_one_control_address: SocketAddr,
+    daemon_two_control_address: SocketAddr,
+}
+
 #[derive(Clone, Debug, Default)]
 struct BusyBeeCapture {
     client_frames: Vec<BusyBeeFrame>,
@@ -920,6 +930,112 @@ async fn spawn_single_daemon_cluster() -> Result<SingleDaemonCluster> {
         _coordinator: coordinator,
         _daemon: daemon,
         coordinator_address,
+    })
+}
+
+async fn spawn_two_daemon_cluster() -> Result<TwoDaemonCluster> {
+    let tempdir = TempDir::new()?;
+    let mut coordinator_port = ReservedPort::new()?;
+    let mut daemon_one_port = ReservedPort::new()?;
+    let mut daemon_two_port = ReservedPort::new()?;
+    let mut daemon_one_control_port = ReservedPort::new()?;
+    let mut daemon_two_control_port = ReservedPort::new()?;
+    let coordinator_address = localhost(coordinator_port.port())?;
+    let daemon_one_address = localhost(daemon_one_port.port())?;
+    let daemon_two_address = localhost(daemon_two_port.port())?;
+    let daemon_one_control_address = localhost(daemon_one_control_port.port())?;
+    let daemon_two_control_address = localhost(daemon_two_control_port.port())?;
+
+    coordinator_port.release();
+    let mut coordinator = ChildProcess::spawn(
+        "coordinator",
+        &[
+            "coordinator".to_owned(),
+            format!("--data={}", tempdir.path().join("coordinator").display()),
+            "--listen=127.0.0.1".to_owned(),
+            format!("--listen-port={}", coordinator_port.port()),
+        ],
+        tempdir.path(),
+    )?;
+    coordinator
+        .wait_for_coordinator(coordinator_address)
+        .await
+        .context("waiting for coordinator startup response")?;
+
+    daemon_one_port.release();
+    daemon_one_control_port.release();
+    let mut daemon_one = ChildProcess::spawn(
+        "daemon-one",
+        &[
+            "daemon".to_owned(),
+            "--node-id=1".to_owned(),
+            "--threads=1".to_owned(),
+            format!("--data={}", tempdir.path().join("daemon-one").display()),
+            "--listen=127.0.0.1".to_owned(),
+            format!("--listen-port={}", daemon_one_port.port()),
+            format!("--control-port={}", daemon_one_control_port.port()),
+            "--coordinator=127.0.0.1".to_owned(),
+            format!("--coordinator-port={}", coordinator_port.port()),
+            "--transport=grpc".to_owned(),
+        ],
+        tempdir.path(),
+    )?;
+    daemon_one
+        .wait_for_daemon(daemon_one_address)
+        .await
+        .context("waiting for daemon one legacy frontend startup response")?;
+
+    daemon_two_port.release();
+    daemon_two_control_port.release();
+    let mut daemon_two = ChildProcess::spawn(
+        "daemon-two",
+        &[
+            "daemon".to_owned(),
+            "--node-id=2".to_owned(),
+            "--threads=1".to_owned(),
+            format!("--data={}", tempdir.path().join("daemon-two").display()),
+            "--listen=127.0.0.1".to_owned(),
+            format!("--listen-port={}", daemon_two_port.port()),
+            format!("--control-port={}", daemon_two_control_port.port()),
+            "--coordinator=127.0.0.1".to_owned(),
+            format!("--coordinator-port={}", coordinator_port.port()),
+            "--transport=grpc".to_owned(),
+        ],
+        tempdir.path(),
+    )?;
+    daemon_two
+        .wait_for_daemon(daemon_two_address)
+        .await
+        .context("waiting for daemon two legacy frontend startup response")?;
+
+    coordinator
+        .wait_for_config_view(coordinator_address, "both daemon registrations", |view| {
+            view.cluster.nodes.iter().any(|node| node.id == 1)
+                && view.cluster.nodes.iter().any(|node| node.id == 2)
+        })
+        .await
+        .context("waiting for both daemon registrations in coordinator config")?;
+
+    let ready = request_coordinator_control_with_body_once(
+        coordinator_address,
+        CoordinatorAdminRequest::WaitUntilStable.method_name(),
+        &CoordinatorAdminRequest::WaitUntilStable,
+    )
+    .await
+    .context("requesting wait_until_stable after both daemon registrations")?;
+    assert_eq!(
+        CoordinatorReturnCode::decode(&ready.status)?,
+        CoordinatorReturnCode::Success
+    );
+
+    Ok(TwoDaemonCluster {
+        _tempdir: tempdir,
+        _coordinator: coordinator,
+        _daemon_one: daemon_one,
+        _daemon_two: daemon_two,
+        coordinator_address,
+        daemon_one_control_address,
+        daemon_two_control_address,
     })
 }
 
@@ -2003,7 +2119,7 @@ async fn coordinator_space_add_reaches_multiple_daemon_processes() -> Result<()>
     let status = request_coordinator_control_once(
         coordinator_address,
         CoordinatorAdminRequest::SpaceAdd(space.clone()).method_name(),
-        &CoordinatorAdminRequest::SpaceAdd(space),
+        &CoordinatorAdminRequest::SpaceAdd(space.clone()),
     )
     .await
     .context("requesting coordinator space_add for `profiles`")?;
@@ -2120,17 +2236,6 @@ async fn legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Resu
         })
         .await?;
 
-    let route_runtime = grpc_route_runtime(
-        daemon_one_control_port.port(),
-        daemon_one_port.port(),
-        daemon_two_control_port.port(),
-        daemon_two_port.port(),
-    );
-    let key = (0..4096)
-        .map(|i| format!("remote-atomic-{i}"))
-        .find(|key| route_runtime.route_primary(key.as_bytes()).unwrap() == 2)
-        .expect("expected a key routed to node 2");
-
     let space = parse_hyperdex_space(
         r#"
         space profiles
@@ -2142,7 +2247,7 @@ async fn legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Resu
     let status = request_coordinator_control_once(
         coordinator_address,
         CoordinatorAdminRequest::SpaceAdd(space.clone()).method_name(),
-        &CoordinatorAdminRequest::SpaceAdd(space),
+        &CoordinatorAdminRequest::SpaceAdd(space.clone()),
     )
     .await
     .context("requesting coordinator space_add for `profiles` in remote primary test")?;
@@ -2170,6 +2275,30 @@ async fn legacy_atomic_routes_numeric_update_to_remote_primary_process() -> Resu
         .context(
             "waiting for daemon two internode readiness for `profiles` in remote primary test",
         )?;
+
+    let route_runtime = grpc_route_runtime(
+        daemon_one_control_port.port(),
+        daemon_one_port.port(),
+        daemon_two_control_port.port(),
+        daemon_two_port.port(),
+    );
+    let route_space = parse_hyperdex_space(
+        r#"
+        space profiles
+        key username
+        attributes
+        int profile_views
+        "#,
+    )?;
+    let key = (0..4096)
+        .map(|i| format!("remote-atomic-{i}"))
+        .find(|key| {
+            route_runtime
+                .route_primary_for_space_definition(&route_space, key.as_bytes())
+                .unwrap()
+                == 2
+        })
+        .expect("expected a key routed to node 2");
 
     let (atomic_header, atomic_response) = request_atomic(
         daemon_one_address,
@@ -2292,7 +2421,7 @@ async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Resu
     let status = request_coordinator_control_once(
         coordinator_address,
         CoordinatorAdminRequest::SpaceAdd(space.clone()).method_name(),
-        &CoordinatorAdminRequest::SpaceAdd(space),
+        &CoordinatorAdminRequest::SpaceAdd(space.clone()),
     )
     .await
     .context("requesting coordinator space_add for `profiles` in degraded read test")?;
@@ -2321,10 +2450,28 @@ async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Resu
             "waiting for daemon two internode readiness for `profiles` in degraded read test",
         )?;
 
+    let route_runtime = grpc_route_runtime(
+        daemon_one_control_port.port(),
+        daemon_one_port.port(),
+        daemon_two_control_port.port(),
+        daemon_two_port.port(),
+    );
+    let degraded_keys = (0..4096)
+        .map(|i| format!("degraded-search-{i}"))
+        .filter(|key| {
+            route_runtime
+                .route_primary_for_space_definition(&space, key.as_bytes())
+                .unwrap()
+                == 1
+        })
+        .take(3)
+        .collect::<Vec<_>>();
+    assert_eq!(degraded_keys.len(), 3, "expected three keys routed to node 1");
+
     for (nonce, key, views) in [
-        (100_u64, "degraded-search-a", 7_i64),
-        (101_u64, "degraded-search-b", 9_i64),
-        (102_u64, "degraded-search-survivor", 1_i64),
+        (100_u64, degraded_keys[0].as_str(), 7_i64),
+        (101_u64, degraded_keys[1].as_str(), 9_i64),
+        (102_u64, degraded_keys[2].as_str(), 1_i64),
     ] {
         let (atomic_header, atomic_response) = request_atomic(
             daemon_one_address,
@@ -2367,7 +2514,10 @@ async fn degraded_search_and_count_survive_one_daemon_process_shutdown() -> Resu
     keys.sort();
     assert_eq!(
         keys,
-        vec![b"degraded-search-a".to_vec(), b"degraded-search-b".to_vec()]
+        vec![
+            degraded_keys[0].as_bytes().to_vec(),
+            degraded_keys[1].as_bytes().to_vec()
+        ]
     );
 
     let (count_header, count_response) = request_count(daemon_one_address, "profiles", 300).await?;
@@ -3319,6 +3469,237 @@ async fn legacy_hyhac_split_acceptance_suite_passes_live_cluster() -> Result<()>
     assert!(
         !cbstring_stdout.contains(" but got: Left "),
         "expected the live hyhac acceptance phases to avoid compatibility failures"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn legacy_hyhac_split_acceptance_suite_passes_two_daemon_live_cluster() -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+
+    let admin_cluster = spawn_two_daemon_cluster().await?;
+    let (add_exit_status, add_stdout, add_stderr) = run_hyhac_selected_tests_direct(
+        admin_cluster.coordinator_address,
+        "*Can add a space*",
+        Duration::from_secs(20),
+    )
+    .await?;
+    eprintln!(
+        "hyhac two-daemon add-space acceptance: exit_status={add_exit_status:?} stdout=`{add_stdout}` stderr=`{add_stderr}`"
+    );
+    assert_eq!(
+        add_exit_status.map(|status| status.code()),
+        Some(Some(0)),
+        "expected the two-daemon hyhac add-space phase to exit successfully"
+    );
+    assert!(
+        add_stdout.contains("Can add a space: [OK]"),
+        "expected the two-daemon hyhac add-space phase to pass"
+    );
+
+    let (remove_exit_status, remove_stdout, remove_stderr) = run_hyhac_selected_tests_direct(
+        admin_cluster.coordinator_address,
+        "*Can remove a space*",
+        Duration::from_secs(20),
+    )
+    .await?;
+    eprintln!(
+        "hyhac two-daemon remove-space acceptance: exit_status={remove_exit_status:?} stdout=`{remove_stdout}` stderr=`{remove_stderr}`"
+    );
+    assert_eq!(
+        remove_exit_status.map(|status| status.code()),
+        Some(Some(0)),
+        "expected the two-daemon hyhac remove-space phase to exit successfully"
+    );
+    assert!(
+        remove_stdout.contains("Can remove a space: [OK]"),
+        "expected the two-daemon hyhac remove-space phase to pass"
+    );
+
+    let mut data_cluster = spawn_two_daemon_cluster().await?;
+    let (
+        setup_add_exit_status,
+        setup_add_stdout,
+        setup_add_stderr,
+        setup_stable_exit_status,
+        setup_stable_stdout,
+        setup_stable_stderr,
+    ) = setup_full_profiles_schema(data_cluster.coordinator_address).await?;
+    eprintln!(
+        "hyhac two-daemon data acceptance setup: add_exit={setup_add_exit_status:?} add_stdout=`{setup_add_stdout}` add_stderr=`{setup_add_stderr}` stable_exit={setup_stable_exit_status:?} stable_stdout=`{setup_stable_stdout}` stable_stderr=`{setup_stable_stderr}`"
+    );
+    assert_eq!(
+        setup_add_exit_status.map(|status| status.code()),
+        Some(Some(0))
+    );
+    assert_eq!(
+        setup_stable_exit_status.map(|status| status.code()),
+        Some(Some(0))
+    );
+
+    data_cluster
+        ._coordinator
+        .wait_for_config_view(
+            data_cluster.coordinator_address,
+            "space `profiles` in config view",
+            |view| view.spaces.iter().any(|space| space.name == "profiles"),
+        )
+        .await
+        .context("waiting for `profiles` in two-daemon coordinator config")?;
+    data_cluster
+        ._daemon_one
+        .wait_for_internode_space(data_cluster.daemon_one_control_address, "profiles")
+        .await
+        .context("waiting for daemon one internode readiness for `profiles`")?;
+    data_cluster
+        ._daemon_two
+        .wait_for_internode_space(data_cluster.daemon_two_control_address, "profiles")
+        .await
+        .context("waiting for daemon two internode readiness for `profiles`")?;
+
+    let (large_object_exit_status, large_object_stdout, large_object_stderr) =
+        run_hyhac_selected_tests_direct(
+            data_cluster.coordinator_address,
+            "*Can store a large object*",
+            Duration::from_secs(20),
+        )
+        .await?;
+    eprintln!(
+        "hyhac two-daemon large-object acceptance: exit_status={large_object_exit_status:?} stdout=`{large_object_stdout}` stderr=`{large_object_stderr}`"
+    );
+    assert_eq!(
+        large_object_exit_status.map(|status| status.code()),
+        Some(Some(0)),
+        "expected the two-daemon hyhac large-object phase to exit successfully"
+    );
+    assert!(
+        large_object_stdout.contains("Can store a large object: [OK]"),
+        "expected the two-daemon hyhac large-object phase to pass"
+    );
+
+    let (roundtrip_exit_status, roundtrip_stdout, roundtrip_stderr) =
+        run_hyhac_selected_tests_direct(
+            data_cluster.coordinator_address,
+            "*pooled*/*roundtrip*",
+            Duration::from_secs(20),
+        )
+        .await?;
+    eprintln!(
+        "hyhac two-daemon pooled roundtrip acceptance: exit_status={roundtrip_exit_status:?} stdout=`{roundtrip_stdout}` stderr=`{roundtrip_stderr}`"
+    );
+    assert_eq!(
+        roundtrip_exit_status.map(|status| status.code()),
+        Some(Some(0)),
+        "expected the two-daemon hyhac pooled roundtrip phase to exit successfully"
+    );
+    assert!(
+        roundtrip_stdout.contains("roundtrip: [OK, passed 100 tests]"),
+        "expected the two-daemon pooled roundtrip phase to pass"
+    );
+
+    let (search_exit_status, search_stdout, search_stderr) = run_hyhac_selected_tests_direct(
+        data_cluster.coordinator_address,
+        "*pooled*/*search*",
+        Duration::from_secs(20),
+    )
+    .await?;
+    eprintln!(
+        "hyhac two-daemon pooled search acceptance: exit_status={search_exit_status:?} stdout=`{search_stdout}` stderr=`{search_stderr}`"
+    );
+    assert_eq!(
+        search_exit_status.map(|status| status.code()),
+        Some(Some(0)),
+        "expected the two-daemon hyhac pooled search phase to exit successfully"
+    );
+    assert!(
+        search_stdout.contains("search: [OK, passed 100 tests]"),
+        "expected the two-daemon pooled search phase to pass"
+    );
+
+    let (count_exit_status, count_stdout, count_stderr) = run_hyhac_selected_tests_direct(
+        data_cluster.coordinator_address,
+        "*pooled*/*count*",
+        Duration::from_secs(20),
+    )
+    .await?;
+    eprintln!(
+        "hyhac two-daemon pooled count acceptance: exit_status={count_exit_status:?} stdout=`{count_stdout}` stderr=`{count_stderr}`"
+    );
+    assert_eq!(
+        count_exit_status.map(|status| status.code()),
+        Some(Some(0)),
+        "expected the two-daemon hyhac pooled count phase to exit successfully"
+    );
+    assert!(
+        count_stdout.contains("count: [OK, passed 100 tests]"),
+        "expected the two-daemon pooled count phase to pass"
+    );
+
+    let (map_exit_status, map_stdout, map_stderr) = run_hyhac_selected_tests_direct(
+        data_cluster.coordinator_address,
+        "*pooled*/*atomic*/*map*/*int-int*/*add",
+        Duration::from_secs(20),
+    )
+    .await?;
+    eprintln!(
+        "hyhac two-daemon pooled map-int-int-add acceptance: exit_status={map_exit_status:?} stdout=`{map_stdout}` stderr=`{map_stderr}`"
+    );
+    assert_eq!(
+        map_exit_status.map(|status| status.code()),
+        Some(Some(0)),
+        "expected the two-daemon hyhac pooled map-int-int-add phase to exit successfully"
+    );
+    assert!(
+        map_stdout.contains("add: [OK, passed 100 tests]"),
+        "expected the two-daemon pooled map-int-int-add phase to pass"
+    );
+
+    let (shared_exit_status, shared_stdout, shared_stderr) = run_hyhac_selected_tests_direct(
+        data_cluster.coordinator_address,
+        "*shared*",
+        Duration::from_secs(20),
+    )
+    .await?;
+    eprintln!(
+        "hyhac two-daemon shared acceptance: exit_status={shared_exit_status:?} stdout=`{shared_stdout}` stderr=`{shared_stderr}`"
+    );
+    assert_eq!(
+        shared_exit_status.map(|status| status.code()),
+        Some(Some(0)),
+        "expected the two-daemon hyhac shared phase to exit successfully"
+    );
+    assert!(
+        shared_stdout.contains("shared:"),
+        "expected the two-daemon shared output to include the shared section"
+    );
+    assert!(
+        !shared_stdout.contains("[Failed]"),
+        "expected the two-daemon shared phase to avoid failures"
+    );
+
+    let (cbstring_exit_status, cbstring_stdout, cbstring_stderr) = run_hyhac_selected_tests_direct(
+        data_cluster.coordinator_address,
+        "*CBString*",
+        Duration::from_secs(20),
+    )
+    .await?;
+    eprintln!(
+        "hyhac two-daemon cbstring acceptance: exit_status={cbstring_exit_status:?} stdout=`{cbstring_stdout}` stderr=`{cbstring_stderr}`"
+    );
+    assert_eq!(
+        cbstring_exit_status.map(|status| status.code()),
+        Some(Some(0)),
+        "expected the two-daemon CBString phase to exit successfully"
+    );
+    assert!(
+        cbstring_stdout.contains("CBString API Tests of varying size:"),
+        "expected the two-daemon CBString output to include the CBString section"
+    );
+    assert!(
+        !cbstring_stdout.contains("[Failed]"),
+        "expected the two-daemon CBString phase to avoid failures"
     );
 
     Ok(())
