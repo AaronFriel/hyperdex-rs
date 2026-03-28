@@ -111,7 +111,7 @@ split, sequencing, or validators need to change.
 
 | Workstream | Status | Owner | Dependencies / Blockers | Plan | Ledger | Worktree / Branch | Fastest Useful Check | Next Step | Latest Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `live-hyhac` | active | `019d31f4-8bce-7b72-a250-9526b3b31743` (`Pascal`) and `019d31f4-8e23-7b81-8879-c089630de0dc` (`Franklin`) | The honest full-schema pooled path is now green through `large object`, `roundtrip`, `conditional`, `search`, `count`, integer atomics, and float atomics. The next truthful failures are map-valued atomic mutations returning `ClientServererror`. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-numeric` and `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/map-atomic-string` | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_map_int_int_add_probe_fails_after_full_profiles_setup -- --nocapture` | Let the two larger product forks own numeric-map and string-map mutation end to end, then reconcile the first substantive result. | `advance` |
+| `live-hyhac` | active | root | No current product blocker on the single-daemon Hyhac surface. The split live acceptance path now passes end to end; the next useful step is to keep that proof green while extending public acceptance toward a broader live distributed check or reusable verifier. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/live-hyhac/ledger.md) | none active | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_split_acceptance_suite_passes_live_cluster -- --nocapture` | Keep the split live Hyhac acceptance green, then extend public acceptance toward a broader live distributed check or reusable verification entrypoint. | `advance` |
 | `multiprocess-harness` | parked | root | No current blocker. The truthful repro work is already good enough to support the next product step. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/multiprocess-harness/ledger.md) | none active | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_pooled_probe_reaches_map_atomic_failure_after_integer_boundary -- --nocapture` | Leave parked until the next product pass needs a smaller live repro. | `advance` |
 | `simulation-proof` | parked | root | Not on the critical path while live compatibility still fails earlier. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/simulation-proof/ledger.md) | `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/sim-coverage` on `sim-coverage-numeric` | `cargo test -p simulation-harness` | Leave parked until a live failure needs new deterministic coverage. | `advance` |
 | `coordinator-config-evidence` | parked | root | Not on the critical path. The next active question is later than the coordinator follow/bootstrap path. | [plan.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/plan.md) | [ledger.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/coordinator-config-evidence/ledger.md) | none required | `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture` | Leave parked until the product pass needs another exact source comparison. | `advance` |
@@ -145,8 +145,12 @@ split, sequencing, or validators need to change.
 - [x] (2026-03-28 02:35Z) Landed `83e6003` on `main`, fixing legacy integer
   `div`/`mod` semantics and moving the honest pooled live boundary through
   integer and float atomics.
-- [ ] Land the next product fix for map-valued atomic mutation on the honest
-  pooled live path and keep the greener earlier boundary intact.
+- [x] (2026-03-28 03:10Z) Landed the remaining map-valued atomic compatibility
+  work on `main`, turned the stale map-failure probes into green live checks,
+  and proved the Hyhac suite passes on a real cluster when exercised in the
+  correct live phases.
+- [ ] Extend the live public acceptance proof beyond the split single-daemon
+  Hyhac path without regressing the current surface.
 
 ## Current Root Focus
 

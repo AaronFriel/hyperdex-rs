@@ -3050,7 +3050,7 @@ async fn legacy_hyhac_integer_div_probe_turns_green_after_full_profiles_setup() 
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_pooled_probe_reaches_string_map_failure_after_numeric_map_boundary() -> Result<()>
+async fn legacy_hyhac_pooled_probe_turns_green_after_map_atomic_compatibility() -> Result<()>
 {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
@@ -3149,20 +3149,176 @@ async fn legacy_hyhac_pooled_probe_reaches_string_map_failure_after_numeric_map_
         "expected the pooled probe to reach the string-valued map section"
     );
     assert!(
-        stdout[map_section_idx..].contains("            prepend: [Failed]"),
-        "expected the pooled probe to reach the next int-string prepend failure"
+        stdout[map_section_idx..].contains(
+            "          int-string:\n            union: [OK, passed 100 tests]\n            prepend: [OK, passed 100 tests]\n            prepend: [OK, passed 100 tests]"
+        ),
+        "expected the pooled probe to keep the int-string string-map section green"
     );
     assert!(
-        stdout.contains("Failed in running atomic op:\n  test name: \"prepend\""),
-        "expected the pooled string-map failure details to be present"
+        stdout[map_section_idx..].contains(
+            "          float-string:\n            union: [OK, passed 100 tests]\n            prepend: [OK, passed 100 tests]\n            prepend: [OK, passed 100 tests]"
+        ),
+        "expected the pooled probe to keep the float-string string-map section green"
     );
     assert!(
-        stdout.contains("  error:     ClientServererror"),
-        "expected the pooled string-map failure to report the current server error"
+        stdout[map_section_idx..].contains(
+            "          string-string:\n            union: [OK, passed 100 tests]\n            prepend: [OK, passed 100 tests]\n            prepend: [OK, passed 100 tests]"
+        ),
+        "expected the pooled probe to keep the string-string string-map section green"
     );
     assert!(
-        exit_status.is_some(),
-        "expected the pooled hyhac probe to finish before the deadline"
+        !stdout.contains("[Failed]"),
+        "expected the pooled hyhac probe to avoid later failures"
+    );
+    assert!(
+        !stdout.contains("ClientServererror"),
+        "expected the pooled hyhac probe to avoid server errors"
+    );
+    assert_eq!(
+        exit_status.map(|status| status.code()),
+        Some(Some(0)),
+        "expected the pooled hyhac probe to exit successfully"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn legacy_hyhac_split_acceptance_suite_passes_live_cluster() -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+
+    let admin_cluster = spawn_single_daemon_cluster().await?;
+    let (add_exit_status, add_stdout, add_stderr) = run_hyhac_selected_tests_direct(
+        admin_cluster.coordinator_address,
+        "*Can add a space*",
+        Duration::from_secs(20),
+    )
+    .await?;
+    eprintln!(
+        "hyhac live add-space acceptance: exit_status={add_exit_status:?} stdout=`{add_stdout}` stderr=`{add_stderr}`"
+    );
+    assert_eq!(
+        add_exit_status.map(|status| status.code()),
+        Some(Some(0)),
+        "expected the live hyhac add-space acceptance phase to exit successfully"
+    );
+    assert!(
+        add_stdout.contains("Can add a space: [OK]"),
+        "expected the live hyhac add-space acceptance phase to pass"
+    );
+
+    let (remove_exit_status, remove_stdout, remove_stderr) = run_hyhac_selected_tests_direct(
+        admin_cluster.coordinator_address,
+        "*Can remove a space*",
+        Duration::from_secs(20),
+    )
+    .await?;
+    eprintln!(
+        "hyhac live remove-space acceptance: exit_status={remove_exit_status:?} stdout=`{remove_stdout}` stderr=`{remove_stderr}`"
+    );
+    assert_eq!(
+        remove_exit_status.map(|status| status.code()),
+        Some(Some(0)),
+        "expected the live hyhac remove-space acceptance phase to exit successfully"
+    );
+    assert!(
+        remove_stdout.contains("Can remove a space: [OK]"),
+        "expected the live hyhac remove-space acceptance phase to pass"
+    );
+
+    let data_cluster = spawn_single_daemon_cluster().await?;
+    let (
+        setup_add_exit_status,
+        setup_add_stdout,
+        setup_add_stderr,
+        setup_stable_exit_status,
+        setup_stable_stdout,
+        setup_stable_stderr,
+    ) = setup_full_profiles_schema(data_cluster.coordinator_address).await?;
+    eprintln!(
+        "hyhac live data acceptance setup: add_exit={setup_add_exit_status:?} add_stdout=`{setup_add_stdout}` add_stderr=`{setup_add_stderr}` stable_exit={setup_stable_exit_status:?} stable_stdout=`{setup_stable_stdout}` stable_stderr=`{setup_stable_stderr}`"
+    );
+    assert_eq!(
+        setup_add_exit_status.map(|status| status.code()),
+        Some(Some(0))
+    );
+    assert_eq!(
+        setup_stable_exit_status.map(|status| status.code()),
+        Some(Some(0))
+    );
+
+    let (pooled_exit_status, pooled_stdout, pooled_stderr) = run_hyhac_selected_tests_direct(
+        data_cluster.coordinator_address,
+        "*pooled*",
+        Duration::from_secs(30),
+    )
+    .await?;
+    eprintln!(
+        "hyhac live pooled acceptance: exit_status={pooled_exit_status:?} stdout=`{pooled_stdout}` stderr=`{pooled_stderr}`"
+    );
+    assert_eq!(
+        pooled_exit_status.map(|status| status.code()),
+        Some(Some(0)),
+        "expected the live hyhac pooled acceptance phase to exit successfully"
+    );
+    assert!(
+        pooled_stdout.contains("Properties  Test Cases  Total"),
+        "expected pooled acceptance output to include the pooled summary"
+    );
+    assert!(
+        !pooled_stdout.contains("[Failed]"),
+        "expected the live hyhac pooled acceptance phase to avoid failures"
+    );
+
+    let (shared_exit_status, shared_stdout, shared_stderr) = run_hyhac_selected_tests_direct(
+        data_cluster.coordinator_address,
+        "*shared*",
+        Duration::from_secs(20),
+    )
+    .await?;
+    eprintln!(
+        "hyhac live shared acceptance: exit_status={shared_exit_status:?} stdout=`{shared_stdout}` stderr=`{shared_stderr}`"
+    );
+    assert_eq!(
+        shared_exit_status.map(|status| status.code()),
+        Some(Some(0)),
+        "expected the live hyhac shared acceptance phase to exit successfully"
+    );
+    assert!(
+        shared_stdout.contains("shared:"),
+        "expected shared acceptance output to include the shared section"
+    );
+    assert!(
+        !shared_stdout.contains("[Failed]"),
+        "expected the live hyhac shared acceptance phase to avoid failures"
+    );
+
+    let (cbstring_exit_status, cbstring_stdout, cbstring_stderr) = run_hyhac_selected_tests_direct(
+        data_cluster.coordinator_address,
+        "*CBString*",
+        Duration::from_secs(20),
+    )
+    .await?;
+    eprintln!(
+        "hyhac live cbstring acceptance: exit_status={cbstring_exit_status:?} stdout=`{cbstring_stdout}` stderr=`{cbstring_stderr}`"
+    );
+    assert_eq!(
+        cbstring_exit_status.map(|status| status.code()),
+        Some(Some(0)),
+        "expected the live hyhac CBString acceptance phase to exit successfully"
+    );
+    assert!(
+        cbstring_stdout.contains("CBString API Tests of varying size:"),
+        "expected CBString acceptance output to include the CBString section"
+    );
+    assert!(
+        !cbstring_stdout.contains("[Failed]"),
+        "expected the live hyhac CBString acceptance phase to avoid failures"
+    );
+    assert!(
+        !cbstring_stdout.contains(" but got: Left "),
+        "expected the live hyhac acceptance phases to avoid compatibility failures"
     );
 
     Ok(())
@@ -3270,7 +3426,8 @@ async fn legacy_hyhac_map_string_string_prepend_probe_turns_green_after_full_pro
 
 #[tokio::test]
 #[serial]
-async fn legacy_hyhac_map_int_string_prepend_probe_fails_after_numeric_map_boundary() -> Result<()>
+async fn legacy_hyhac_map_int_string_prepend_probe_turns_green_after_numeric_map_boundary(
+) -> Result<()>
 {
     let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
     let cluster = spawn_single_daemon_cluster().await?;
@@ -3297,24 +3454,24 @@ async fn legacy_hyhac_map_int_string_prepend_probe_fails_after_numeric_map_bound
         "expected the focused probe to stay inside the pooled map int-string atomic group"
     );
     assert!(
-        stdout.contains("prepend: [Failed]"),
-        "expected the focused probe to reach the current int-string prepend failure"
+        stdout.contains("prepend: [OK, passed 100 tests]"),
+        "expected the focused probe to turn the int-string prepend path green"
     );
     assert!(
-        stdout.contains("Failed in running atomic op:\n  test name: \"prepend\""),
-        "expected the focused probe to report the string-map prepend failure details"
+        !stdout.contains("[Failed]"),
+        "expected the focused probe to avoid failed int-string prepend checks"
     );
     assert!(
-        stdout.contains("  error:     ClientServererror"),
-        "expected the focused probe to report the current server error"
+        !stdout.contains("ClientServererror"),
+        "expected the focused probe to avoid server errors after the numeric-map fix"
     );
     assert!(
         !stdout.contains("int-int:"),
         "expected the focused probe to avoid rerunning the earlier numeric map group"
     );
     assert!(
-        exit_status.is_some(),
-        "expected the focused probe to finish before the deadline"
+        exit_status.map(|status| status.code()) == Some(Some(0)),
+        "expected the focused probe to exit successfully"
     );
 
     Ok(())

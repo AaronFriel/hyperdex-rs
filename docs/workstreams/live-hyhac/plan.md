@@ -48,13 +48,13 @@ until the suite passes.
 ## Plan Of Work
 
 Keep one honest live validator on `main`, shorten it only when that directly
-improves engineering cycle time, and drive the remaining mismatch through real
-product changes in `crates/**`. The current step starts from the full-schema
-baseline that already proves the large-object write path for both pooled and
-shared clients, and now also proves pooled `roundtrip`, `conditional`,
-`search`, `count`, integer atomics, and float atomics. The next product pass
-should clear the later map-valued atomic failures and rerun the live check
-before returning.
+improves engineering cycle time, and drive remaining compatibility or proof
+gaps through real changes in `crates/**` or a directly relevant live
+verification harness. The current step starts from a stronger baseline: the
+live Hyhac surface is green through admin add/remove, pooled data operations,
+shared data operations, and the CBString checks when run in the correct live
+phases. The next pass should broaden that public proof toward more distributed
+live acceptance without regressing the current surface.
 
 ## Progress
 
@@ -81,25 +81,30 @@ before returning.
 - [x] (2026-03-28 02:35Z) Landed `83e6003`, which fixes legacy integer
   `div`/`mod` semantics and moves the honest pooled baseline through integer
   and float atomic sections.
-- [ ] Land the next product fix for map-valued atomic mutation and move the
-  live baseline forward again.
+- [x] (2026-03-28 03:10Z) Landed the remaining map-valued atomic compatibility
+  work, turned the stale map-failure probes into green checks, and added a
+  split live acceptance proof that runs Hyhac admin add/remove on a fresh
+  cluster, pooled/shared data checks on a full-schema cluster, and CBString
+  directly.
+- [ ] Extend the live acceptance proof beyond the split single-daemon Hyhac
+  path without regressing the current green surface.
 
 ## Current Hypothesis
 
-The remaining live mismatch is later than bootstrap, later than schema
-creation, later than the first daemon round-trip, later than the
-large-object post-success stall that `3c72516` removed, and later than the
-pooled `roundtrip` reconfigure that `b23458c` fixed. On the honest
-full-schema baseline, pooled `search`, `count`, integer atomics, and float
-atomics now pass too. The next failures are map-valued atomic mutation.
+There is no current live mismatch on the single-daemon Hyhac surface when the
+suite is exercised honestly: admin add/remove must run on a fresh cluster,
+pooled/shared data checks must run after the full `profiles` schema exists, and
+CBString can run directly. The next useful gap is not another late map-atomic
+failure; it is broader public distributed acceptance beyond that split
+single-daemon proof.
 
 ## Next Bounded Step
 
-Keep the full-schema large-object probe green as a regression check. Keep the
-broader pooled live check as the honest surface, use the supporting harness
-workstream only if it materially shortens the map-atomic boundary without
-losing truthful setup, and launch the next product-owned passes on the map
-numeric and map string mutation surfaces in parallel.
+Keep the split live acceptance check green as the main public validator. Use a
+supporting harness or script only if it broadens public distributed proof or
+materially shortens the next live acceptance loop without hiding setup
+requirements. The next bounded step is to extend the live proof toward a more
+distributed public acceptance path or a reusable verifier.
 
 ## Surprises & Discoveries
 
@@ -136,6 +141,17 @@ numeric and map string mutation surfaces in parallel.
   in more coordinator-protocol archaeology.
   Evidence: the active live failure appears after the system already accepts
   schema creation, stability waits, and one large-object client round-trip.
+- Observation: the old map-atomic failure boundary is cleared on integrated
+  `main`.
+  Evidence: `77885e7` and `8a33f55` are on `main`; the focused pooled
+  `map-int-int add`, `map-int-string prepend`, and `map-string-string prepend`
+  probes now all pass; and the broader pooled live check is fully green.
+- Observation: the live Hyhac suite can now be proven green on a real cluster
+  without modifying Hyhac itself, but it must be exercised in split phases
+  that respect the suite’s own setup assumptions.
+  Evidence: `legacy_hyhac_split_acceptance_suite_passes_live_cluster` passes on
+  `main`, proving `Can add a space`, `Can remove a space`, `*pooled*`,
+  `*shared*`, and `*CBString*` on live Rust-backed clusters.
 
 ## Decision Log
 

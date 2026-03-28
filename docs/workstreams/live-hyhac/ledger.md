@@ -2535,3 +2535,85 @@
   - a greener live pooled boundary on string map mutation
   - either a focused next failing map-string operation or a clear exact
     blocker tied to current code and observed output
+
+### Entry `hyh-051` - Outcome
+
+- Timestamp: `2026-03-28 03:10Z`
+- Kind: `outcome`
+- End state:
+  - integrated on `main` in the current root reconciliation pass
+- Artifacts:
+  - `77885e7` (`Advance legacy numeric map atomic compatibility`)
+  - `crates/server/src/lib.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence:
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_map_int_int_add_probe_turns_green_after_full_profiles_setup -- --nocapture`
+    passed
+  - `cargo test -p server`
+    passed
+  - `cargo test --workspace`
+    passed
+  - the broader pooled live path now keeps the numeric map families green
+- Conclusion: the legacy atomic path now applies map-valued numeric updates
+  instead of rejecting them. The old numeric-map boundary is cleared.
+- Disposition: `advance`
+- Next move: keep the greener pooled boundary honest while reconciling the
+  remaining string-map work and broader live acceptance proof.
+
+### Entry `hyh-052` - Outcome
+
+- Timestamp: `2026-03-28 03:10Z`
+- Kind: `outcome`
+- End state:
+  - integrated on `main` in the current root reconciliation pass
+- Artifacts:
+  - `8a33f55` (`Support legacy map string atomic funcalls`)
+  - `crates/server/src/lib.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
+- Evidence:
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_map_string_string_prepend_probe_turns_green_after_full_profiles_setup -- --nocapture`
+    passed
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_map_int_string_prepend_probe_turns_green_after_numeric_map_boundary -- --nocapture`
+    passed
+  - `cargo test -p server`
+    passed
+  - `cargo test --workspace`
+    passed
+- Conclusion: the legacy atomic path now applies the string-map prepend and
+  append families that Hyhac exercises. The old string-map boundary is
+  cleared too.
+- Disposition: `advance`
+- Next move: keep the pooled live path green and replace the stale
+  failure-oriented probes with an honest live acceptance proof.
+
+### Entry `hyh-053` - Outcome
+
+- Timestamp: `2026-03-28 03:10Z`
+- Kind: `outcome`
+- End state:
+  - integrated on `main` in the current root reconciliation pass
+- Artifacts:
+  - `crates/server/tests/dist_multiprocess_harness.rs`
+  - `legacy_hyhac_pooled_probe_turns_green_after_map_atomic_compatibility`
+  - `legacy_hyhac_split_acceptance_suite_passes_live_cluster`
+- Evidence:
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_pooled_probe_turns_green_after_map_atomic_compatibility -- --nocapture`
+    passed
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_split_acceptance_suite_passes_live_cluster -- --nocapture`
+    passed
+  - `cargo test -p server`
+    passed
+  - `cargo test --workspace`
+    passed
+  - the split live Hyhac acceptance now proves:
+    - `Can add a space`
+    - `Can remove a space`
+    - `*pooled*`
+    - `*shared*`
+    - `*CBString*`
+- Conclusion: the single-daemon live Hyhac surface is green on a real
+  `hyperdex-rs` cluster when exercised in the suite’s correct live phases.
+- Disposition: `advance`
+- Next move: broaden that public proof toward a more distributed live
+  acceptance path or a reusable verifier without regressing the current green
+  surface.
