@@ -376,8 +376,8 @@
 - Kind: `outcome`
 - End commit: `50c064c`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
   - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
   - `/home/friel/c/aaronfriel/HyperDex/common/configuration.cc`
   - `/home/friel/c/aaronfriel/HyperDex/common/mapper.cc`
