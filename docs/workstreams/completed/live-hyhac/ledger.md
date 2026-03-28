@@ -556,7 +556,7 @@
 - Kind: `outcome`
 - End commit: `ee09ee0`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - no code changes in `worktrees/admin-server`
 - Evidence summary:
   - the explicit-patch-target retry was interrupted
   - the `admin-server` worktree remained clean at `ee09ee0`
