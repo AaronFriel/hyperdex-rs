@@ -2833,19 +2833,58 @@ fn legacy_validate_protocol_funcall(space: &Space, funcall: &ProtocolFuncall) ->
             }
         }
         FUNC_STRING_APPEND | FUNC_STRING_PREPEND | FUNC_STRING_LTRIM | FUNC_STRING_RTRIM => {
-            let expected = legacy_hyperdatatype(attribute_kind)?;
-            if funcall.arg1_datatype != expected {
-                anyhow::bail!(
-                    "legacy string funcall datatype {} does not match schema datatype {} for attr {}",
-                    funcall.arg1_datatype,
-                    expected,
-                    funcall.attr
-                );
+            match attribute_kind {
+                ValueKind::Bytes | ValueKind::String | ValueKind::Document => {
+                    let expected = legacy_hyperdatatype(attribute_kind)?;
+                    if funcall.arg1_datatype != expected {
+                        anyhow::bail!(
+                            "legacy string funcall datatype {} does not match schema datatype {} for attr {}",
+                            funcall.arg1_datatype,
+                            expected,
+                            funcall.attr
+                        );
+                    }
+                    if !funcall.arg2.is_empty() || funcall.arg2_datatype != 0 {
+                        anyhow::bail!("legacy string funcalls may not carry arg2");
+                    }
+                    let _ = legacy_value_from_protocol(funcall.arg1_datatype, &funcall.arg1)?;
+                }
+                ValueKind::Map { key, value } => {
+                    match value.as_ref() {
+                        ValueKind::Bytes | ValueKind::String | ValueKind::Document => {}
+                        other => anyhow::bail!(
+                            "legacy string funcall {} targets map attr with non-string values {:?}",
+                            funcall.name,
+                            other
+                        ),
+                    }
+                    let expected_key = legacy_hyperdatatype(key.as_ref())?;
+                    let expected_value = legacy_hyperdatatype(value.as_ref())?;
+                    if funcall.arg1_datatype != expected_value {
+                        anyhow::bail!(
+                            "legacy map string value datatype {} does not match schema datatype {} for attr {}",
+                            funcall.arg1_datatype,
+                            expected_value,
+                            funcall.attr
+                        );
+                    }
+                    if funcall.arg2_datatype != expected_key {
+                        anyhow::bail!(
+                            "legacy map string key datatype {} does not match schema datatype {} for attr {}",
+                            funcall.arg2_datatype,
+                            expected_key,
+                            funcall.attr
+                        );
+                    }
+                    let _ = legacy_value_from_protocol(funcall.arg1_datatype, &funcall.arg1)?;
+                    let _ = legacy_value_from_protocol(funcall.arg2_datatype, &funcall.arg2)?;
+                }
+                other => anyhow::bail!(
+                    "legacy string funcall {} targets non-string attr {:?}",
+                    funcall.name,
+                    other
+                ),
             }
-            if !funcall.arg2.is_empty() || funcall.arg2_datatype != 0 {
-                anyhow::bail!("legacy string funcalls may not carry arg2");
-            }
-            let _ = legacy_value_from_protocol(funcall.arg1_datatype, &funcall.arg1)?;
         }
         FUNC_LIST_LPUSH | FUNC_LIST_RPUSH => {
             let elem_kind = match attribute_kind {
@@ -3121,22 +3160,49 @@ fn legacy_apply_protocol_funcall(
             );
         }
         FUNC_STRING_APPEND | FUNC_STRING_PREPEND | FUNC_STRING_LTRIM | FUNC_STRING_RTRIM => {
-            let current = legacy_existing_bytes(record, attribute_name);
-            let operand = funcall.arg1.clone();
-            let updated = match funcall.name {
-                FUNC_STRING_APPEND => [current, operand].concat(),
-                FUNC_STRING_PREPEND => [operand, current].concat(),
-                FUNC_STRING_LTRIM => current
-                    .strip_prefix(operand.as_slice())
-                    .map_or(current.clone(), Vec::from),
-                FUNC_STRING_RTRIM => current
-                    .strip_suffix(operand.as_slice())
-                    .map_or(current.clone(), Vec::from),
-                _ => unreachable!(),
-            };
-            record
-                .attributes
-                .insert(attribute_name.to_owned(), Value::Bytes(updated.into()));
+            match attribute_kind {
+                ValueKind::Bytes | ValueKind::String | ValueKind::Document => {
+                    let current = legacy_existing_bytes(record, attribute_name);
+                    let updated = legacy_apply_string_bytes(funcall.name, current, &funcall.arg1)?;
+                    record
+                        .attributes
+                        .insert(attribute_name.to_owned(), Value::Bytes(updated.into()));
+                }
+                ValueKind::Map { key, value } => {
+                    match value.as_ref() {
+                        ValueKind::Bytes | ValueKind::String | ValueKind::Document => {}
+                        other => anyhow::bail!(
+                            "expected string-valued map for {attribute_name}, got {:?}",
+                            other
+                        ),
+                    }
+                    let mut map = match record.attributes.remove(attribute_name) {
+                        Some(Value::Map(values)) => values,
+                        Some(other) => {
+                            anyhow::bail!("expected map attribute {attribute_name}, got {other:?}")
+                        }
+                        None => Default::default(),
+                    };
+                    let map_key = legacy_value_from_kind_bytes(key.as_ref(), &funcall.arg2)?;
+                    let current = map
+                        .remove(&map_key)
+                        .map(|value| legacy_value_as_bytes(&value))
+                        .transpose()?
+                        .unwrap_or_default();
+                    let operand =
+                        legacy_value_as_bytes(&legacy_value_from_kind_bytes(value.as_ref(), &funcall.arg1)?)?;
+                    let updated = legacy_apply_string_bytes(funcall.name, current, &operand)?;
+                    map.insert(map_key, Value::Bytes(updated.into()));
+                    record
+                        .attributes
+                        .insert(attribute_name.to_owned(), Value::Map(map));
+                }
+                other => anyhow::bail!(
+                    "legacy string funcall {} targets non-string attr {:?}",
+                    funcall.name,
+                    other
+                ),
+            }
         }
         FUNC_NUM_ADD | FUNC_NUM_SUB | FUNC_NUM_MUL | FUNC_NUM_DIV | FUNC_NUM_MOD | FUNC_NUM_AND
         | FUNC_NUM_OR | FUNC_NUM_XOR | FUNC_NUM_MAX | FUNC_NUM_MIN => match attribute_kind {
@@ -3494,6 +3560,20 @@ fn legacy_existing_bytes(record: &Record, attribute: &str) -> Vec<u8> {
         Some(Value::String(text)) => text.as_bytes().to_vec(),
         Some(_) | None => Vec::new(),
     }
+}
+
+fn legacy_apply_string_bytes(name: u8, current: Vec<u8>, operand: &[u8]) -> Result<Vec<u8>> {
+    Ok(match name {
+        FUNC_STRING_APPEND => [current, operand.to_vec()].concat(),
+        FUNC_STRING_PREPEND => [operand.to_vec(), current].concat(),
+        FUNC_STRING_LTRIM => current
+            .strip_prefix(operand)
+            .map_or(current.clone(), Vec::from),
+        FUNC_STRING_RTRIM => current
+            .strip_suffix(operand)
+            .map_or(current.clone(), Vec::from),
+        other => anyhow::bail!("legacy string funcall {other} is not implemented"),
+    })
 }
 
 fn legacy_div_i64(current: i64, operand: i64) -> Result<i64> {
@@ -6839,6 +6919,102 @@ mod tests {
             panic!("expected stored record after mod");
         };
         assert_eq!(record.attributes.get("profile_views"), Some(&Value::Int(1)));
+    }
+
+    #[tokio::test]
+    async fn legacy_atomic_map_string_prepend_updates_string_valued_map_entry() {
+        let runtime = bootstrap_runtime();
+        HyperdexAdminService::handle(
+            &runtime,
+            AdminRequest::CreateSpaceDsl(
+                "space profiles\n\
+                 key username\n\
+                 attributes\n\
+                    map(string, string) unread_messages\n\
+                 tolerate 0 failures\n"
+                    .to_owned(),
+            ),
+        )
+        .await
+        .unwrap();
+
+        let mut unread_messages = BTreeMap::new();
+        unread_messages.insert(
+            Value::Bytes(Bytes::from_static(b"KZ")),
+            Value::Bytes(Bytes::from_static(b"+Y\\")),
+        );
+
+        HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "unread_messages".to_owned(),
+                    value: Value::Map(unread_messages),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+
+        let (_, body) = handle_legacy_request(
+            &runtime,
+            RequestHeader {
+                message_type: LegacyMessageType::ReqAtomic,
+                flags: 0,
+                version: 1,
+                target_virtual_server: 11,
+                nonce: 19,
+            },
+            &legacy_request_body(
+                19,
+                encode_protocol_atomic_request(&ProtocolKeyChange {
+                    key: b"ada".to_vec(),
+                    erase: false,
+                    fail_if_not_found: false,
+                    fail_if_found: false,
+                    checks: Vec::new(),
+                    funcalls: vec![ProtocolFuncall {
+                        attr: 1,
+                        name: FUNC_STRING_PREPEND,
+                        arg1: b"'\\x02*".to_vec(),
+                        arg1_datatype: HYPERDATATYPE_STRING,
+                        arg2: b"KZ".to_vec(),
+                        arg2_datatype: HYPERDATATYPE_STRING,
+                    }],
+                }),
+            ),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            decode_protocol_atomic_response(&body).unwrap(),
+            LegacyReturnCode::Success as u16
+        );
+
+        let response = HyperdexClientService::handle(
+            &runtime,
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from_static(b"ada"),
+            },
+        )
+        .await
+        .unwrap();
+
+        let ClientResponse::Record(Some(record)) = response else {
+            panic!("expected stored record");
+        };
+
+        let Value::Map(values) = record.attributes.get("unread_messages").unwrap() else {
+            panic!("expected unread_messages map");
+        };
+        assert_eq!(
+            values.get(&Value::Bytes(Bytes::from_static(b"KZ"))),
+            Some(&Value::Bytes(Bytes::from_static(b"'\\x02*+Y\\")))
+        );
     }
 
     #[tokio::test]

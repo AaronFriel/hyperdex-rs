@@ -3182,3 +3182,52 @@ async fn legacy_hyhac_map_int_int_add_probe_fails_after_full_profiles_setup() ->
 
     Ok(())
 }
+
+#[tokio::test]
+#[serial]
+async fn legacy_hyhac_map_string_string_prepend_probe_turns_green_after_full_profiles_setup(
+) -> Result<()> {
+    let _guard = MULTIPROCESS_HARNESS_LOCK.lock().await;
+    let cluster = spawn_single_daemon_cluster().await?;
+    let (add_exit_status, add_stdout, add_stderr, stable_exit_status, stable_stdout, stable_stderr) =
+        setup_full_profiles_schema(cluster.coordinator_address).await?;
+
+    let (exit_status, stdout, stderr) = run_hyhac_selected_tests_direct(
+        cluster.coordinator_address,
+        "*pooled*/*atomic*/*map*/*string-string*/*prepend",
+        Duration::from_secs(15),
+    )
+    .await?;
+    eprintln!(
+        "hyhac full-profiles map-string-string-prepend probe: add_exit={add_exit_status:?} add_stdout=`{add_stdout}` add_stderr=`{add_stderr}` stable_exit={stable_exit_status:?} stable_stdout=`{stable_stdout}` stable_stderr=`{stable_stderr}` exit_status={exit_status:?} stdout=`{stdout}` stderr=`{stderr}`"
+    );
+
+    assert_eq!(add_exit_status.map(|status| status.code()), Some(Some(0)));
+    assert_eq!(
+        stable_exit_status.map(|status| status.code()),
+        Some(Some(0))
+    );
+    assert!(
+        stdout.contains("pooled:\n      atomic:\n        map:\n          string-string:"),
+        "expected the focused probe to stay inside the pooled map string-string atomic group"
+    );
+    assert!(
+        stdout.contains("prepend: [OK, passed 100 tests]"),
+        "expected the focused probe to turn the string-string prepend path green"
+    );
+    assert!(
+        !stdout.contains("ClientServererror"),
+        "expected the focused probe to avoid server errors after the string-map fix"
+    );
+    assert!(
+        !stdout.contains("[Failed]"),
+        "expected the focused probe to avoid failed string-string prepend checks"
+    );
+    assert_eq!(
+        exit_status.map(|status| status.code()),
+        Some(Some(0)),
+        "expected the focused probe to exit successfully"
+    );
+
+    Ok(())
+}
