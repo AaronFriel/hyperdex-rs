@@ -60,20 +60,27 @@ panic behavior to explicit contracts and then set the next ratchet.
 - [x] (2026-03-29 00:53Z) Hardened legacy frontend identify decoding in
   `dd00c13`.
 - [x] (2026-03-29 10:05Z) Hardened server startup panic paths in `db696ce`.
-- [ ] Choose the next public/runtime boundary after the startup pass.
+- [x] (2026-03-29 10:15Z) Hardened fixed-width server decode helpers in
+  `ea85af6` and coordinator lock access in `e49866d`.
+- [x] (2026-03-29 10:20Z) Replaced empty-layout placement panic behavior with
+  checked errors in `621692b`.
+- [x] (2026-03-29 18:05Z) Rejected oversized BusyBee frames earlier in
+  `f9f76af` and removed the remaining placement panic fallback in `20c6d71`.
+- [ ] Choose the next narrow no-panic or lint-ratchet boundary after the
+  current public decoder and placement passes.
 
 ## Current Hypothesis
 
-After the startup pass, the next target should stay in `server`, but move into
-`server/src/lib.rs`. That file still has multiple product-only `expect` and
-`unwrap` sites in fixed-width legacy decode helpers and poisoned-lock access.
+The broad unwrap/expect removal pass is largely complete for product code, so
+the next useful step should move from raw panic removal to ratcheting:
+introduce a narrow `#[no_panic]` contract where it is actually practical or
+make the next Clippy panic lint enforceable on a bounded crate surface.
 
 ## Next Bounded Step
 
-Harden the next `server/src/lib.rs` boundary by removing the most meaningful
-fixed-width decode and poisoned-lock panic sites, and carry forward the
-concrete no-panic evidence from earlier passes instead of retrying the same
-annotation blindly.
+Choose one small pure boundary, likely a parser or frame decoder, and either
+land a real `#[no_panic]` contract there or add a crate-level Clippy ratchet
+that bans new `unwrap` and `expect` use on that surface.
 
 ## Surprises & Discoveries
 
@@ -103,3 +110,7 @@ annotation blindly.
 - The startup pass showed the same theme on a larger entrypoint boundary:
   checked startup errors were straightforward, but `#[no_panic]` still failed
   on `daemon_registration_node`.
+- The later passes removed most remaining product panic behavior without making
+  `#[no_panic]` broadly practical yet, which means the next step should keep
+  the target narrow and mechanical instead of trying to annotate a large async
+  boundary.

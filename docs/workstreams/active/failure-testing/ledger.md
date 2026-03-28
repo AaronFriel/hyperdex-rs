@@ -205,3 +205,72 @@
   - one deterministic rejoin-or-recovery proof
   - either a green proof-only commit or a runtime fix for a discovered bug
   - one bounded commit ready for reconciliation
+
+### Entry `flt-006` - Outcome
+
+- Timestamp: `2026-03-29 10:10Z`
+- Kind: `outcome`
+- End commit: `06370d6`
+- Artifact location:
+  - `crates/simulation-harness/src/tests/mod.rs`
+- Evidence summary:
+  - Added `turmoil_preserves_correctness_when_stale_node_rejoins_cluster`.
+  - The new proof exercised node rejoin after cluster-view drift and did not
+    expose a correctness bug on the merged runtime.
+- Conclusion: stale-node rejoin now has explicit deterministic proof coverage.
+- Disposition: `advance`
+- Next move: test mutation and delete-group behavior during schema or ownership
+  convergence instead of another read-only recovery case.
+
+### Entry `flt-007` - Outcome
+
+- Timestamp: `2026-03-29 18:05Z`
+- Kind: `outcome`
+- End commit: `2b7d144`
+- Artifact location:
+  - `crates/server/src/lib.rs`
+  - `crates/simulation-harness/src/tests/mod.rs`
+- Evidence summary:
+  - `b6ae810` added rollback for distributed `DeleteGroup` when replica
+    deletion fails.
+  - `a4ea7d3` hardened distributed `Search` and `Count` during local schema
+    gaps.
+  - `fb77107` let distributed `DeleteGroup` skip schema-gap replicas.
+  - `2b7d144` corrected the merged-state regression by ensuring delete-group
+    snapshot collection skips only schema-gap replicas, not true transport
+    failures.
+- Conclusion: delete-group, search, and count now handle schema convergence
+  and replica failure more consistently.
+- Disposition: `advance`
+- Next move: move to ownership-change and primary-handoff mutation cases.
+
+### Entry `flt-008` - Preregistration
+
+- Timestamp: `2026-03-29 18:20Z`
+- Kind: `preregister`
+- Hypothesis: a mutation or delete routed during primary handoff or partial
+  config convergence may still be accepted, skipped, or rolled back against
+  the wrong ownership view, and the current deterministic harness can express
+  that without a broad rewrite.
+- Owner: next forked worker on `failure-testing`
+- Start commit: `2b7d144`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/failure-testing`
+  - `failure-testing`
+- Mutable surface:
+  - `crates/simulation-harness/**`
+  - `crates/server/**`
+  - `crates/control-plane/**` only if the proof requires cluster-view plumbing
+- Validator:
+  - fastest useful check:
+    one new targeted deterministic simulation test for ownership-change
+    mutation behavior
+  - strong checks:
+    - `cargo test -p simulation-harness`
+    - `cargo test -p server`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - one deterministic proof for primary-handoff or config-convergence mutation
+    behavior
+  - a product fix if the proof exposes a bug
+  - one bounded commit ready for reconciliation

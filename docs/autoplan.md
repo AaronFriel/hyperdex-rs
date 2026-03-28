@@ -18,9 +18,9 @@ under [archive/phase-1](/home/friel/c/aaronfriel/hyperdex-rs/docs/archive/phase-
 ## Goal
 
 Keep the now-green HyperDex replacement baseline stable while driving the next
-real implementation phase: repository-grade validation, stronger failure
-testing, panic hardening, fuzzing, async cleanup, Warp-style transactions, and
-region-aware georeplication.
+implementation phase: stronger failure testing, panic hardening, fuzzing, and
+the first bounded implementation steps for transactions and region-aware
+georeplication.
 
 ## Acceptance Evidence
 
@@ -37,19 +37,20 @@ region-aware georeplication.
 
 ### Active
 
-1. [async-modernization](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/async-modernization/plan.md)
-2. [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/failure-testing/plan.md)
-3. [panic-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/panic-hardening/plan.md)
+1. [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/failure-testing/plan.md)
+2. [panic-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/panic-hardening/plan.md)
+3. [fuzzing-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/fuzzing-hardening/plan.md)
+4. [nextest-fast-feedback](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/nextest-fast-feedback/plan.md)
 
 ### Backlog
 
-1. [fuzzing-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/fuzzing-hardening/plan.md)
-2. [warp-transactions](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/warp-transactions/plan.md)
-3. [georeplication](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/georeplication/plan.md)
-4. [programmability](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/programmability/plan.md)
-5. [graph-vector-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/graph-vector-layer/plan.md)
-6. [temporal-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/temporal-layer/plan.md)
-7. [object-storage-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/object-storage-layer/plan.md)
+1. [warp-transactions](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/warp-transactions/plan.md)
+2. [georeplication](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/georeplication/plan.md)
+3. [programmability](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/programmability/plan.md)
+4. [graph-vector-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/graph-vector-layer/plan.md)
+5. [temporal-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/temporal-layer/plan.md)
+6. [object-storage-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/object-storage-layer/plan.md)
+7. [database-corpus](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/database-corpus/plan.md)
 
 ### Completed Baseline
 
@@ -57,13 +58,15 @@ region-aware georeplication.
 
 ## Current Root Focus
 
-Keep the green HyperDex replacement baseline honest while resuming three active
-product workstreams in parallel: eliminate the remaining `#[tonic::async_trait]`
-usage if feasible, keep adding adversarial distributed proofs tied to actual
-runtime risks, and harden the next public/runtime boundary against panic paths.
+Keep the green HyperDex replacement baseline honest while driving four active
+product workstreams in parallel: the next adversarial distributed proof, the
+next panic/no-panic and lint-ratchet pass on public boundaries, the first real
+fuzz targets for the highest-risk protocol decoders, and a `cargo nextest`
+fast-feedback path that keeps the core suite reliably within roughly 30
+seconds.
 
 ## Next Root Move
 
-Close the finished workers from the current round, keep the watchdog armed,
-and launch the next async, failure-testing, and panic-hardening passes with
-the now-updated priorities.
+Keep the watchdog armed, preregister the next failure-testing,
+panic-hardening, fuzzing, and nextest passes, and launch those four
+product-only workstreams from the updated active board.

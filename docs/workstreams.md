@@ -21,19 +21,20 @@ Each workstream directory contains:
 
 ## Active
 
-- [async-modernization](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/async-modernization/plan.md)
 - [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/failure-testing/plan.md)
 - [panic-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/panic-hardening/plan.md)
+- [fuzzing-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/fuzzing-hardening/plan.md)
+- [nextest-fast-feedback](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/nextest-fast-feedback/plan.md)
 
 ## Backlog
 
-- [fuzzing-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/fuzzing-hardening/plan.md)
 - [warp-transactions](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/warp-transactions/plan.md)
 - [georeplication](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/georeplication/plan.md)
 - [programmability](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/programmability/plan.md)
 - [graph-vector-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/graph-vector-layer/plan.md)
 - [temporal-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/temporal-layer/plan.md)
 - [object-storage-layer](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/object-storage-layer/plan.md)
+- [database-corpus](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/backlog/database-corpus/plan.md)
 
 ## Completed
 
@@ -42,3 +43,4 @@ Each workstream directory contains:
 - [multiprocess-harness](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/multiprocess-harness/plan.md)
 - [coordinator-config-evidence](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/coordinator-config-evidence/plan.md)
 - [validation-ci](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/validation-ci/plan.md)
+- [async-modernization](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/async-modernization/plan.md)

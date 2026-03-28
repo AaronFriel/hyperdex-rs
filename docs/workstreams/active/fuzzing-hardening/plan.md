@@ -46,17 +46,21 @@ lower-value internal helpers.
 
 - [x] (2026-03-28 10:00Z) Created the workstream and recorded it as a ready
   priority for the next phase.
+- [x] (2026-03-29 18:10Z) Promoted this workstream into the active board after
+  the current async-modernization round completed.
 - [ ] Choose the first fuzz targets and land the initial harness.
 
 ## Current Hypothesis
 
-The best first fuzz targets are likely the legacy protocol, admin bootstrap
-framing, and request decode paths, because those areas already carried the most
-compatibility risk.
+The best first fuzz targets are the pure decoder boundaries that already proved
+fragile or high-value in compatibility work: BusyBee frame decode,
+legacy-protocol request decode, and packed admin-space decoding.
 
 ## Next Bounded Step
 
-Pick the first two or three targets and create the initial fuzz harness.
+Create the first fuzz harness for BusyBee frame decode and one legacy request
+decode path, and keep the entrypoints cheap enough to run locally before
+expanding the corpus.
 
 ## Surprises & Discoveries
 

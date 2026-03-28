@@ -59,21 +59,25 @@ design.
   `7f02478`.
 - [x] (2026-03-29 10:00Z) Added stale-placement mutation proof and fix in
   `8da80c8`.
-- [ ] Choose the next broken distributed assumption after stale-placement
-  mutation rejection.
+- [x] (2026-03-29 10:10Z) Added stale-node rejoin proof in `06370d6`.
+- [x] (2026-03-29 18:05Z) Hardened distributed delete-group rollback and
+  schema-gap behavior in `b6ae810`, `a4ea7d3`, `fb77107`, and `2b7d144`.
+- [ ] Choose the next broken distributed assumption after schema-convergence
+  delete-group hardening.
 
 ## Current Hypothesis
 
-The next highest-value step is now the rejoin or recovery path after temporary
-divergence. The runtime now has rollback coverage and stale-placement write
-guards, so the next proof should stress what happens when a stale node rejoins
-after cluster-view drift or partial outage.
+The next highest-value step is now a primary-handoff or config-convergence
+mutation path that overlaps with changing ownership, not just stale reads.
+The runtime now has rollback coverage, stale-placement write guards, rejoin
+proof, and delete-group schema-gap hardening, so the next proof should stress
+what happens while ownership changes under an in-flight write or delete.
 
 ## Next Bounded Step
 
-Add the shortest honest deterministic proof for a stale-node rejoin or
-post-outage recovery scenario, and touch runtime code only if the proof shows
-the runtime can accept or expose incorrect state during convergence.
+Add the shortest honest deterministic proof for a primary-handoff or
+config-convergence mutation scenario, and touch runtime code only if the proof
+shows the runtime can accept or expose incorrect state during ownership change.
 
 ## Surprises & Discoveries
 
@@ -101,3 +105,9 @@ the runtime can accept or expose incorrect state during convergence.
 - The fifth pass found and fixed a real distributed ownership bug:
   - primary-only internode writes were accepted without verifying that the
     receiving node still owned the key under its current placement view
+- The latest round found and fixed a second family of distributed convergence
+  bugs:
+  - distributed `DeleteGroup` needed rollback on replica failure
+  - distributed `Search` and `Count` needed to tolerate schema-gap replicas
+  - distributed `DeleteGroup` needed to skip schema-gap replicas without
+    silently skipping true transport failures

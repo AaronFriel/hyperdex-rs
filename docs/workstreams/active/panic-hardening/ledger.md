@@ -199,3 +199,55 @@
   - either a practical `#[no_panic]` annotation or a concrete justification for
     leaving it off the chosen helper
   - one bounded commit ready for reconciliation
+
+### Entry `pnh-005` - Outcome
+
+- Timestamp: `2026-03-29 18:05Z`
+- Kind: `outcome`
+- End commit: `20c6d71`
+- Artifact location:
+  - `crates/server/src/lib.rs`
+  - `crates/hyperdex-admin-protocol/src/lib.rs`
+  - `crates/legacy-frontend/src/lib.rs`
+  - `crates/placement-core/src/lib.rs`
+- Evidence summary:
+  - `ea85af6` replaced fixed-width server decode panic paths with checked
+    readers.
+  - `e49866d` replaced poisoned-lock panic paths in the coordinator and search
+    state with checked errors.
+  - `621692b` returned placement errors instead of panicking on empty layouts.
+  - `f9f76af` rejected oversized BusyBee frames before payload allocation.
+  - `20c6d71` removed the remaining non-test placement panic fallback.
+- Conclusion: the main product-code unwrap/expect and panic cleanup phase is
+  substantially complete.
+- Disposition: `advance`
+- Next move: shift from raw panic removal to a narrow `#[no_panic]` or Clippy
+  ratchet step on a pure boundary.
+
+### Entry `pnh-006` - Preregistration
+
+- Timestamp: `2026-03-29 18:20Z`
+- Kind: `preregister`
+- Hypothesis: a small pure decoder or parser boundary can now carry either a
+  real `#[no_panic]` contract or a crate-level Clippy ratchet against
+  `unwrap` and `expect` without destabilizing the runtime.
+- Owner: next forked worker on `panic-hardening`
+- Start commit: `2b7d144`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/panic-hardening`
+  - `panic-hardening`
+- Mutable surface:
+  - `crates/hyperdex-admin-protocol/**`
+  - `crates/legacy-protocol/**`
+  - `crates/legacy-frontend/**`
+  - lint configuration only if the chosen ratchet is practical
+- Validator:
+  - fastest useful check:
+    `cargo clippy -p hyperdex-admin-protocol -p legacy-protocol -p legacy-frontend --lib -- -W clippy::unwrap_used -W clippy::expect_used`
+  - strong checks:
+    - `cargo test -p hyperdex-admin-protocol -p legacy-protocol -p legacy-frontend`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - one narrow `#[no_panic]` or Clippy ratchet step on a pure boundary
+  - focused regression tests if needed
+  - one bounded commit ready for reconciliation
