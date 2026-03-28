@@ -862,7 +862,7 @@
 - Owner: root reconciliation of the completed `admin-server` worktree
 - Start commit: `063d8a1`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - `worktrees/admin-server`
 - Mutable surface:
   - `crates/server/src/lib.rs`
   - `crates/hyperdex-admin-protocol/**` only for small integration fixes
