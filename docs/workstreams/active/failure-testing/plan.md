@@ -59,14 +59,16 @@ design.
 
 ## Current Hypothesis
 
-The highest-value next step is likely another mutation or routing assumption,
-because the rollback work now covers failed replicated writes and deletes.
+The highest-value next step is another mutation-path failure, and
+`ConditionalPut` under replica transport loss is the best candidate because it
+still has a different control path than the write and delete rollback fixes
+already landed.
 
 ## Next Bounded Step
 
-Choose the next concrete distributed assumption to break, add the deterministic
-proof in the simulation harness, and only touch runtime code if that proof
-exposes a real bug.
+Add a deterministic proof for `ConditionalPut` under replica transport loss,
+then touch runtime code only if that proof shows the primary can expose a
+partially committed compare-and-write result.
 
 ## Surprises & Discoveries
 

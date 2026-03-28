@@ -21,6 +21,7 @@ Each workstream directory contains:
 
 ## Active
 
+- [async-modernization](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/async-modernization/plan.md)
 - [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/failure-testing/plan.md)
 - [panic-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/panic-hardening/plan.md)
 
@@ -41,4 +42,3 @@ Each workstream directory contains:
 - [multiprocess-harness](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/multiprocess-harness/plan.md)
 - [coordinator-config-evidence](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/coordinator-config-evidence/plan.md)
 - [validation-ci](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/validation-ci/plan.md)
-- [async-modernization](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed/async-modernization/plan.md)

@@ -16,8 +16,8 @@ improve compile-time ergonomics and make async call stacks easier to debug.
 
 ## Goal
 
-Remove `async_trait` from at least one meaningful cross-crate surface and
-preserve the existing behavior with green tests.
+Remove or tightly justify the remaining `#[tonic::async_trait]` usage in the
+gRPC service layer while preserving the existing behavior with green tests.
 
 ## Acceptance Evidence
 
@@ -28,11 +28,9 @@ preserve the existing behavior with green tests.
 
 ## Mutable Surface
 
-- `crates/consensus-core/**`
-- `crates/transport-core/**`
-- `crates/hyperdex-admin-protocol/**`
-- `crates/hyperdex-client-protocol/**`
-- `crates/server/**`
+- `crates/transport-grpc/**`
+- `crates/server/src/main.rs`
+- `crates/server/src/lib.rs` if service wiring needs to move
 - `Cargo.toml` and crate manifests as needed
 
 ## Dependencies / Blockers
@@ -55,17 +53,24 @@ edits.
   service traits and their server implementations in `ef0879f`.
 - [x] (2026-03-28 23:55Z) Removed `async_trait` from `consensus-core` and then
   from the transport boundary itself in `c2b2c10` and `5777625`.
+- [ ] (2026-03-29 00:20Z) Resolve the remaining `#[tonic::async_trait]` usage
+  in the gRPC service layer or prove that tonic-generated constraints make
+  those specific impls the right stopping point for now.
 
 ## Current Hypothesis
 
-The current phase is complete. The remaining async-trait usage in this area is
-limited to tonic-generated impls, which are not a worthwhile cleanup target on
-their own.
+The remaining async-trait usage is concentrated in tonic service impls. That
+may still be removable if the gRPC service layer is reshaped around native
+async traits or helper adapters, but if tonic's generated service contract
+forces those impls to remain, the workstream should produce a source-backed
+justification instead of pretending the cleanup is finished.
 
 ## Next Bounded Step
 
-None in this phase. Promote a follow-up only if there is a reason to redesign
-the gRPC service layer beyond the current boxed-future transport interface.
+Inspect the remaining tonic service impl boundary in `transport-grpc` and the
+server binary entrypoint, remove the remaining `#[tonic::async_trait]` uses if
+that can be done without a large transport rewrite, or return a precise
+source-backed blocker that explains why tonic still requires them.
 
 ## Surprises & Discoveries
 
@@ -73,6 +78,11 @@ the gRPC service layer beyond the current boxed-future transport interface.
   Evidence: `rg -n "async_trait|\\#\\[async_trait\\]" crates Cargo.toml`
   reports uses in transport, consensus, client/admin protocol, and server
   crates.
+- Observation: after the first cleanup passes, only `#[tonic::async_trait]`
+  remains.
+  Evidence: `rg -n "\\#\\[tonic::async_trait\\]|\\#\\[async_trait\\]|async_trait"
+  crates/transport-grpc crates/server/src/main.rs` now reports only
+  `crates/server/src/main.rs:43` and `crates/transport-grpc/src/lib.rs`.
 
 ## Decision Log
 
@@ -89,3 +99,6 @@ the gRPC service layer beyond the current boxed-future transport interface.
 - `c2b2c10` removed `async_trait` from `consensus-core`.
 - `5777625` redesigned the transport boundary so `ClusterTransport::send`
   returns a boxed future and no longer needs `async_trait`.
+- The next phase is narrower and more honest than the previous closeout:
+  determine whether tonic service impls can also be modernized, or explicitly
+  stop there with source-backed justification.

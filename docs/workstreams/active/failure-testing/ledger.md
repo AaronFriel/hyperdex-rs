@@ -83,3 +83,29 @@
 - Conclusion: failed replicated deletes now match the write rollback contract.
 - Disposition: `advance`
 - Next move: choose the next distinct routing or mutation assumption to break.
+
+### Entry `flt-004` - Preregistration
+
+- Timestamp: `2026-03-29 00:25Z`
+- Kind: `preregister`
+- Hypothesis: `ConditionalPut` may still expose a partially committed primary
+  result when replica fanout fails, because it follows a distinct compare-and-
+  write control path from the already-fixed put and delete cases.
+- Owner: forked worker on `failure-testing`
+- Start commit: `fb02bcc`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/failure-testing`
+  - `failure-testing`
+- Mutable surface:
+  - `crates/simulation-harness/**`
+  - `crates/server/**` only if the new proof exposes a runtime bug
+- Validator:
+  - fastest useful check:
+    `cargo test -p simulation-harness turmoil_reverts_primary_conditional_put_when_replica_transport_fails -- --nocapture`
+  - strong checks:
+    - `cargo test -p simulation-harness`
+    - `cargo test --workspace`
+- Expected artifacts:
+  - one deterministic `ConditionalPut` failure proof
+  - either a green proof-only commit or a runtime fix for a discovered bug
+  - one bounded commit ready for reconciliation

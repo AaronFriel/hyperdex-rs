@@ -65,3 +65,32 @@
 - Disposition: `advance`
 - Next move: move to `server/src/main.rs` or `legacy-frontend` for the next
   bounded hardening pass.
+
+### Entry `pnh-003` - Preregistration
+
+- Timestamp: `2026-03-29 00:25Z`
+- Kind: `preregister`
+- Hypothesis: `legacy-frontend` still has public-boundary `expect` paths that
+  can be converted to checked decoding with a practical no-panic contract on a
+  smaller surface than `server/src/main.rs`.
+- Owner: forked worker on `panic-hardening`
+- Start commit: `fb02bcc`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/panic-hardening`
+  - `panic-hardening`
+- Mutable surface:
+  - `crates/legacy-frontend/**`
+  - `crates/legacy-protocol/**` only if helper changes are needed
+  - manifests or lint config as needed
+- Validator:
+  - fastest useful check:
+    `cargo test -p legacy-frontend`
+  - strong checks:
+    - `cargo test -p server`
+    - `cargo test --workspace`
+    - `rg -n "unwrap\\(|expect\\(|todo!|panic!|no_panic" crates/legacy-frontend crates/legacy-protocol`
+- Expected artifacts:
+  - one bounded hardening pass over the legacy frontend boundary
+  - either a practical `#[no_panic]` annotation or a concrete justification for
+    leaving it off this surface
+  - one bounded commit ready for reconciliation

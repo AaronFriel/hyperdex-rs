@@ -74,3 +74,31 @@
 - Disposition: `advance`
 - Next move: move this workstream out of the active board and revisit only if
   a larger gRPC service redesign becomes worthwhile.
+
+### Entry `asm-003` - Preregistration
+
+- Timestamp: `2026-03-29 00:20Z`
+- Kind: `preregister`
+- Hypothesis: the remaining `#[tonic::async_trait]` uses in the gRPC service
+  layer may still be removable with a bounded service-adapter change; if not,
+  the workstream should return a precise tonic-generated constraint instead of
+  treating the cleanup as done.
+- Owner: forked worker on `async-modernization`
+- Start commit: `fb02bcc`
+- Worktree / branch:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/async-modernization`
+  - `async-modernization`
+- Mutable surface:
+  - `crates/transport-grpc/**`
+  - `crates/server/src/main.rs`
+  - `crates/server/src/lib.rs` if needed for service wiring
+- Validator:
+  - fastest useful check:
+    `rg -n "\\#\\[tonic::async_trait\\]|\\#\\[async_trait\\]|async_trait" crates/transport-grpc crates/server/src/main.rs`
+  - strong checks:
+    - `cargo test -p transport-grpc`
+    - `cargo test -p server`
+- Expected artifacts:
+  - either a code change that removes the remaining tonic async-trait usage
+  - or a source-backed blocker showing why tonic's generated service boundary
+    still requires it

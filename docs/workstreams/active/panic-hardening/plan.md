@@ -61,15 +61,15 @@ panic behavior to explicit contracts and then set the next ratchet.
 
 ## Current Hypothesis
 
-After the decoder passes, the next useful boundary is likely `server/src/main.rs`
-startup or `legacy-frontend`, because those are still public/runtime edges with
-panic behavior and weaker contracts.
+After the decoder passes, `legacy-frontend` is the best next target because it
+is a public boundary with obvious fixed-width decode `expect` usage and a
+smaller blast radius than `server/src/main.rs`.
 
 ## Next Bounded Step
 
-Pick one entrypoint or public-runtime surface, remove the most obvious
-`unwrap` / `expect` usage, apply `#[no_panic]` where practical, and define the
-next Clippy ratchet from that result.
+Harden `legacy-frontend` by removing the fixed-width decode `expect` paths,
+apply `#[no_panic]` where that boundary can support it, and define the next
+Clippy ratchet from the result.
 
 ## Surprises & Discoveries
 

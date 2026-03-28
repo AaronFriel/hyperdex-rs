@@ -37,8 +37,9 @@ region-aware georeplication.
 
 ### Active
 
-1. [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/failure-testing/plan.md)
-2. [panic-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/panic-hardening/plan.md)
+1. [async-modernization](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/async-modernization/plan.md)
+2. [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/failure-testing/plan.md)
+3. [panic-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/panic-hardening/plan.md)
 
 ### Backlog
 
@@ -56,12 +57,14 @@ region-aware georeplication.
 
 ## Current Root Focus
 
-Keep the large set of newly-landed code honest, keep the root package aligned
-with the actual repository state, and choose the next promotion after this
-round of validation, failure-testing, async cleanup, and panic hardening.
+Keep the green HyperDex replacement baseline honest while resuming three active
+product workstreams in parallel: eliminate the remaining `#[tonic::async_trait]`
+usage if feasible, add a new adversarial distributed proof tied to an actual
+risk, and harden another public/runtime boundary against panic paths.
 
 ## Next Root Move
 
-Archive the finished `validation-ci` and current `async-modernization` phase,
-keep `failure-testing` and `panic-hardening` active with the next bounded
-steps, and then decide which backlog priority to promote next.
+Rearm the watchdog, preregister the next async-modernization pass around the
+remaining tonic service impls, and launch `async-modernization`,
+`failure-testing`, and `panic-hardening` as parallel owned forks with focused
+validators.
