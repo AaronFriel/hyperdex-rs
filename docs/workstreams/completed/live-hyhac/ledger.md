@@ -510,7 +510,7 @@
 - Kind: `outcome`
 - End commit: `928130e`
 - Artifact location:
-  - no code changes in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+  - no code changes in `worktrees/admin-server`
 - Evidence summary:
   - the full server implementation worker was interrupted
   - the `admin-server` worktree remained clean at `928130e`
