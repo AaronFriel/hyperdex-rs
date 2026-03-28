@@ -690,8 +690,8 @@
 - End commit: `main after the repeated-identify fix and corrected BusyBee proxy probe`
 - Artifact location:
   - `/home/friel/HyperDex/busybee/busybee.cc`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/tests/dist_multiprocess_harness.rs`
+  - `crates/server/src/lib.rs`
+  - `crates/server/tests/dist_multiprocess_harness.rs`
 - Evidence summary:
   - the original BusyBee accept path sends an identify reply only on the first
     transition from anonymous to identified; later identify frames on that
