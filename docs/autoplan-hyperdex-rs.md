@@ -16,6 +16,7 @@ document follows the fallback rules at
 - Workstreams directory: [workstreams](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams)
 - `hyhac` compatibility notes: [hyhac-compatibility-surface.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/hyhac-compatibility-surface.md)
 - Paper notes: [papers-and-mvp-notes.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/papers-and-mvp-notes.md)
+- Future directions: [future-directions.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/future-directions.md)
 - Worktree inventory: [worktrees.md](/home/friel/c/aaronfriel/hyperdex-rs/docs/worktrees.md)
 
 ## Purpose / Big Picture
