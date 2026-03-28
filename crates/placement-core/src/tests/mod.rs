@@ -1,6 +1,6 @@
 use super::*;
 
-mod hegel;
+mod hegel_properties;
 
 #[test]
 fn rendezvous_returns_requested_replica_count() {

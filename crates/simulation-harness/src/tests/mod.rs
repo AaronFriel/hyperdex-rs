@@ -26,9 +26,6 @@ use transport_core::{
     InternodeResponse, RemoteNode,
 };
 
-static HEGEL_SERVER_COMMAND: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-static HEGEL_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 struct TestHarness {
     data_plane: DataPlane,
 }
@@ -426,49 +423,6 @@ fn stale_local_primary_target_for_authoritative_node(
         .expect(
             "expected a key whose stale local primary diverges to the requested authoritative node",
         )
-}
-
-fn ensure_hegel_server_command() -> String {
-    HEGEL_SERVER_COMMAND
-        .get_or_init(|| {
-            let root = std::env::temp_dir().join(format!(
-                "hyperdex-rs-hegel-core-0.2.3-{}",
-                std::process::id()
-            ));
-            let venv_dir = root.join("venv");
-            let hegel = venv_dir.join("bin/hegel");
-            let pyvenv_cfg = venv_dir.join("pyvenv.cfg");
-
-            if hegel.is_file() && pyvenv_cfg.is_file() {
-                return hegel.to_str().expect("hegel path must be utf-8").to_owned();
-            }
-
-            if venv_dir.exists() && !pyvenv_cfg.is_file() {
-                std::fs::remove_dir_all(&venv_dir).expect("remove invalid hegel venv dir");
-            }
-
-            std::fs::create_dir_all(&root).expect("create hegel temp dir");
-
-            let status = std::process::Command::new("uv")
-                .args(["venv", "--clear"])
-                .arg(&venv_dir)
-                .status()
-                .expect("run uv venv");
-            assert!(status.success(), "uv venv failed for {:?}", venv_dir);
-
-            let python = venv_dir.join("bin/python");
-            let status = std::process::Command::new("uv")
-                .args(["pip", "install", "--python"])
-                .arg(&python)
-                .arg("hegel-core==0.2.3")
-                .status()
-                .expect("run uv pip install");
-            assert!(status.success(), "uv pip install failed for {:?}", python);
-
-            assert!(hegel.is_file(), "missing hegel binary at {:?}", hegel);
-            hegel.to_str().expect("hegel path must be utf-8").to_owned()
-        })
-        .clone()
 }
 
 impl ClusterTransport for SimTransport {
@@ -1997,333 +1951,140 @@ fn madsim_preserves_degraded_read_correctness_after_one_node_loss() {
     });
 }
 
-#[test]
-fn hegel_memory_engine_matches_stateful_sequence_model() {
-    let _guard = HEGEL_ENV_LOCK.lock().unwrap();
-    let hegel_server_command = ensure_hegel_server_command();
-    unsafe {
-        std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
+#[hegel::test(test_cases = 25)]
+fn hegel_memory_engine_matches_stateful_sequence_model(tc: hegel::TestCase) {
+    let ops: Vec<(u8, u8, u16)> = tc.draw(
+        hegel::generators::vecs(hegel::generators::tuples3(
+            hegel::generators::integers::<u8>().max_value(2),
+            hegel::generators::integers::<u8>().max_value(12),
+            hegel::generators::integers::<u16>().max_value(99),
+        ))
+        .max_size(30),
+    );
+
+    let harness = TestHarness::new();
+    let mut model = BTreeMap::<String, String>::new();
+
+    for (kind, key_id, value_id) in ops {
+        let key = format!("k{key_id}");
+
+        match kind {
+            0 => {
+                let value = format!("v{value_id}");
+                assert_eq!(harness.put_name(&key, &value), WriteResult::Written);
+                model.insert(key.clone(), value);
+            }
+            1 => {
+                let expected = if model.remove(&key).is_some() {
+                    WriteResult::Written
+                } else {
+                    WriteResult::Missing
+                };
+                assert_eq!(harness.delete(&key), expected);
+            }
+            2 => {
+                assert_eq!(harness.get_name(&key), model.get(&key).cloned());
+            }
+            _ => unreachable!("operation kind is bounded to 0..=2"),
+        }
+
+        assert_eq!(harness.snapshot(), model);
+        assert_eq!(harness.count(), model.len() as u64);
     }
+}
 
-    hegel::Hegel::new(|tc: hegel::TestCase| {
-        let ops: Vec<(u8, u8, u16)> = tc.draw(
-            hegel::generators::vecs(hegel::generators::tuples3(
-                hegel::generators::integers::<u8>().max_value(2),
-                hegel::generators::integers::<u8>().max_value(12),
-                hegel::generators::integers::<u16>().max_value(99),
-            ))
-            .max_size(30),
-        );
+#[hegel::test(test_cases = 20)]
+fn hegel_single_node_runtime_matches_sequence_model(tc: hegel::TestCase) {
+    let ops: Vec<(u8, u8, u16)> = tc.draw(
+        hegel::generators::vecs(hegel::generators::tuples3(
+            hegel::generators::integers::<u8>().max_value(3),
+            hegel::generators::integers::<u8>().max_value(12),
+            hegel::generators::integers::<u16>().max_value(99),
+        ))
+        .max_size(25),
+    );
 
-        let harness = TestHarness::new();
-        let mut model = BTreeMap::<String, String>::new();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async move {
+        let runtime = single_node_runtime().await;
+        let mut model = BTreeMap::<String, i64>::new();
 
         for (kind, key_id, value_id) in ops {
             let key = format!("k{key_id}");
+            let key_bytes = Bytes::from(key.clone().into_bytes());
 
             match kind {
                 0 => {
-                    let value = format!("v{value_id}");
-                    assert_eq!(harness.put_name(&key, &value), WriteResult::Written);
+                    let value = i64::from(value_id);
+                    let response = HyperdexClientService::handle(
+                        runtime.as_ref(),
+                        ClientRequest::Put {
+                            space: "profiles".to_owned(),
+                            key: key_bytes.clone(),
+                            mutations: vec![Mutation::Set(Attribute {
+                                name: "profile_views".to_owned(),
+                                value: Value::Int(value),
+                            })],
+                        },
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(response, ClientResponse::Unit);
                     model.insert(key.clone(), value);
                 }
                 1 => {
-                    let expected = if model.remove(&key).is_some() {
-                        WriteResult::Written
-                    } else {
-                        WriteResult::Missing
-                    };
-                    assert_eq!(harness.delete(&key), expected);
+                    let response = HyperdexClientService::handle(
+                        runtime.as_ref(),
+                        ClientRequest::Delete {
+                            space: "profiles".to_owned(),
+                            key: key_bytes.clone(),
+                        },
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(response, ClientResponse::Unit);
+                    model.remove(&key);
                 }
                 2 => {
-                    assert_eq!(harness.get_name(&key), model.get(&key).cloned());
-                }
-                _ => unreachable!("operation kind is bounded to 0..=2"),
-            }
-
-            assert_eq!(harness.snapshot(), model);
-            assert_eq!(harness.count(), model.len() as u64);
-        }
-    })
-    .settings(hegel::Settings::new().test_cases(25))
-    .run();
-}
-
-#[test]
-fn hegel_single_node_runtime_matches_sequence_model() {
-    let _guard = HEGEL_ENV_LOCK.lock().unwrap();
-    let hegel_server_command = ensure_hegel_server_command();
-    unsafe {
-        std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
-    }
-
-    hegel::Hegel::new(|tc: hegel::TestCase| {
-        let ops: Vec<(u8, u8, u16)> = tc.draw(
-            hegel::generators::vecs(hegel::generators::tuples3(
-                hegel::generators::integers::<u8>().max_value(3),
-                hegel::generators::integers::<u8>().max_value(12),
-                hegel::generators::integers::<u16>().max_value(99),
-            ))
-            .max_size(25),
-        );
-
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime.block_on(async move {
-            let runtime = single_node_runtime().await;
-            let mut model = BTreeMap::<String, i64>::new();
-
-            for (kind, key_id, value_id) in ops {
-                let key = format!("k{key_id}");
-                let key_bytes = Bytes::from(key.clone().into_bytes());
-
-                match kind {
-                    0 => {
-                        let value = i64::from(value_id);
-                        let response = HyperdexClientService::handle(
-                            runtime.as_ref(),
-                            ClientRequest::Put {
-                                space: "profiles".to_owned(),
-                                key: key_bytes.clone(),
-                                mutations: vec![Mutation::Set(Attribute {
-                                    name: "profile_views".to_owned(),
-                                    value: Value::Int(value),
-                                })],
-                            },
-                        )
-                        .await
-                        .unwrap();
-                        assert_eq!(response, ClientResponse::Unit);
-                        model.insert(key.clone(), value);
-                    }
-                    1 => {
-                        let response = HyperdexClientService::handle(
-                            runtime.as_ref(),
-                            ClientRequest::Delete {
-                                space: "profiles".to_owned(),
-                                key: key_bytes.clone(),
-                            },
-                        )
-                        .await
-                        .unwrap();
-                        assert_eq!(response, ClientResponse::Unit);
-                        model.remove(&key);
-                    }
-                    2 => {
-                        let response = HyperdexClientService::handle(
-                            runtime.as_ref(),
-                            ClientRequest::Get {
-                                space: "profiles".to_owned(),
-                                key: key_bytes.clone(),
-                            },
-                        )
-                        .await
-                        .unwrap();
-                        let expected = model.get(&key).cloned();
-                        match response {
-                            ClientResponse::Record(Some(record)) => {
-                                let actual = match record.attributes.get("profile_views") {
-                                    Some(Value::Int(value)) => Some(*value),
-                                    _ => None,
-                                };
-                                assert_eq!(actual, expected);
-                            }
-                            ClientResponse::Record(None) => assert_eq!(expected, None),
-                            other => panic!("unexpected get response: {other:?}"),
+                    let response = HyperdexClientService::handle(
+                        runtime.as_ref(),
+                        ClientRequest::Get {
+                            space: "profiles".to_owned(),
+                            key: key_bytes.clone(),
+                        },
+                    )
+                    .await
+                    .unwrap();
+                    let expected = model.get(&key).cloned();
+                    match response {
+                        ClientResponse::Record(Some(record)) => {
+                            let actual = match record.attributes.get("profile_views") {
+                                Some(Value::Int(value)) => Some(*value),
+                                _ => None,
+                            };
+                            assert_eq!(actual, expected);
                         }
+                        ClientResponse::Record(None) => assert_eq!(expected, None),
+                        other => panic!("unexpected get response: {other:?}"),
                     }
-                    3 => {
-                        let response = HyperdexClientService::handle(
-                            runtime.as_ref(),
-                            ClientRequest::Count {
-                                space: "profiles".to_owned(),
-                                checks: Vec::new(),
-                            },
-                        )
-                        .await
-                        .unwrap();
-                        assert_eq!(response, ClientResponse::Count(model.len() as u64));
-                    }
-                    _ => unreachable!("operation kind is bounded to 0..=3"),
                 }
-
-                let count = HyperdexClientService::handle(
-                    runtime.as_ref(),
-                    ClientRequest::Count {
-                        space: "profiles".to_owned(),
-                        checks: Vec::new(),
-                    },
-                )
-                .await
-                .unwrap();
-                assert_eq!(count, ClientResponse::Count(model.len() as u64));
-            }
-        });
-    })
-    .settings(hegel::Settings::new().test_cases(20))
-    .run();
-}
-
-#[test]
-fn hegel_distributed_runtime_routes_put_and_get() {
-    let _guard = HEGEL_ENV_LOCK.lock().unwrap();
-    let hegel_server_command = ensure_hegel_server_command();
-    unsafe {
-        std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
-    }
-
-    hegel::Hegel::new(|tc: hegel::TestCase| {
-        let key_suffix: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(4095));
-        let value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
-
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime.block_on(async move {
-            let (runtime1, runtime2) = distributed_runtime_pair().await;
-            let routed_key = (0..65536)
-                .map(|i| format!("dist-{key_suffix}-{i}"))
-                .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
-                .expect("expected a key routed to node 2");
-            let expected_value = i64::from(value_id);
-
-            let put = HyperdexClientService::handle(
-                runtime1.as_ref(),
-                ClientRequest::Put {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(routed_key.clone().into_bytes()),
-                    mutations: vec![Mutation::Set(Attribute {
-                        name: "profile_views".to_owned(),
-                        value: Value::Int(expected_value),
-                    })],
-                },
-            )
-            .await
-            .unwrap();
-            assert_eq!(put, ClientResponse::Unit);
-
-            let get = HyperdexClientService::handle(
-                runtime1.as_ref(),
-                ClientRequest::Get {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(routed_key.clone().into_bytes()),
-                },
-            )
-            .await
-            .unwrap();
-            match get {
-                ClientResponse::Record(Some(record)) => {
-                    let actual = match record.attributes.get("profile_views") {
-                        Some(Value::Int(value)) => *value,
-                        other => panic!("unexpected record attribute: {other:?}"),
-                    };
-                    assert_eq!(actual, expected_value);
+                3 => {
+                    let response = HyperdexClientService::handle(
+                        runtime.as_ref(),
+                        ClientRequest::Count {
+                            space: "profiles".to_owned(),
+                            checks: Vec::new(),
+                        },
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(response, ClientResponse::Count(model.len() as u64));
                 }
-                other => panic!("unexpected get response: {other:?}"),
+                _ => unreachable!("operation kind is bounded to 0..=3"),
             }
 
-            let primary_view = HyperdexClientService::handle(
-                runtime2.as_ref(),
-                ClientRequest::Get {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(routed_key.into_bytes()),
-                },
-            )
-            .await
-            .unwrap();
-            match primary_view {
-                ClientResponse::Record(Some(record)) => {
-                    let actual = match record.attributes.get("profile_views") {
-                        Some(Value::Int(value)) => *value,
-                        other => panic!("unexpected record attribute: {other:?}"),
-                    };
-                    assert_eq!(actual, expected_value);
-                }
-                other => panic!("unexpected primary get response: {other:?}"),
-            }
-        });
-    })
-    .settings(hegel::Settings::new().test_cases(15))
-    .run();
-}
-
-#[test]
-fn hegel_distributed_runtime_preserves_degraded_get_and_count() {
-    let _guard = HEGEL_ENV_LOCK.lock().unwrap();
-    let hegel_server_command = ensure_hegel_server_command();
-    unsafe {
-        std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
-    }
-
-    hegel::Hegel::new(|tc: hegel::TestCase| {
-        let degraded_suffix: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(4095));
-        let degraded_value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
-        let survivor_value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
-
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime.block_on(async move {
-            let (transport, runtime1, runtime2) =
-                distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
-            let (survivor_runtime, unavailable_node, degraded_key) = degraded_read_target(
-                &runtime1,
-                &runtime2,
-                &format!("hegel-degraded-{degraded_suffix}"),
-            );
-            let degraded_value = i64::from(degraded_value_id);
-            let survivor_value = i64::from(survivor_value_id);
-            let survivor_key = format!("survivor-{degraded_suffix}");
-
-            let put_degraded = HyperdexClientService::handle(
-                runtime1.as_ref(),
-                ClientRequest::Put {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(degraded_key.clone().into_bytes()),
-                    mutations: vec![Mutation::Set(Attribute {
-                        name: "profile_views".to_owned(),
-                        value: Value::Int(degraded_value),
-                    })],
-                },
-            )
-            .await
-            .unwrap();
-            assert_eq!(put_degraded, ClientResponse::Unit);
-
-            let put_survivor = HyperdexClientService::handle(
-                survivor_runtime.as_ref(),
-                ClientRequest::Put {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(survivor_key.clone().into_bytes()),
-                    mutations: vec![Mutation::Set(Attribute {
-                        name: "profile_views".to_owned(),
-                        value: Value::Int(survivor_value),
-                    })],
-                },
-            )
-            .await
-            .unwrap();
-            assert_eq!(put_survivor, ClientResponse::Unit);
-
-            transport.set_unavailable(unavailable_node, true).await;
-
-            let degraded_get = HyperdexClientService::handle(
-                survivor_runtime.as_ref(),
-                ClientRequest::Get {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(degraded_key.clone().into_bytes()),
-                },
-            )
-            .await
-            .unwrap();
-            match degraded_get {
-                ClientResponse::Record(Some(record)) => {
-                    let actual = match record.attributes.get("profile_views") {
-                        Some(Value::Int(value)) => *value,
-                        other => panic!("unexpected record attribute: {other:?}"),
-                    };
-                    assert_eq!(actual, degraded_value);
-                }
-                other => panic!("unexpected degraded get response: {other:?}"),
-            }
-
-            let degraded_count = HyperdexClientService::handle(
-                survivor_runtime.as_ref(),
+            let count = HyperdexClientService::handle(
+                runtime.as_ref(),
                 ClientRequest::Count {
                     space: "profiles".to_owned(),
                     checks: Vec::new(),
@@ -2331,578 +2092,677 @@ fn hegel_distributed_runtime_preserves_degraded_get_and_count() {
             )
             .await
             .unwrap();
-            assert_eq!(degraded_count, ClientResponse::Count(2));
-        });
-    })
-    .settings(hegel::Settings::new().test_cases(15))
-    .run();
+            assert_eq!(count, ClientResponse::Count(model.len() as u64));
+        }
+    });
 }
 
-#[test]
-fn hegel_distributed_runtime_routes_delete() {
-    let _guard = HEGEL_ENV_LOCK.lock().unwrap();
-    let hegel_server_command = ensure_hegel_server_command();
-    unsafe {
-        std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
-    }
+#[hegel::test(test_cases = 15)]
+fn hegel_distributed_runtime_routes_put_and_get(tc: hegel::TestCase) {
+    let key_suffix: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(4095));
+    let value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
 
-    hegel::Hegel::new(|tc: hegel::TestCase| {
-        let key_suffix: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(4095));
-        let value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async move {
+        let (runtime1, runtime2) = distributed_runtime_pair().await;
+        let routed_key = (0..65536)
+            .map(|i| format!("dist-{key_suffix}-{i}"))
+            .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
+            .expect("expected a key routed to node 2");
+        let expected_value = i64::from(value_id);
 
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime.block_on(async move {
-            let (runtime1, runtime2) = distributed_runtime_pair().await;
-            let routed_key = (0..65536)
-                .map(|i| format!("delete-{key_suffix}-{i}"))
-                .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
-                .expect("expected a key routed to node 2");
-            let expected_value = i64::from(value_id);
+        let put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(routed_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(expected_value),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(put, ClientResponse::Unit);
 
-            let put = HyperdexClientService::handle(
-                runtime1.as_ref(),
-                ClientRequest::Put {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(routed_key.clone().into_bytes()),
-                    mutations: vec![Mutation::Set(Attribute {
-                        name: "profile_views".to_owned(),
-                        value: Value::Int(expected_value),
-                    })],
-                },
-            )
-            .await
-            .unwrap();
-            assert_eq!(put, ClientResponse::Unit);
+        let get = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(routed_key.clone().into_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+        match get {
+            ClientResponse::Record(Some(record)) => {
+                let actual = match record.attributes.get("profile_views") {
+                    Some(Value::Int(value)) => *value,
+                    other => panic!("unexpected record attribute: {other:?}"),
+                };
+                assert_eq!(actual, expected_value);
+            }
+            other => panic!("unexpected get response: {other:?}"),
+        }
 
-            let delete = HyperdexClientService::handle(
-                runtime1.as_ref(),
-                ClientRequest::Delete {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(routed_key.clone().into_bytes()),
-                },
-            )
-            .await
-            .unwrap();
-            assert_eq!(delete, ClientResponse::Unit);
-
-            let routed_get = HyperdexClientService::handle(
-                runtime1.as_ref(),
-                ClientRequest::Get {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(routed_key.clone().into_bytes()),
-                },
-            )
-            .await
-            .unwrap();
-            assert_eq!(routed_get, ClientResponse::Record(None));
-
-            let primary_get = HyperdexClientService::handle(
-                runtime2.as_ref(),
-                ClientRequest::Get {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(routed_key.into_bytes()),
-                },
-            )
-            .await
-            .unwrap();
-            assert_eq!(primary_get, ClientResponse::Record(None));
-        });
-    })
-    .settings(hegel::Settings::new().test_cases(15))
-    .run();
+        let primary_view = HyperdexClientService::handle(
+            runtime2.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(routed_key.into_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+        match primary_view {
+            ClientResponse::Record(Some(record)) => {
+                let actual = match record.attributes.get("profile_views") {
+                    Some(Value::Int(value)) => *value,
+                    other => panic!("unexpected record attribute: {other:?}"),
+                };
+                assert_eq!(actual, expected_value);
+            }
+            other => panic!("unexpected primary get response: {other:?}"),
+        }
+    });
 }
 
-#[test]
-fn hegel_distributed_runtime_routes_conditional_put() {
-    let _guard = HEGEL_ENV_LOCK.lock().unwrap();
-    let hegel_server_command = ensure_hegel_server_command();
-    unsafe {
-        std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
-    }
+#[hegel::test(test_cases = 15)]
+fn hegel_distributed_runtime_preserves_degraded_get_and_count(tc: hegel::TestCase) {
+    let degraded_suffix: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(4095));
+    let degraded_value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
+    let survivor_value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
 
-    hegel::Hegel::new(|tc: hegel::TestCase| {
-        let key_suffix: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(4095));
-        let initial_value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
-        let updated_value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
-        let failed_value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async move {
+        let (transport, runtime1, runtime2) =
+            distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
+        let (survivor_runtime, unavailable_node, degraded_key) = degraded_read_target(
+            &runtime1,
+            &runtime2,
+            &format!("hegel-degraded-{degraded_suffix}"),
+        );
+        let degraded_value = i64::from(degraded_value_id);
+        let survivor_value = i64::from(survivor_value_id);
+        let survivor_key = format!("survivor-{degraded_suffix}");
 
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime.block_on(async move {
-            let (runtime1, runtime2) = distributed_runtime_pair().await;
-            let routed_key = (0..65536)
-                .map(|i| format!("conditional-{key_suffix}-{i}"))
-                .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
-                .expect("expected a key routed to node 2");
-            let initial_value = i64::from(initial_value_id);
-            let updated_value = i64::from(updated_value_id) + 100;
-            let failed_value = i64::from(failed_value_id) + 200;
+        let put_degraded = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(degraded_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(degraded_value),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(put_degraded, ClientResponse::Unit);
 
-            let put = HyperdexClientService::handle(
-                runtime1.as_ref(),
-                ClientRequest::Put {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(routed_key.clone().into_bytes()),
-                    mutations: vec![Mutation::Set(Attribute {
-                        name: "profile_views".to_owned(),
-                        value: Value::Int(initial_value),
-                    })],
-                },
-            )
-            .await
-            .unwrap();
-            assert_eq!(put, ClientResponse::Unit);
+        let put_survivor = HyperdexClientService::handle(
+            survivor_runtime.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(survivor_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(survivor_value),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(put_survivor, ClientResponse::Unit);
 
-            let success = HyperdexClientService::handle(
-                runtime1.as_ref(),
-                ClientRequest::ConditionalPut {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(routed_key.clone().into_bytes()),
-                    checks: vec![Check {
-                        attribute: "profile_views".to_owned(),
-                        predicate: Predicate::Equal,
-                        value: Value::Int(initial_value),
-                    }],
-                    mutations: vec![Mutation::Set(Attribute {
-                        name: "profile_views".to_owned(),
-                        value: Value::Int(updated_value),
-                    })],
-                },
-            )
-            .await
-            .unwrap();
-            assert_eq!(success, ClientResponse::Unit);
+        transport.set_unavailable(unavailable_node, true).await;
 
-            let compare_failed = HyperdexClientService::handle(
-                runtime1.as_ref(),
-                ClientRequest::ConditionalPut {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(routed_key.clone().into_bytes()),
-                    checks: vec![Check {
-                        attribute: "profile_views".to_owned(),
-                        predicate: Predicate::Equal,
-                        value: Value::Int(initial_value),
-                    }],
-                    mutations: vec![Mutation::Set(Attribute {
-                        name: "profile_views".to_owned(),
-                        value: Value::Int(failed_value),
-                    })],
-                },
-            )
-            .await
-            .unwrap();
-            assert_eq!(compare_failed, ClientResponse::ConditionFailed);
-
-            let routed_get = HyperdexClientService::handle(
-                runtime1.as_ref(),
-                ClientRequest::Get {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(routed_key.clone().into_bytes()),
-                },
-            )
-            .await
-            .unwrap();
-            match routed_get {
-                ClientResponse::Record(Some(record)) => {
-                    let actual = match record.attributes.get("profile_views") {
-                        Some(Value::Int(value)) => *value,
-                        other => panic!("unexpected record attribute: {other:?}"),
-                    };
-                    assert_eq!(actual, updated_value);
-                }
-                other => panic!("unexpected routed get response: {other:?}"),
+        let degraded_get = HyperdexClientService::handle(
+            survivor_runtime.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(degraded_key.clone().into_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+        match degraded_get {
+            ClientResponse::Record(Some(record)) => {
+                let actual = match record.attributes.get("profile_views") {
+                    Some(Value::Int(value)) => *value,
+                    other => panic!("unexpected record attribute: {other:?}"),
+                };
+                assert_eq!(actual, degraded_value);
             }
+            other => panic!("unexpected degraded get response: {other:?}"),
+        }
 
-            let primary_get = HyperdexClientService::handle(
-                runtime2.as_ref(),
-                ClientRequest::Get {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(routed_key.into_bytes()),
-                },
-            )
-            .await
-            .unwrap();
-            match primary_get {
-                ClientResponse::Record(Some(record)) => {
-                    let actual = match record.attributes.get("profile_views") {
-                        Some(Value::Int(value)) => *value,
-                        other => panic!("unexpected record attribute: {other:?}"),
-                    };
-                    assert_eq!(actual, updated_value);
-                }
-                other => panic!("unexpected primary get response: {other:?}"),
-            }
-        });
-    })
-    .settings(hegel::Settings::new().test_cases(15))
-    .run();
+        let degraded_count = HyperdexClientService::handle(
+            survivor_runtime.as_ref(),
+            ClientRequest::Count {
+                space: "profiles".to_owned(),
+                checks: Vec::new(),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(degraded_count, ClientResponse::Count(2));
+    });
 }
 
-#[test]
-fn hegel_distributed_runtime_routes_numeric_mutation() {
-    let _guard = HEGEL_ENV_LOCK.lock().unwrap();
-    let hegel_server_command = ensure_hegel_server_command();
-    unsafe {
-        std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
-    }
+#[hegel::test(test_cases = 15)]
+fn hegel_distributed_runtime_routes_delete(tc: hegel::TestCase) {
+    let key_suffix: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(4095));
+    let value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
 
-    hegel::Hegel::new(|tc: hegel::TestCase| {
-        let key_suffix: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(4095));
-        let initial_value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
-        let operand_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async move {
+        let (runtime1, runtime2) = distributed_runtime_pair().await;
+        let routed_key = (0..65536)
+            .map(|i| format!("delete-{key_suffix}-{i}"))
+            .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
+            .expect("expected a key routed to node 2");
+        let expected_value = i64::from(value_id);
 
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime.block_on(async move {
-            let (runtime1, runtime2) = distributed_runtime_pair().await;
-            let routed_key = (0..65536)
-                .map(|i| format!("numeric-{key_suffix}-{i}"))
-                .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
-                .expect("expected a key routed to node 2");
-            let initial_value = i64::from(initial_value_id);
-            let operand = i64::from(operand_id) + 1;
-            let expected_value = initial_value + operand;
+        let put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(routed_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(expected_value),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(put, ClientResponse::Unit);
 
-            let put = HyperdexClientService::handle(
-                runtime1.as_ref(),
-                ClientRequest::Put {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(routed_key.clone().into_bytes()),
-                    mutations: vec![Mutation::Set(Attribute {
-                        name: "profile_views".to_owned(),
-                        value: Value::Int(initial_value),
-                    })],
-                },
-            )
-            .await
-            .unwrap();
-            assert_eq!(put, ClientResponse::Unit);
+        let delete = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Delete {
+                space: "profiles".to_owned(),
+                key: Bytes::from(routed_key.clone().into_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(delete, ClientResponse::Unit);
 
-            let numeric = HyperdexClientService::handle(
-                runtime1.as_ref(),
-                ClientRequest::Put {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(routed_key.clone().into_bytes()),
-                    mutations: vec![Mutation::Numeric {
-                        attribute: "profile_views".to_owned(),
-                        op: data_model::NumericOp::Add,
-                        operand,
-                    }],
-                },
-            )
-            .await
-            .unwrap();
-            assert_eq!(numeric, ClientResponse::Unit);
+        let routed_get = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(routed_key.clone().into_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(routed_get, ClientResponse::Record(None));
 
-            let routed_get = HyperdexClientService::handle(
-                runtime1.as_ref(),
-                ClientRequest::Get {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(routed_key.clone().into_bytes()),
-                },
-            )
-            .await
-            .unwrap();
-            match routed_get {
-                ClientResponse::Record(Some(record)) => {
-                    let actual = match record.attributes.get("profile_views") {
-                        Some(Value::Int(value)) => *value,
-                        other => panic!("unexpected record attribute: {other:?}"),
-                    };
-                    assert_eq!(actual, expected_value);
-                }
-                other => panic!("unexpected routed get response: {other:?}"),
-            }
-
-            let primary_get = HyperdexClientService::handle(
-                runtime2.as_ref(),
-                ClientRequest::Get {
-                    space: "profiles".to_owned(),
-                    key: Bytes::from(routed_key.into_bytes()),
-                },
-            )
-            .await
-            .unwrap();
-            match primary_get {
-                ClientResponse::Record(Some(record)) => {
-                    let actual = match record.attributes.get("profile_views") {
-                        Some(Value::Int(value)) => *value,
-                        other => panic!("unexpected record attribute: {other:?}"),
-                    };
-                    assert_eq!(actual, expected_value);
-                }
-                other => panic!("unexpected primary get response: {other:?}"),
-            }
-        });
-    })
-    .settings(hegel::Settings::new().test_cases(15))
-    .run();
+        let primary_get = HyperdexClientService::handle(
+            runtime2.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(routed_key.into_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(primary_get, ClientResponse::Record(None));
+    });
 }
 
-#[test]
-fn hegel_distributed_runtime_preserves_logical_delete_group_search_and_count() {
-    let _guard = HEGEL_ENV_LOCK.lock().unwrap();
-    let hegel_server_command = ensure_hegel_server_command();
-    unsafe {
-        std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
-    }
+#[hegel::test(test_cases = 15)]
+fn hegel_distributed_runtime_routes_conditional_put(tc: hegel::TestCase) {
+    let key_suffix: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(4095));
+    let initial_value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
+    let updated_value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
+    let failed_value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
 
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async move {
+        let (runtime1, runtime2) = distributed_runtime_pair().await;
+        let routed_key = (0..65536)
+            .map(|i| format!("conditional-{key_suffix}-{i}"))
+            .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
+            .expect("expected a key routed to node 2");
+        let initial_value = i64::from(initial_value_id);
+        let updated_value = i64::from(updated_value_id) + 100;
+        let failed_value = i64::from(failed_value_id) + 200;
+
+        let put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(routed_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(initial_value),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(put, ClientResponse::Unit);
+
+        let success = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::ConditionalPut {
+                space: "profiles".to_owned(),
+                key: Bytes::from(routed_key.clone().into_bytes()),
+                checks: vec![Check {
+                    attribute: "profile_views".to_owned(),
+                    predicate: Predicate::Equal,
+                    value: Value::Int(initial_value),
+                }],
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(updated_value),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(success, ClientResponse::Unit);
+
+        let compare_failed = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::ConditionalPut {
+                space: "profiles".to_owned(),
+                key: Bytes::from(routed_key.clone().into_bytes()),
+                checks: vec![Check {
+                    attribute: "profile_views".to_owned(),
+                    predicate: Predicate::Equal,
+                    value: Value::Int(initial_value),
+                }],
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(failed_value),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(compare_failed, ClientResponse::ConditionFailed);
+
+        let routed_get = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(routed_key.clone().into_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+        match routed_get {
+            ClientResponse::Record(Some(record)) => {
+                let actual = match record.attributes.get("profile_views") {
+                    Some(Value::Int(value)) => *value,
+                    other => panic!("unexpected record attribute: {other:?}"),
+                };
+                assert_eq!(actual, updated_value);
+            }
+            other => panic!("unexpected routed get response: {other:?}"),
+        }
+
+        let primary_get = HyperdexClientService::handle(
+            runtime2.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(routed_key.into_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+        match primary_get {
+            ClientResponse::Record(Some(record)) => {
+                let actual = match record.attributes.get("profile_views") {
+                    Some(Value::Int(value)) => *value,
+                    other => panic!("unexpected record attribute: {other:?}"),
+                };
+                assert_eq!(actual, updated_value);
+            }
+            other => panic!("unexpected primary get response: {other:?}"),
+        }
+    });
+}
+
+#[hegel::test(test_cases = 15)]
+fn hegel_distributed_runtime_routes_numeric_mutation(tc: hegel::TestCase) {
+    let key_suffix: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(4095));
+    let initial_value_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
+    let operand_id: u16 = tc.draw(hegel::generators::integers::<u16>().max_value(99));
+
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async move {
+        let (runtime1, runtime2) = distributed_runtime_pair().await;
+        let routed_key = (0..65536)
+            .map(|i| format!("numeric-{key_suffix}-{i}"))
+            .find(|key| runtime1.route_primary(key.as_bytes()).unwrap() == 2)
+            .expect("expected a key routed to node 2");
+        let initial_value = i64::from(initial_value_id);
+        let operand = i64::from(operand_id) + 1;
+        let expected_value = initial_value + operand;
+
+        let put = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(routed_key.clone().into_bytes()),
+                mutations: vec![Mutation::Set(Attribute {
+                    name: "profile_views".to_owned(),
+                    value: Value::Int(initial_value),
+                })],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(put, ClientResponse::Unit);
+
+        let numeric = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Put {
+                space: "profiles".to_owned(),
+                key: Bytes::from(routed_key.clone().into_bytes()),
+                mutations: vec![Mutation::Numeric {
+                    attribute: "profile_views".to_owned(),
+                    op: data_model::NumericOp::Add,
+                    operand,
+                }],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(numeric, ClientResponse::Unit);
+
+        let routed_get = HyperdexClientService::handle(
+            runtime1.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(routed_key.clone().into_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+        match routed_get {
+            ClientResponse::Record(Some(record)) => {
+                let actual = match record.attributes.get("profile_views") {
+                    Some(Value::Int(value)) => *value,
+                    other => panic!("unexpected record attribute: {other:?}"),
+                };
+                assert_eq!(actual, expected_value);
+            }
+            other => panic!("unexpected routed get response: {other:?}"),
+        }
+
+        let primary_get = HyperdexClientService::handle(
+            runtime2.as_ref(),
+            ClientRequest::Get {
+                space: "profiles".to_owned(),
+                key: Bytes::from(routed_key.into_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+        match primary_get {
+            ClientResponse::Record(Some(record)) => {
+                let actual = match record.attributes.get("profile_views") {
+                    Some(Value::Int(value)) => *value,
+                    other => panic!("unexpected record attribute: {other:?}"),
+                };
+                assert_eq!(actual, expected_value);
+            }
+            other => panic!("unexpected primary get response: {other:?}"),
+        }
+    });
+}
+
+#[hegel::test(test_cases = 15)]
+fn hegel_distributed_runtime_preserves_logical_delete_group_search_and_count(tc: hegel::TestCase) {
     // Generated routed writes and delete-group operations must still present one
     // logical query result set from either runtime, even though records are
     // physically replicated on both nodes.
-    hegel::Hegel::new(|tc: hegel::TestCase| {
-        let ops: Vec<(u8, u8, u8, u16, u16)> = tc.draw(
-            hegel::generators::vecs(hegel::generators::tuples5(
-                hegel::generators::integers::<u8>().max_value(2),
-                hegel::generators::integers::<u8>().max_value(1),
-                hegel::generators::integers::<u8>().max_value(7),
-                hegel::generators::integers::<u16>().max_value(119),
-                hegel::generators::integers::<u16>().max_value(119),
-            ))
-            .min_size(1)
-            .max_size(20),
-        );
+    let ops: Vec<(u8, u8, u8, u16, u16)> = tc.draw(
+        hegel::generators::vecs(hegel::generators::tuples5(
+            hegel::generators::integers::<u8>().max_value(2),
+            hegel::generators::integers::<u8>().max_value(1),
+            hegel::generators::integers::<u8>().max_value(7),
+            hegel::generators::integers::<u16>().max_value(119),
+            hegel::generators::integers::<u16>().max_value(119),
+        ))
+        .min_size(1)
+        .max_size(20),
+    );
 
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime.block_on(async move {
-            let (_, runtime1, runtime2) =
-                distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
-            let runtimes = [runtime1, runtime2];
-            let mut model = BTreeMap::<String, i64>::new();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async move {
+        let (_, runtime1, runtime2) =
+            distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
+        let runtimes = [runtime1, runtime2];
+        let mut model = BTreeMap::<String, i64>::new();
 
-            for (kind, runtime_id, key_id, value_id, threshold_id) in ops {
-                let runtime = &runtimes[usize::from(runtime_id)];
-                let key = format!("hegel-delete-group-k{key_id}");
-                let key_bytes = Bytes::from(key.clone().into_bytes());
-                let value = i64::from(value_id);
-                let threshold = i64::from(threshold_id);
+        for (kind, runtime_id, key_id, value_id, threshold_id) in ops {
+            let runtime = &runtimes[usize::from(runtime_id)];
+            let key = format!("hegel-delete-group-k{key_id}");
+            let key_bytes = Bytes::from(key.clone().into_bytes());
+            let value = i64::from(value_id);
+            let threshold = i64::from(threshold_id);
 
-                match kind {
-                    0 => {
-                        let response = HyperdexClientService::handle(
-                            runtime.as_ref(),
-                            ClientRequest::Put {
-                                space: "profiles".to_owned(),
-                                key: key_bytes,
-                                mutations: vec![Mutation::Set(Attribute {
-                                    name: "profile_views".to_owned(),
-                                    value: Value::Int(value),
-                                })],
-                            },
-                        )
-                        .await
-                        .unwrap();
-                        assert_eq!(response, ClientResponse::Unit);
-                        model.insert(key, value);
-                    }
-                    1 => {
-                        let expected_deleted = model
-                            .iter()
-                            .filter(|(_, views)| **views >= threshold)
-                            .count() as u64;
-                        let response = HyperdexClientService::handle(
-                            runtime.as_ref(),
-                            ClientRequest::DeleteGroup {
-                                space: "profiles".to_owned(),
-                                checks: profile_views_ge_checks(threshold),
-                            },
-                        )
-                        .await
-                        .unwrap();
-                        assert_eq!(response, ClientResponse::Deleted(expected_deleted));
-                        model.retain(|_, views| *views < threshold);
-                    }
-                    2 => {
-                        let response = HyperdexClientService::handle(
-                            runtime.as_ref(),
-                            ClientRequest::Get {
-                                space: "profiles".to_owned(),
-                                key: key_bytes,
-                            },
-                        )
-                        .await
-                        .unwrap();
-                        match response {
-                            ClientResponse::Record(Some(record)) => {
-                                let actual = match record.attributes.get("profile_views") {
-                                    Some(Value::Int(value)) => Some(*value),
-                                    _ => None,
-                                };
-                                assert_eq!(actual, model.get(&key).copied());
-                            }
-                            ClientResponse::Record(None) => {
-                                assert_eq!(model.get(&key), None);
-                            }
-                            other => panic!("unexpected get response: {other:?}"),
-                        }
-                    }
-                    _ => unreachable!("operation kind is bounded to 0..=2"),
+            match kind {
+                0 => {
+                    let response = HyperdexClientService::handle(
+                        runtime.as_ref(),
+                        ClientRequest::Put {
+                            space: "profiles".to_owned(),
+                            key: key_bytes,
+                            mutations: vec![Mutation::Set(Attribute {
+                                name: "profile_views".to_owned(),
+                                value: Value::Int(value),
+                            })],
+                        },
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(response, ClientResponse::Unit);
+                    model.insert(key, value);
                 }
-
-                let expected = expected_profile_views_at_or_above(&model, threshold);
-                assert_search_and_count_match_model(runtimes[0].as_ref(), threshold, &expected)
-                    .await;
-                assert_search_and_count_match_model(runtimes[1].as_ref(), threshold, &expected)
-                    .await;
+                1 => {
+                    let expected_deleted = model
+                        .iter()
+                        .filter(|(_, views)| **views >= threshold)
+                        .count() as u64;
+                    let response = HyperdexClientService::handle(
+                        runtime.as_ref(),
+                        ClientRequest::DeleteGroup {
+                            space: "profiles".to_owned(),
+                            checks: profile_views_ge_checks(threshold),
+                        },
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(response, ClientResponse::Deleted(expected_deleted));
+                    model.retain(|_, views| *views < threshold);
+                }
+                2 => {
+                    let response = HyperdexClientService::handle(
+                        runtime.as_ref(),
+                        ClientRequest::Get {
+                            space: "profiles".to_owned(),
+                            key: key_bytes,
+                        },
+                    )
+                    .await
+                    .unwrap();
+                    match response {
+                        ClientResponse::Record(Some(record)) => {
+                            let actual = match record.attributes.get("profile_views") {
+                                Some(Value::Int(value)) => Some(*value),
+                                _ => None,
+                            };
+                            assert_eq!(actual, model.get(&key).copied());
+                        }
+                        ClientResponse::Record(None) => {
+                            assert_eq!(model.get(&key), None);
+                        }
+                        other => panic!("unexpected get response: {other:?}"),
+                    }
+                }
+                _ => unreachable!("operation kind is bounded to 0..=2"),
             }
-        });
-    })
-    .settings(hegel::Settings::new().test_cases(15))
-    .run();
+
+            let expected = expected_profile_views_at_or_above(&model, threshold);
+            assert_search_and_count_match_model(runtimes[0].as_ref(), threshold, &expected).await;
+            assert_search_and_count_match_model(runtimes[1].as_ref(), threshold, &expected).await;
+        }
+    });
 }
 
-#[test]
-fn hegel_distributed_runtime_preserves_mixed_mutation_query_model() {
-    let _guard = HEGEL_ENV_LOCK.lock().unwrap();
-    let hegel_server_command = ensure_hegel_server_command();
-    unsafe {
-        std::env::set_var("HEGEL_SERVER_COMMAND", &hegel_server_command);
-    }
-
+#[hegel::test(test_cases = 15)]
+fn hegel_distributed_runtime_preserves_mixed_mutation_query_model(tc: hegel::TestCase) {
     // This property exercises a broader distributed state machine than the
     // delete-group proof: routed puts, compare-and-write updates, deletes, gets,
     // and threshold queries must all agree with one logical model from either
     // runtime, even though writes are routed and replicated under the hood.
-    hegel::Hegel::new(|tc: hegel::TestCase| {
-        let ops: Vec<(u8, u8, u8, u16, u16, u16)> = tc.draw(
-            hegel::generators::vecs(hegel::generators::tuples6(
-                hegel::generators::integers::<u8>().max_value(5),
-                hegel::generators::integers::<u8>().max_value(1),
-                hegel::generators::integers::<u8>().max_value(7),
-                hegel::generators::integers::<u16>().max_value(119),
-                hegel::generators::integers::<u16>().max_value(119),
-                hegel::generators::integers::<u16>().max_value(119),
-            ))
-            .min_size(1)
-            .max_size(24),
-        );
+    let ops: Vec<(u8, u8, u8, u16, u16, u16)> = tc.draw(
+        hegel::generators::vecs(hegel::generators::tuples6(
+            hegel::generators::integers::<u8>().max_value(5),
+            hegel::generators::integers::<u8>().max_value(1),
+            hegel::generators::integers::<u8>().max_value(7),
+            hegel::generators::integers::<u16>().max_value(119),
+            hegel::generators::integers::<u16>().max_value(119),
+            hegel::generators::integers::<u16>().max_value(119),
+        ))
+        .min_size(1)
+        .max_size(24),
+    );
 
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime.block_on(async move {
-            let (_, runtime1, runtime2) =
-                distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
-            let runtimes = [runtime1, runtime2];
-            let mut model = BTreeMap::<String, i64>::new();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async move {
+        let (_, runtime1, runtime2) =
+            distributed_runtime_fixture_with_schema(replicated_profiles_schema()).await;
+        let runtimes = [runtime1, runtime2];
+        let mut model = BTreeMap::<String, i64>::new();
 
-            for (kind, runtime_id, key_id, value_id, compare_id, threshold_id) in ops {
-                let runtime = &runtimes[usize::from(runtime_id)];
-                let key = format!("hegel-mixed-k{key_id}");
-                let key_bytes = Bytes::from(key.clone().into_bytes());
-                let value = i64::from(value_id);
-                let compare = i64::from(compare_id);
-                let threshold = i64::from(threshold_id);
+        for (kind, runtime_id, key_id, value_id, compare_id, threshold_id) in ops {
+            let runtime = &runtimes[usize::from(runtime_id)];
+            let key = format!("hegel-mixed-k{key_id}");
+            let key_bytes = Bytes::from(key.clone().into_bytes());
+            let value = i64::from(value_id);
+            let compare = i64::from(compare_id);
+            let threshold = i64::from(threshold_id);
 
-                match kind {
-                    0 => {
-                        let response = HyperdexClientService::handle(
-                            runtime.as_ref(),
-                            ClientRequest::Put {
-                                space: "profiles".to_owned(),
-                                key: key_bytes,
-                                mutations: vec![Mutation::Set(Attribute {
-                                    name: "profile_views".to_owned(),
-                                    value: Value::Int(value),
-                                })],
-                            },
-                        )
-                        .await
-                        .unwrap();
+            match kind {
+                0 => {
+                    let response = HyperdexClientService::handle(
+                        runtime.as_ref(),
+                        ClientRequest::Put {
+                            space: "profiles".to_owned(),
+                            key: key_bytes,
+                            mutations: vec![Mutation::Set(Attribute {
+                                name: "profile_views".to_owned(),
+                                value: Value::Int(value),
+                            })],
+                        },
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(response, ClientResponse::Unit);
+                    model.insert(key, value);
+                }
+                1 => {
+                    let expected = model.get(&key).copied();
+                    let response = HyperdexClientService::handle(
+                        runtime.as_ref(),
+                        ClientRequest::ConditionalPut {
+                            space: "profiles".to_owned(),
+                            key: key_bytes,
+                            checks: vec![Check {
+                                attribute: "profile_views".to_owned(),
+                                predicate: Predicate::Equal,
+                                value: Value::Int(compare),
+                            }],
+                            mutations: vec![Mutation::Set(Attribute {
+                                name: "profile_views".to_owned(),
+                                value: Value::Int(value),
+                            })],
+                        },
+                    )
+                    .await
+                    .unwrap();
+                    if expected == Some(compare) {
                         assert_eq!(response, ClientResponse::Unit);
                         model.insert(key, value);
+                    } else {
+                        assert_eq!(response, ClientResponse::ConditionFailed);
                     }
-                    1 => {
-                        let expected = model.get(&key).copied();
-                        let response = HyperdexClientService::handle(
-                            runtime.as_ref(),
-                            ClientRequest::ConditionalPut {
-                                space: "profiles".to_owned(),
-                                key: key_bytes,
-                                checks: vec![Check {
-                                    attribute: "profile_views".to_owned(),
-                                    predicate: Predicate::Equal,
-                                    value: Value::Int(compare),
-                                }],
-                                mutations: vec![Mutation::Set(Attribute {
-                                    name: "profile_views".to_owned(),
-                                    value: Value::Int(value),
-                                })],
-                            },
-                        )
-                        .await
-                        .unwrap();
-                        if expected == Some(compare) {
-                            assert_eq!(response, ClientResponse::Unit);
-                            model.insert(key, value);
-                        } else {
-                            assert_eq!(response, ClientResponse::ConditionFailed);
-                        }
-                    }
-                    2 => {
-                        let response = HyperdexClientService::handle(
-                            runtime.as_ref(),
-                            ClientRequest::Delete {
-                                space: "profiles".to_owned(),
-                                key: key_bytes,
-                            },
-                        )
-                        .await
-                        .unwrap();
-                        assert_eq!(response, ClientResponse::Unit);
-                        model.remove(&key);
-                    }
-                    3 => {
-                        let response = HyperdexClientService::handle(
-                            runtime.as_ref(),
-                            ClientRequest::Get {
-                                space: "profiles".to_owned(),
-                                key: key_bytes,
-                            },
-                        )
-                        .await
-                        .unwrap();
-                        match response {
-                            ClientResponse::Record(Some(record)) => {
-                                let actual = match record.attributes.get("profile_views") {
-                                    Some(Value::Int(current)) => Some(*current),
-                                    _ => None,
-                                };
-                                assert_eq!(actual, model.get(&key).copied());
-                            }
-                            ClientResponse::Record(None) => {
-                                assert_eq!(model.get(&key), None);
-                            }
-                            other => panic!("unexpected get response: {other:?}"),
-                        }
-                    }
-                    4 => {
-                        let expected = expected_profile_views_at_or_above(&model, threshold);
-                        assert_search_and_count_match_model(runtime.as_ref(), threshold, &expected)
-                            .await;
-                    }
-                    5 => {
-                        let count = HyperdexClientService::handle(
-                            runtime.as_ref(),
-                            ClientRequest::Count {
-                                space: "profiles".to_owned(),
-                                checks: profile_views_ge_checks(threshold),
-                            },
-                        )
-                        .await
-                        .unwrap();
-                        let expected = expected_profile_views_at_or_above(&model, threshold);
-                        assert_eq!(count, ClientResponse::Count(expected.len() as u64));
-                    }
-                    _ => unreachable!("operation kind is bounded to 0..=5"),
                 }
-
-                let expected = expected_profile_views_at_or_above(&model, threshold);
-                assert_search_and_count_match_model(runtimes[0].as_ref(), threshold, &expected)
-                    .await;
-                assert_search_and_count_match_model(runtimes[1].as_ref(), threshold, &expected)
-                    .await;
+                2 => {
+                    let response = HyperdexClientService::handle(
+                        runtime.as_ref(),
+                        ClientRequest::Delete {
+                            space: "profiles".to_owned(),
+                            key: key_bytes,
+                        },
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(response, ClientResponse::Unit);
+                    model.remove(&key);
+                }
+                3 => {
+                    let response = HyperdexClientService::handle(
+                        runtime.as_ref(),
+                        ClientRequest::Get {
+                            space: "profiles".to_owned(),
+                            key: key_bytes,
+                        },
+                    )
+                    .await
+                    .unwrap();
+                    match response {
+                        ClientResponse::Record(Some(record)) => {
+                            let actual = match record.attributes.get("profile_views") {
+                                Some(Value::Int(current)) => Some(*current),
+                                _ => None,
+                            };
+                            assert_eq!(actual, model.get(&key).copied());
+                        }
+                        ClientResponse::Record(None) => {
+                            assert_eq!(model.get(&key), None);
+                        }
+                        other => panic!("unexpected get response: {other:?}"),
+                    }
+                }
+                4 => {
+                    let expected = expected_profile_views_at_or_above(&model, threshold);
+                    assert_search_and_count_match_model(runtime.as_ref(), threshold, &expected)
+                        .await;
+                }
+                5 => {
+                    let count = HyperdexClientService::handle(
+                        runtime.as_ref(),
+                        ClientRequest::Count {
+                            space: "profiles".to_owned(),
+                            checks: profile_views_ge_checks(threshold),
+                        },
+                    )
+                    .await
+                    .unwrap();
+                    let expected = expected_profile_views_at_or_above(&model, threshold);
+                    assert_eq!(count, ClientResponse::Count(expected.len() as u64));
+                }
+                _ => unreachable!("operation kind is bounded to 0..=5"),
             }
-        });
-    })
-    .settings(hegel::Settings::new().test_cases(15))
-    .run();
+
+            let expected = expected_profile_views_at_or_above(&model, threshold);
+            assert_search_and_count_match_model(runtimes[0].as_ref(), threshold, &expected).await;
+            assert_search_and_count_match_model(runtimes[1].as_ref(), threshold, &expected).await;
+        }
+    });
 }
 
 proptest! {

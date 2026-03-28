@@ -23,7 +23,7 @@ turmoil.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
-hegel = { package = "hegeltest", version = "0.2.6" }
+hegel = { package = "hegeltest", version = "0.3.4" }
 hyperdex-admin-protocol = { path = "../hyperdex-admin-protocol" }
 hyperdex-client-protocol = { path = "../hyperdex-client-protocol" }
 madsim = "0.2.34"
