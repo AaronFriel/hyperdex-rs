@@ -2221,7 +2221,7 @@
 - Kind: `outcome`
 - End commit: `007bdf1`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/hyperdex-admin-protocol/src/lib.rs`
+  - `crates/hyperdex-admin-protocol/src/lib.rs`
 - Evidence summary:
   - `007bdf1` restores secret-attribute validation for `__secret` and rejects
     secret key attributes
