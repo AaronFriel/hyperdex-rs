@@ -2247,7 +2247,7 @@
 - End commit: `30227c3`
 - Artifact location:
   - no reconciled code result
-  - stale worktree state in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/live-hyhac-post-follow`
+  - stale worktree state in `worktrees/live-hyhac-post-follow`
 - Evidence summary:
   - all subagents were stopped before the work completed
   - the old `live-hyhac-post-follow` worktree is not a clean basis for the
