@@ -109,3 +109,25 @@
   - one deterministic `ConditionalPut` failure proof
   - either a green proof-only commit or a runtime fix for a discovered bug
   - one bounded commit ready for reconciliation
+
+### Entry `flt-004` - Outcome
+
+- Timestamp: `2026-03-29 00:39Z`
+- Kind: `outcome`
+- End commit: `7f02478`
+- Artifact location:
+  - `crates/simulation-harness/src/tests/mod.rs`
+- Evidence summary:
+  - Added `turmoil_reverts_primary_conditional_put_when_replica_transport_fails`.
+  - The new proof showed that `ConditionalPut` already preserves the old value
+    on the primary and the replica when replica transport fails after the
+    compare-and-write begins.
+  - `cargo test -p simulation-harness turmoil_reverts_primary_conditional_put_when_replica_transport_fails -- --nocapture`
+    passed, and `cargo test -p simulation-harness` stayed green after the
+    merge.
+- Conclusion: the rollback contract already covered the `ConditionalPut` path,
+  so this pass adds real adversarial proof coverage without needing a server
+  fix.
+- Disposition: `advance`
+- Next move: pick the next distributed assumption outside the existing
+  rollback family.

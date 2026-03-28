@@ -35,7 +35,7 @@ gRPC service layer while preserving the existing behavior with green tests.
 
 ## Dependencies / Blockers
 
-- None.
+- The remaining surface is defined by tonic-generated server traits.
 
 ## Plan Of Work
 
@@ -83,6 +83,14 @@ source-backed blocker that explains why tonic still requires them.
   Evidence: `rg -n "\\#\\[tonic::async_trait\\]|\\#\\[async_trait\\]|async_trait"
   crates/transport-grpc crates/server/src/main.rs` now reports only
   `crates/server/src/main.rs:43` and `crates/transport-grpc/src/lib.rs`.
+- Observation: tonic-build 0.12.3 still generates `#[async_trait] pub trait`
+  server traits for the gRPC boundary.
+  Evidence:
+  `/home/friel/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tonic-build-0.12.3/src/server.rs:223`
+  emits `#[async_trait] pub trait #server_trait`, and the generated
+  `target/debug/build/*/out/hyperdex.v1.rs` files contain
+  `#[async_trait] pub trait HyperdexAdmin`, `HyperdexClient`, and
+  `InternodeTransport`.
 
 ## Decision Log
 

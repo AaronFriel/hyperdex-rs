@@ -94,3 +94,28 @@
   - either a practical `#[no_panic]` annotation or a concrete justification for
     leaving it off this surface
   - one bounded commit ready for reconciliation
+
+### Entry `pnh-003` - Outcome
+
+- Timestamp: `2026-03-29 00:53Z`
+- Kind: `outcome`
+- End commit: `dd00c13`
+- Artifact location:
+  - `crates/legacy-frontend/src/lib.rs`
+- Evidence summary:
+  - Replaced the legacy frontend identify-path
+    `expect(\"fixed-width slice\")` with a checked
+    `decode_identify_remote_server_id` helper.
+  - `cargo test -p legacy-frontend` passed after the change.
+  - `cargo test -p server` passed after the change, including the live-cluster
+    multiprocess tail.
+  - A narrow `#[no_panic]` attempt on the helper was tried and rejected:
+    the `no-panic` link-time check reported
+    `ERROR[no-panic]: detected panic in function decode_identify_remote_server_id`,
+    so the annotation was not kept.
+- Conclusion: the public identify decode panic site is removed, and this pass
+  adds concrete evidence that `#[no_panic]` is still not practical on this
+  boundary in its current form.
+- Disposition: `advance`
+- Next move: choose the next public/runtime boundary with multiple remaining
+  panic sites instead of retrying the same helper-level annotation.

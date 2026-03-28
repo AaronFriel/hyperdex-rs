@@ -57,19 +57,22 @@ panic behavior to explicit contracts and then set the next ratchet.
   `worktrees/panic-hardening` checkout for one owned fork.
 - [x] (2026-03-28 23:55Z) Landed decoder hardening in `legacy-protocol` and
   `hyperdex-admin-protocol` in `694545e` and `44f8c58`.
-- [ ] Choose the next public/runtime boundary after the two decoder passes.
+- [x] (2026-03-29 00:53Z) Hardened legacy frontend identify decoding in
+  `dd00c13`.
+- [ ] Choose the next public/runtime boundary after the legacy frontend pass.
 
 ## Current Hypothesis
 
-After the decoder passes, `legacy-frontend` is the best next target because it
-is a public boundary with obvious fixed-width decode `expect` usage and a
-smaller blast radius than `server/src/main.rs`.
+After the legacy frontend pass, the next target should be a different
+public/runtime boundary with more than one remaining panic site. The single
+fixed-width identify decode panic in `legacy-frontend` is now gone.
 
 ## Next Bounded Step
 
-Harden `legacy-frontend` by removing the fixed-width decode `expect` paths,
-apply `#[no_panic]` where that boundary can support it, and define the next
-Clippy ratchet from the result.
+Choose the next public/runtime boundary after `legacy-frontend`, remove the
+most meaningful unchecked panic sites there, and carry forward the concrete
+no-panic evidence from this pass instead of retrying the same annotation
+blindly.
 
 ## Surprises & Discoveries
 
@@ -93,3 +96,6 @@ Clippy ratchet from the result.
 - In both decoder passes, `#[no_panic]` proved harder than the raw
   unwrap/expect removal itself, which suggests the next step should keep that
   contract narrow and evidence-driven.
+- The same pattern held on the legacy frontend identify helper: checked
+  decoding was straightforward, but a narrow `#[no_panic]` attempt still
+  failed at link time.

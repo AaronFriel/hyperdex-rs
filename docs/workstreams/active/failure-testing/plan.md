@@ -54,21 +54,25 @@ design.
   the required distributed-read fix.
 - [x] (2026-03-28 23:55Z) Landed rollback-on-failed-replication fixes for
   writes and deletes in `f4e4215` and `4a3e876`.
-- [ ] Choose the next broken distributed assumption after schema convergence
-  and replica-loss rollback coverage.
+- [x] (2026-03-29 00:39Z) Added
+  `turmoil_reverts_primary_conditional_put_when_replica_transport_fails` in
+  `7f02478`.
+- [ ] Choose the next broken distributed assumption after the
+  `ConditionalPut` replica-loss proof.
 
 ## Current Hypothesis
 
-The highest-value next step is another mutation-path failure, and
-`ConditionalPut` under replica transport loss is the best candidate because it
-still has a different control path than the write and delete rollback fixes
-already landed.
+The next highest-value step is no longer another simple rollback case. The
+rollback contract now covers write, delete, and conditional-write mutation
+paths, so the next proof should target a different distributed risk such as
+routing staleness, replica divergence after recovery, or another partial
+availability edge.
 
 ## Next Bounded Step
 
-Add a deterministic proof for `ConditionalPut` under replica transport loss,
-then touch runtime code only if that proof shows the primary can expose a
-partially committed compare-and-write result.
+Choose the next distributed assumption beyond the rollback family, add the
+shortest honest deterministic proof for it, and touch runtime code only if the
+proof exposes a real bug.
 
 ## Surprises & Discoveries
 
@@ -91,3 +95,5 @@ partially committed compare-and-write result.
   - failed replicated writes could leak local primary state
   - failed replicated deletes could remove primary state without a committed
     replication result
+- The fourth pass landed as proof-only evidence:
+  - `ConditionalPut` already rolls back cleanly on replica transport failure
