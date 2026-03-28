@@ -427,8 +427,25 @@ fn localhost(port: u16) -> Result<SocketAddr> {
     Ok(format!("127.0.0.1:{port}").parse()?)
 }
 
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("crate manifest dir should live under <repo>/crates/server")
+        .to_path_buf()
+}
+
+fn repo_neighbor_root(name: &str) -> PathBuf {
+    repo_root()
+        .parent()
+        .expect("repo root should have a parent directory")
+        .join(name)
+}
+
 fn legacy_hyperdex_root() -> PathBuf {
-    PathBuf::from("/home/friel/c/aaronfriel/HyperDex")
+    std::env::var_os("HYPERDEX_LEGACY_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| repo_neighbor_root("HyperDex"))
 }
 
 fn legacy_tool_path(tool: &str) -> PathBuf {
@@ -445,7 +462,9 @@ fn legacy_tool_library_path() -> String {
 }
 
 fn hyhac_root() -> PathBuf {
-    PathBuf::from("/home/friel/c/aaronfriel/hyhac")
+    std::env::var_os("HYHAC_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| repo_neighbor_root("hyhac"))
 }
 
 fn hyhac_runtime_library_path() -> String {

@@ -29,12 +29,28 @@ repos:
         pass_filenames: false
         files: ^(\.agent|scripts)/.*\.sh$
 
+      - id: gitleaks
+        name: gitleaks
+        entry: scripts/check-gitleaks.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit, manual]
+
       - id: nextest-fast
         name: nextest fast suite
         entry: scripts/check-nextest-fast.sh
         language: system
         pass_filenames: false
         files: ^(Cargo\.toml|Cargo\.lock|\.config/nextest\.toml|crates/.*\.(rs|toml))$
+        stages: [pre-commit, manual]
+
+      - id: clippy
+        name: workspace clippy
+        entry: scripts/check-clippy.sh
+        language: system
+        pass_filenames: false
+        files: ^(Cargo\.toml|Cargo\.lock|crates/.*\.(rs|toml))$
         stages: [pre-commit, manual]
 
       - id: rustfmt-fix

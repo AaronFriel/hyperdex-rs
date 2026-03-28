@@ -9,67 +9,80 @@ permissions:
   contents: read
 
 jobs:
-  actions:
+  prepare-prek-matrix:
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
 
-      - name: Install actionlint
-        env:
-          ACTIONLINT_VERSION: 1.7.11
+      - name: Generate prek hook matrix
+        id: matrix
         run: |
-          curl -L --fail --silent --show-error \
-            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
-            -o /tmp/actionlint.tar.gz
-          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
-          sudo install -m 755 /tmp/actionlint /usr/local/bin/actionlint
+          matrix="$(python3 scripts/list-prek-hooks.py)"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "$matrix"
+
+  prek:
+    needs: prepare-prek-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare-prek-matrix.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
 
       - name: Install uv
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Check GitHub Actions
-        run: scripts/check-actions.sh
-
-  format:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
-          persist-credentials: false
+          version: "0.6.6"
+
+      - name: Install prek
+        run: |
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          scripts/install-prek.sh
+
+      - name: Install gitleaks
+        if: matrix.needs_gitleaks
+        run: scripts/install-gitleaks.sh
 
       - name: Set up Rust toolchain
+        if: matrix.needs_rustfmt
         uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
         with:
-          toolchain: stable
+          toolchain: 1.88.0
           components: rustfmt
 
-      - name: Check formatting
-        run: scripts/check-rustfmt.sh
-
-  clippy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Set up Rust toolchain for clippy
+        if: matrix.needs_clippy
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
         with:
-          persist-credentials: false
+          toolchain: 1.88.0
+          components: clippy
+
+      - name: Set up Rust toolchain
+        if: matrix.needs_rust && !matrix.needs_rustfmt && !matrix.needs_clippy
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
+        with:
+          toolchain: 1.88.0
 
       - name: Install system packages
+        if: matrix.needs_system_packages
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential clang cmake libclang-dev pkg-config protobuf-compiler
 
-      - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
-        with:
-          toolchain: stable
-          components: clippy
+      - name: Install cargo-nextest
+        if: matrix.needs_nextest
+        run: |
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          scripts/install-cargo-nextest.sh
 
-      - name: Check module layout
-        run: scripts/check-module-layout.sh
-
-      - name: Run workspace clippy except server
-        run: scripts/check-clippy.sh
+      - name: Run prek hook
+        env:
+          PREK_HOOK_ID: ${{ matrix.id }}
+        run: prek run "$PREK_HOOK_ID" --all-files -c .pre-commit-config.yaml

@@ -21,6 +21,7 @@ cd "$REPO_ROOT"
 run_step "module layout" scripts/check-module-layout.sh
 run_step "workflow audit" scripts/check-actions.sh
 run_step "shell syntax" scripts/check-shell-syntax.sh
+run_step "gitleaks" scripts/check-gitleaks.sh
 run_step "rustfmt (check)" scripts/check-rustfmt.sh
 run_step "nextest fast suite" scripts/check-nextest-fast.sh
 

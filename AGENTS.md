@@ -36,6 +36,8 @@ This repository exists to deliver a real Rust replacement for HyperDex. Plans, l
 - Do not split work so finely that coordination costs more than the code landing rate.
 - Each active worker must own a clear mutable surface, a main validator, and a fastest useful check.
 - Prefer letting a worker finish a coherent iteration over interrupting it early.
+- The root agent should keep real active workstreams under owning subagents instead of taking over their implementation loops.
+- Root time should go to launching owners, reconciling results, resolving integration conflicts, and keeping the active board honest.
 
 ## Validation loops
 

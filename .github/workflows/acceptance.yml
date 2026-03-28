@@ -25,7 +25,7 @@ jobs:
       - name: Set up Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
         with:
-          toolchain: stable
+          toolchain: 1.88.0
 
       - name: Run quick live acceptance verifier
         run: scripts/verify-live-acceptance.sh --ci
