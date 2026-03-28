@@ -9,7 +9,7 @@ This file explains the current `docs/workstreams/` layout.
 - [backlog](docs/workstreams/backlog)
   contains workstreams that are defined clearly enough to promote next, but are
   not active right now.
-- [completed](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/completed)
+- [completed](docs/workstreams/completed)
   contains the finished workstreams from the earlier compatibility and
   baseline-building phase.
 
