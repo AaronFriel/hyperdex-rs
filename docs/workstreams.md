@@ -21,10 +21,10 @@ Each workstream directory contains:
 
 ## Active
 
-- [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/failure-testing/plan.md)
-- [distributed-simulation](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/distributed-simulation/plan.md)
-- [hegel-properties](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/hegel-properties/plan.md)
-- [history-scrub](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/active/history-scrub/plan.md)
+- [failure-testing](docs/workstreams/active/failure-testing/plan.md)
+- [distributed-simulation](docs/workstreams/active/distributed-simulation/plan.md)
+- [hegel-properties](docs/workstreams/active/hegel-properties/plan.md)
+- [history-scrub](docs/workstreams/active/history-scrub/plan.md)
 
 ## Backlog
 
