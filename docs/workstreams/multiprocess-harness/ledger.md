@@ -523,8 +523,8 @@
 - Hypothesis: a harness-owned pass can reduce the honest full-schema pooled
   `ClientReconfigure` failure to a smaller truthful repro without drifting into
   product implementation.
-- Owner: next delegated worker in
-  `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/full-schema-roundtrip-repro`
+- Owner: delegated worker `019d31ce-0ba4-7d51-bb1a-347bd18dad3d` (`Bernoulli`)
+  in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/full-schema-roundtrip-repro`
 - Start commit: `94b13c5`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/full-schema-roundtrip-repro`
