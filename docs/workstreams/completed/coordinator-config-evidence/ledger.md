@@ -210,7 +210,7 @@
 - Kind: `outcome`
 - End commit: `1c18705`
 - Artifact location:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+  - `crates/server/src/lib.rs`
   - `/home/friel/c/aaronfriel/HyperDex/coordinator/coordinator.cc`
   - `/home/friel/c/aaronfriel/HyperDex/common/configuration.cc`
   - `/home/friel/c/aaronfriel/HyperDex/client/client.cc`
