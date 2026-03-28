@@ -140,7 +140,7 @@
   behavior for `space_add`, `wait_until_stable`, and request-id-plus-loop
   completion will unblock the original C admin tools and the first live `hyhac`
   admin test.
-- Owner: dedicated worker in `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
+- Owner: dedicated worker in `worktrees/dist-control-plane`
 - Start commit: `cd0d58c`
 - Worktree / branch:
   - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-control-plane`
