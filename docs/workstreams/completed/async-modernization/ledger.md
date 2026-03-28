@@ -86,7 +86,7 @@
 - Owner: forked worker on `async-modernization`
 - Start commit: `fb02bcc`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/async-modernization`
+  - `worktrees/async-modernization`
   - `async-modernization`
 - Mutable surface:
   - `crates/transport-grpc/**`
