@@ -52,7 +52,7 @@
 - Owner: dedicated worker in `worktrees/dist-multiprocess-harness`
 - Start commit: `98def36`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/dist-multiprocess-harness`
+  - `worktrees/dist-multiprocess-harness`
 - Mutable surface:
   - `crates/server/tests/dist_multiprocess_harness.rs`
   - `crates/server/src/main.rs` only if the harness truly needs a small startup
