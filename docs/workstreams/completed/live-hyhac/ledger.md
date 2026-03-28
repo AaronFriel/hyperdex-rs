@@ -785,7 +785,7 @@
   - no code changes in
     `worktrees/admin-decoder`
   - no code changes in
-    `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/admin-server`
+    `worktrees/admin-server`
 - Evidence summary:
   - both parallel implementation workers were interrupted with clean worktrees
   - the decoder-side blocker remained the missing packed `space_add` decoder
