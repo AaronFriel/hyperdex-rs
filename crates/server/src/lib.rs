@@ -678,9 +678,13 @@ impl ClusterRuntime {
         space: String,
         key: bytes::Bytes,
     ) -> Result<DataPlaneResponse> {
+        let previous = self.data_plane.get(&space, &key)?;
         match self.data_plane.delete(&space, &key)? {
             WriteResult::Written | WriteResult::Missing => {
-                self.replicate_delete_to_secondaries(&space, &key).await?;
+                if let Err(err) = self.replicate_delete_to_secondaries(&space, &key).await {
+                    self.restore_local_record(&space, &key, previous)?;
+                    return Err(err);
+                }
                 Ok(DataPlaneResponse::Unit)
             }
             WriteResult::ConditionFailed => Ok(DataPlaneResponse::ConditionFailed),
