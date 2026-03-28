@@ -147,10 +147,10 @@ These workstreams are completed and moved under
 
 ### Group 1: Hardening And Execution Speed
 
-1. [validation-ci](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/validation-ci/plan.md)
-2. [failure-testing](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/failure-testing/plan.md)
-3. [fuzzing-hardening](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/fuzzing-hardening/plan.md)
-4. [async-modernization](/home/friel/c/aaronfriel/hyperdex-rs/docs/workstreams/async-modernization/plan.md)
+1. [validation-ci](docs/workstreams/validation-ci/plan.md)
+2. [failure-testing](docs/workstreams/failure-testing/plan.md)
+3. [fuzzing-hardening](docs/workstreams/fuzzing-hardening/plan.md)
+4. [async-modernization](docs/workstreams/async-modernization/plan.md)
 
 ### Group 2: Feature Expansion
 
