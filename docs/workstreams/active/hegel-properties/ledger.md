@@ -10,7 +10,7 @@
 - Owner: next forked worker on `hegel-properties`
 - Start commit: `e76e696`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/simulation-applicability`
+  - `worktrees/simulation-applicability`
   - `simulation-applicability`
 - Mutable surface:
   - `crates/simulation-harness/**`
