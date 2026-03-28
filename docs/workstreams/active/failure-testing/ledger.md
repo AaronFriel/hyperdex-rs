@@ -190,7 +190,7 @@
 - Owner: forked worker on `failure-testing`
 - Start commit: `8da80c8`
 - Worktree / branch:
-  - `/home/friel/c/aaronfriel/hyperdex-rs/worktrees/failure-testing`
+  - `worktrees/failure-testing`
   - `failure-testing`
 - Mutable surface:
   - `crates/simulation-harness/**`
