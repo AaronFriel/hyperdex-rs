@@ -51,8 +51,9 @@ Keep one honest live validator on `main`, shorten it only when that directly
 improves engineering cycle time, and drive the remaining mismatch through real
 product changes in `crates/**`. The current step starts from the full-schema
 baseline that already proves the large-object write path for both pooled and
-shared clients. The next product pass should clear the first later pooled
-`ClientReconfigure` failure and rerun the live check before returning.
+shared clients, and now also proves pooled `roundtrip` and `conditional`. The
+next product pass should clear the later pooled search/count and atomic
+failures and rerun the live check before returning.
 
 ## Progress
 
@@ -73,23 +74,28 @@ shared clients. The next product pass should clear the first later pooled
 - [x] (2026-03-28 01:02Z) Ran the broader full-schema pooled Hyhac surface and
   found the next honest failure: `roundtrip` is the first later pooled failure
   and returns `ClientReconfigure`.
-- [ ] Land the next product fix for the full-schema post-large-object pooled
-  `ClientReconfigure` path and move the live baseline forward again.
+- [x] (2026-03-28 01:18Z) Landed a sparse-record legacy `get` fix that keeps
+  the large-object boundary green and moves the broader pooled live boundary
+  forward: `roundtrip` and `conditional` now pass.
+- [ ] Land the next product fix for the later pooled `search`, `count`, and
+  atomic failures and move the live baseline forward again.
 
 ## Current Hypothesis
 
 The remaining live mismatch is later than bootstrap, later than schema
-creation, later than the first daemon round-trip, and later than the
-large-object post-success stall that `3c72516` removed. On the honest
-full-schema baseline, the next failure is pooled `roundtrip`, and the visible
-symptom is `ClientReconfigure` on the readback path after a successful write.
+creation, later than the first daemon round-trip, later than the
+large-object post-success stall that `3c72516` removed, and later than the
+pooled `roundtrip` reconfigure that `b23458c` fixed. On the honest
+full-schema baseline, the next failures are in pooled `search`, `count`, and
+parts of the atomic surface.
 
 ## Next Bounded Step
 
-Keep the full-schema large-object probe green as a regression check. Launch the
-next product-owned pass on the first pooled `ClientReconfigure` failure after
-that boundary, and let the supporting harness workstream isolate that failure
-further only if it can do so without losing truthful setup.
+Keep the full-schema large-object probe green as a regression check. Keep the
+broader pooled live check as the honest surface, use the supporting harness
+workstream only if it materially shortens that later failure boundary without
+losing truthful setup, and launch the next product-owned pass on the later
+pooled `search`/`count` and atomic failures.
 
 ## Surprises & Discoveries
 
@@ -110,6 +116,11 @@ further only if it can do so without losing truthful setup.
   Evidence: on a live cluster with the full `profiles` schema already added and
   stable, `--select-tests='*pooled*'` reports `Can store a large object: [OK]`
   and then fails first at `roundtrip` with `ClientReconfigure`.
+- Observation: sparse record reads were one real source of that pooled
+  `ClientReconfigure` path.
+  Evidence: after `b23458c`, `legacy_get_fills_defaults_for_sparse_record_attributes`
+  passes and the broader pooled live run now reports both `roundtrip: [OK]`
+  and `conditional: [OK]`.
 - Observation: the remaining work now belongs primarily in product code, not
   in more coordinator-protocol archaeology.
   Evidence: the active live failure appears after the system already accepts
@@ -133,5 +144,6 @@ further only if it can do so without losing truthful setup.
   workstream. The repository now has a real live baseline where schema
   creation, stability waits, native C writes, and the full-schema Hyhac
   large-object subset all succeed. The remaining work is to clear the next
-  later client-visible divergence on that honest baseline: pooled
-  `ClientReconfigure` after the large-object boundary.
+  later client-visible divergences on that honest baseline: pooled `search`,
+  `count`, and the remaining atomic failures after the now-fixed `roundtrip`
+  and `conditional` path.

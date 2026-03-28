@@ -2377,3 +2377,33 @@
   - a real move forward on the full-schema pooled compatibility path
   - either a greener honest live baseline or one precise blocker tied to
     current code and observed output
+
+### Entry `hyh-049` - Outcome
+
+- Timestamp: `2026-03-28 01:18Z`
+- Kind: `outcome`
+- End commit: `b23458c`
+- Artifact location:
+  - `/home/friel/c/aaronfriel/hyperdex-rs/crates/server/src/lib.rs`
+- Evidence summary:
+  - `b23458c` fills legacy default values for missing attributes when encoding
+    sparse records back through the legacy `get` path
+  - `cargo test -p server legacy_get_fills_defaults_for_sparse_record_attributes -- --nocapture`
+    passed
+  - `cargo test -p server --test dist_multiprocess_harness legacy_hyhac_large_object_probe_reaches_daemon_after_full_profiles_setup -- --nocapture`
+    passed
+  - `cargo test -p server` passed
+  - `cargo test --workspace` passed
+  - the honest live full-schema pooled run now reports:
+    - `Can store a large object: [OK]`
+    - `roundtrip: [OK, passed 100 tests]`
+    - `conditional: [OK, passed 100 tests]`
+  - the next visible pooled failures are later `search`, `count`, and several
+    atomic operations
+- Conclusion: one real cause of the pooled `ClientReconfigure` path is fixed.
+  The live compatibility boundary moved forward without regressing the
+  large-object guard.
+- Disposition: `advance`
+- Next move: launch the next product pass on the later pooled `search`,
+  `count`, and atomic failures, while keeping the active harness workstream
+  focused on shortening that truthful boundary if it can.
